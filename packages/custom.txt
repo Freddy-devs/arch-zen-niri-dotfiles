@@ -1,3 +1,10 @@
-# Paquetes del AUR compilados al repo local [custom] (reempaquetan binarios oficiales)
-brave-bin
+# Paquetes del repo local [custom] (ISO live y sistema instalado). Solo lo mínimo:
+# Ayudante del AUR (zen-apps lo usa para Brave, WPS y otros a pedido)
 yay-bin
+# Tema obligatorio (PKGBUILD propios en aur/local, fuentes de sus autores originales):
+# GTK TokyoNight-Dark · iconos Nordzy-dark · cursor Qogir-white-cursors
+tokyonight-gtk-theme
+qogir-white-cursors
+nordzy-dark-icon-theme
+# Apps propias en Rust (apps/)
+zen-calendar

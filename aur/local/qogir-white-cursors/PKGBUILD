@@ -1,0 +1,18 @@
+# Cursores Qogir de su autor original (vinceliuice), variante blanca
+pkgname=qogir-white-cursors
+_tag=2025-02-15
+pkgver=${_tag//-/}
+pkgrel=1
+pkgdesc="Qogir cursor theme (variante blanca)"
+arch=('any')
+url="https://github.com/vinceliuice/Qogir-icon-theme"
+license=('GPL-3.0-only')
+options=('!strip')
+source=("Qogir-icon-theme-$_tag.tar.gz::$url/archive/refs/tags/$_tag.tar.gz")
+sha256sums=('b0d07cad5601e0341a53a62df0ed111823b75fc38741d435486620a59fb239ee')
+
+package() {
+    install -d "$pkgdir/usr/share/icons/Qogir-white-cursors"
+    cp -a --no-preserve=ownership "$srcdir/Qogir-icon-theme-$_tag/src/cursors/dist-Dark/." \
+        "$pkgdir/usr/share/icons/Qogir-white-cursors"
+}

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# glitch — HACKER con gradiente magenta→cyan y fallas aleatorias (5 líneas)
+l1='█░█  ▄▀█  █▀▀  █▄▀  █▀▀  █▀█'
+l2='█▀█  █▀█  █▄▄  █░█  ██▄  █▀▄'
+w=${#l1}
+
+paint() {
+  local s="$1" i ch r g b
+  printf '  '
+  for (( i=0; i<w; i++ )); do
+    ch=${s:i:1}
+    if [[ $ch == " " ]]; then printf ' '; continue; fi
+    # gradiente magenta (187,154,247) → cyan (125,207,255)
+    r=$(( 187 - i * 62 / w ))
+    g=$(( 154 + i * 53 / w ))
+    b=$(( 247 + i * 8 / w ))
+    if (( RANDOM % 16 == 0 )); then
+      printf '\e[1;31m%s' "$ch"          # falla: rojo brillante
+    elif (( RANDOM % 16 == 1 )); then
+      printf '\e[2;37m%s' "$ch"          # falla: gris tenue
+    else
+      printf '\e[38;2;%d;%d;%dm%s' "$r" "$g" "$b" "$ch"
+    fi
+  done
+  printf '\e[0m\n'
+}
+
+echo
+paint "$l1"
+paint "$l2"
+printf '  \e[2;37m%s\e[0m\n' '───────────────────────────'
+printf '  \e[2;32m❯ pentest autorizado ✔\e[0m\n'
+echo

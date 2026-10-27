@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# invader — invasor espacial pixel-art que baila (~0.8s), termina solo
+f1=(
+"..1.....1.."
+"...1...1..."
+"..1111111.."
+".11.111.11."
+"11111111111"
+"1.1111111.1"
+"1.1.....1.1"
+"...11.11..."
+)
+f2=(
+"..1.....1.."
+"1..1...1..1"
+"1.1111111.1"
+"111.111.111"
+"11111111111"
+".111111111."
+"..1.....1.."
+".1.......1."
+)
+info=(
+""
+$'  \e[1;35m▸ invader.exe\e[0m'
+$'  \e[2;37mpuntos · 9999\e[0m'
+""
+)
+
+grad() { printf '%d;%d;%d' $(( 187 - $1 * 8 )) $(( 154 + $1 * 7 )) $(( 247 + $1 )); }
+
+render() {
+  local -n m=$1
+  local y i t b line out=""
+  for (( y=0; y<${#m[@]}; y+=2 )); do
+    top=${m[y]}; bot=${m[y+1]}
+    line="   "
+    for (( i=0; i<${#top}; i++ )); do
+      t=${top:i:1}; b=${bot:i:1}
+      if [[ $t == 1 && $b == 1 ]]; then
+        line+=$'\e[38;2;'"$(grad $y)"$';48;2;'"$(grad $((y+1)))"$'m▀\e[0m'
+      elif [[ $t == 1 ]]; then
+        line+=$'\e[38;2;'"$(grad $y)"$'m▀\e[0m'
+      elif [[ $b == 1 ]]; then
+        line+=$'\e[38;2;'"$(grad $((y+1)))"$'m▄\e[0m'
+      else
+        line+=" "
+      fi
+    done
+    out+="$line ${info[y/2]}"$'\n'
+  done
+  printf '%s' "$out"
+}
+
+tput civis 2>/dev/null
+trap 'printf "\e[?25h"' EXIT
+trap 'printf "\e[?25h"; exit 130' INT TERM HUP
+echo
+for i in 0 1 2 3 4 5; do
+  if (( i % 2 == 0 )); then render f1; else render f2; fi
+  if (( i < 5 )); then
+    sleep 0.06
+    printf '\e[4A'
+  fi
+done
+echo

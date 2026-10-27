@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# circuit — placa PCB con chip iluminado (6 líneas x ~30 col)
+c=$'\e[38;2;45;125;115m'   # pistas (tono PCB verde-azulado)
+t=$'\e[38;2;95;205;185m'   # pista activa brillante
+C=$'\e[1;36m'              # borde del chip cyan
+g=$'\e[1;32m'              # LEDs encendidos
+d=$'\e[2;37m'              # texto tenue
+x=$'\e[0m'
+
+printf '\n'
+printf '  %s◉%s━━%s┳%s━━━%s◉%s    %s┏━━━━━━━┓%s\n'                "$g" "$c" "$c" "$c" "$g" "$x" "$C" "$x"
+printf '     %s┃%s        %s┃%s %s▟▙ ▟▙%s %s┃%s\n'                "$c" "$x" "$C" "$x" "$t" "$x" "$C" "$x"
+printf '  %s◉%s━━%s┻━━%s┓ %s◉%s━━━%s┫%s  CPU  %s┣%s━%s◉%s\n'      "$g" "$c" "$c" "$c" "$g" "$t" "$C" "$x" "$C" "$t" "$g" "$x"
+printf '        %s┃%s     %s┃%s %s▜▛ ▜▛%s %s┃%s\n'                "$c" "$x" "$C" "$x" "$t" "$x" "$C" "$x"
+printf '  %s◉%s━━━━━%s┻━%s◉%s   %s┗━━━┳━━━┛%s  %s0x1A%s\n'        "$g" "$c" "$c" "$g" "$x" "$C" "$x" "$d" "$x"
+printf '                  %s◉%s\n'                                "$g" "$x"
+printf '\n'

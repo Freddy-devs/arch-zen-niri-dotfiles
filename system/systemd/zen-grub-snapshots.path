@@ -1,0 +1,10 @@
+# Actualiza el menú de GRUB (entradas "Arch Linux snapshots") cuando snapper crea o borra
+# un snapshot. Lo vigila systemd mismo: a diferencia de grub-btrfsd no deja un proceso residente.
+[Unit]
+Description=Vigila /.snapshots para el menú de GRUB
+
+[Path]
+PathModified=/.snapshots
+
+[Install]
+WantedBy=multi-user.target

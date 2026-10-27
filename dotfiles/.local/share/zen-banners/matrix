@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# matrix — lluvia digital animada, breve (~1.2s) y termina sola
+# solo caracteres ASCII para evitar cuadros rotos en cualquier fuente
+rows=6; cols=34; frames=14
+
+charset=( 0 1 2 3 4 5 6 7 8 9 A B C D E F X Z '$' '#' '%' '&' '+' '=' '<' '>' '*' ';' '?' )
+n=${#charset[@]}
+
+declare -a drop len
+for ((i=0; i<cols; i++)); do
+  drop[i]=$(( RANDOM % rows - rows ))
+  len[i]=$(( 3 + RANDOM % 5 ))
+done
+
+tput civis 2>/dev/null
+trap 'printf "\e[?25h"' EXIT
+trap 'printf "\e[?25h"; exit 130' INT TERM HUP
+echo
+
+for ((f=0; f<frames; f++)); do
+  buf=""
+  for ((rw=0; rw<rows; rw++)); do
+    line=" "
+    for ((i=0; i<cols; i++)); do
+      h=${drop[i]}
+      if (( rw == h )); then
+        line+=$'\e[1;97m'"${charset[RANDOM % n]}"
+      elif (( rw < h && rw > h - len[i] )); then
+        line+=$'\e[0;32m'"${charset[RANDOM % n]}"
+      elif (( rw < h && rw > h - len[i] - 2 )); then
+        line+=$'\e[2;32m'"${charset[RANDOM % n]}"
+      else
+        line+=" "
+      fi
+    done
+    buf+="$line"$'\e[0m\n'
+  done
+  printf '%s' "$buf"
+  if (( f < frames - 1 )); then
+    sleep 0.035
+    printf '\e[%dA' "$rows"
+  fi
+  for ((i=0; i<cols; i++)); do
+    (( drop[i]++ ))
+    if (( drop[i] > rows + len[i] + 2 )); then
+      drop[i]=$(( -(RANDOM % rows) ))
+      len[i]=$(( 3 + RANDOM % 5 ))
+    fi
+  done
+done
+echo

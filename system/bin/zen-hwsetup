@@ -65,6 +65,9 @@ options nvidia_drm modeset=1
 EOF
             gpu_powersave
             mkinitcpio -P >/dev/null
+            # el módulo DKMS no está firmado: lockdown=integrity impediría cargarlo
+            sed -i 's/ lockdown=integrity//' /etc/default/grub
+            grub-mkconfig -o /boot/grub/grub.cfg >/dev/null
             done_ "Driver NVIDIA instalado. Reinicia y usa: prime-run <app>"
             ;;
         *)
@@ -90,7 +93,7 @@ EOF
 
 # ---------------------------------------------------------------- huella
 setup_fingerprint() {
-    command -v fprintd-enroll >/dev/null || { warn "fprintd no instalado"; return; }
+    command -v fprintd-enroll >/dev/null || { warn "fprintd no instalado: zen-apps huella"; return; }
     if fprintd-list "$USR" 2>&1 | grep -qi 'No devices available'; then
         warn "libfprint no reconoce el sensor de huella de este equipo"; return
     fi

@@ -1,7 +1,0 @@
-[terminal]
-vt = 1
-
-# ReGreet (GTK4) dentro de una instancia mínima de niri
-[default_session]
-command = "niri -c /etc/greetd/niri-greeter.kdl"
-user = "greeter"

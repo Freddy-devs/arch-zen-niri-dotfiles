@@ -1,5 +1,0 @@
-# Paquetes del AUR para el repo local [custom] que SOLO se instalan en el sistema (no en la ISO live)
-# WPS Office (Writer/Spreadsheets/Presentation) + interfaz en español + fuentes de símbolos
-wps-office
-wps-office-mui-es-es
-ttf-wps-fonts

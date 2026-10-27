@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# arch-cyber — logo Arch con gradiente cyan→verde (8 líneas x ~40 col)
+x=$'\e[0m'
+logo=(
+'       /\'
+'      /  \'
+'     /\   \'
+'    /  __  \'
+'   /  |  |  \'
+'  / __|  |__ \'
+' /_-        -_\'
+)
+info=(
+''
+''
+$'\e[1;36march\e[2;37m@\e[1;32mhacker\e[0m'
+$'\e[2;37m──────────────\e[0m'
+$'\e[0;36mkernel \e[2;37mzen\e[0m'
+$'\e[0;36mmode   \e[2;37mstealth\e[0m'
+''
+)
+echo
+for i in "${!logo[@]}"; do
+  r=0
+  g=$(( 140 + i * 16 ))
+  b=$(( 255 - i * 24 ))
+  printf '  \e[38;2;%d;%d;%dm%-16s\e[0m %s\n' "$r" "$g" "$b" "${logo[i]}" "${info[i]}"
+done
+echo

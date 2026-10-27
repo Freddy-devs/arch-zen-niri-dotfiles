@@ -1,4 +1,4 @@
-# Alacritty — Catppuccin Mocha
+# Alacritty — TokyoNight (misma paleta que la barra y fastfetch)
 [general]
 live_config_reload = true
 
@@ -18,8 +18,9 @@ history = 10000
 multiplier = 3
 
 [font]
-size = 12.0
+size = 11.0
 offset = { x = 0, y = 2 }
+builtin_box_drawing = true
 normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
 bold = { family = "JetBrainsMono Nerd Font", style = "Bold" }
 italic = { family = "JetBrainsMono Nerd Font", style = "Italic" }
@@ -49,67 +50,43 @@ bindings = [
     { key = "Return", mods = "Shift", chars = "\u001B\r" },
 ]
 
-# ---------- Catppuccin Mocha ----------
+# ---------- TokyoNight ----------
 [colors.primary]
-background = "#1e1e2e"
-foreground = "#cdd6f4"
-dim_foreground = "#7f849c"
-bright_foreground = "#cdd6f4"
+background = "#1a1b26"
+foreground = "#c0caf5"
 
 [colors.cursor]
-text = "#1e1e2e"
-cursor = "#f5e0dc"
-
-[colors.vi_mode_cursor]
-text = "#1e1e2e"
-cursor = "#b4befe"
-
-[colors.search.matches]
-foreground = "#1e1e2e"
-background = "#a6adc8"
-
-[colors.search.focused_match]
-foreground = "#1e1e2e"
-background = "#a6e3a1"
-
-[colors.hints.start]
-foreground = "#1e1e2e"
-background = "#f9e2af"
-
-[colors.hints.end]
-foreground = "#1e1e2e"
-background = "#a6adc8"
+text = "#1a1b26"
+cursor = "#c0caf5"
 
 [colors.selection]
-text = "#1e1e2e"
-background = "#f5e0dc"
+text = "#c0caf5"
+background = "#33467c"
+
+[colors.search.matches]
+foreground = "#1a1b26"
+background = "#e0af68"
+
+[colors.search.focused_match]
+foreground = "#1a1b26"
+background = "#9ece6a"
 
 [colors.normal]
-black = "#45475a"
-red = "#f38ba8"
-green = "#a6e3a1"
-yellow = "#f9e2af"
-blue = "#89b4fa"
-magenta = "#f5c2e7"
-cyan = "#94e2d5"
-white = "#bac2de"
+black = "#15161e"
+red = "#f7768e"
+green = "#9ece6a"
+yellow = "#e0af68"
+blue = "#7aa2f7"
+magenta = "#bb9af7"
+cyan = "#7dcfff"
+white = "#a9b1d6"
 
 [colors.bright]
-black = "#585b70"
-red = "#f38ba8"
-green = "#a6e3a1"
-yellow = "#f9e2af"
-blue = "#89b4fa"
-magenta = "#f5c2e7"
-cyan = "#94e2d5"
-white = "#a6adc8"
-
-[colors.dim]
-black = "#45475a"
-red = "#f38ba8"
-green = "#a6e3a1"
-yellow = "#f9e2af"
-blue = "#89b4fa"
-magenta = "#f5c2e7"
-cyan = "#94e2d5"
-white = "#bac2de"
+black = "#414868"
+red = "#f7768e"
+green = "#9ece6a"
+yellow = "#e0af68"
+blue = "#7aa2f7"
+magenta = "#bb9af7"
+cyan = "#7dcfff"
+white = "#c0caf5"

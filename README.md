@@ -1,23 +1,23 @@
 # arch-zen-niri
 
-ISO live + instalador de Arch Linux con **linux-zen**, **niri** (Wayland), **greetd + ReGreet**,
-Brave, Podman, PHP, MariaDB, PostgreSQL, herdr y Claude Code. Estética Catppuccin Mocha con
-sensación bspwm.
+ISO live + instalador de Arch Linux **mínimo** con **linux-zen**, **niri** (Wayland) y **SDDM** (tema
+Dark Pirate). Estética TokyoNight con sensación bspwm. Trae solo lo necesario para ir rápido y gastar
+pocos recursos; navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen-apps`.
 
 ## Qué trae
 | Área | Elección | Origen |
 |---|---|---|
 | Kernel | `linux-zen` (+ `linux-lts` de respaldo en el sistema instalado) | extra |
 | Compositor | `niri` + `xwayland-satellite` (apps X11 automáticas) | extra |
-| Login | `greetd` + `greetd-regreet` dentro de un niri mínimo | extra |
-| Barra / menú / notif. | `waybar`, `rofi` (lanzador, energía, portapapeles), `mako`, `swaylock`, `swayidle` | extra |
+| Login | `sddm` con el tema propio **Dark Pirate** (QML Qt6; X11 solo en la pantalla de login) | extra |
+| Barra / menú / notif. | `waybar` (píldoras TokyoNight), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
+| Calendario | `zen-calendar` (Rust, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
+| Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Nordzy-dark** · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
+| Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
-| Navegador | `brave-bin` (binario oficial de Brave, empaquetado del AUR en repo local) | AUR → repo local |
-| Oficina | `wps-office` + interfaz en español + `ttf-wps-fonts` (solo en el sistema instalado; corre vía XWayland) | AUR → repo local |
-| Contenedores | `podman`, `buildah`, `podman-compose` (rootless; `alias docker=podman`) | extra |
-| Web/BD | `php`, `php-fpm`, `composer`, `mariadb`, `postgresql` | extra |
-| IA | Claude Code (instalador nativo oficial), herdr (instalador oficial) | se instalan en el primer login |
-| Estabilidad | btrfs + snapper + snap-pac + grub-btrfs, sin repos testing, aviso de noticias Arch | extra |
+| Paneles | Bluetooth `bluetui`, audio `wiremix`, red `nmtui` (en terminal flotante, sin applets residentes) | extra |
+| Opcional | `zen-apps`: Brave, WPS, Claude Code, herdr, PHP, MariaDB, PostgreSQL, Podman, Node, Go, Rust, gh, huella, GUIs | a pedido |
+| Estabilidad | btrfs + snapper + snap-pac + grub-btrfs (sin demonio: una unidad .path de systemd), sin repos testing, aviso de noticias Arch | extra |
 | Seguridad | disco cifrado LUKS2, cortafuegos nftables (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
 
 ## Seguridad ("caja fuerte")
@@ -25,17 +25,50 @@ sensación bspwm.
   si se olvida, los datos no se recuperan.
 - **Cortafuegos** (`/etc/nftables.conf`): entrada bloqueada por defecto, sin puertos abiertos y sin
   responder a ping. La salida es libre. Ver: `sudo nft list ruleset` · bloqueos: `journalctl -k -g zen-fw`.
-- **Sin SSH** (enmascarado también en la ISO live), sin avahi/cups. MariaDB y PostgreSQL solo en localhost.
+- **Sin SSH** (enmascarado también en la ISO live), sin avahi/cups. MariaDB (si la instalas con `zen-apps`) solo en localhost.
 - **Acceso remoto solo por túnel**: WireGuard (`wireguard-tools`) que inicia la laptop hacia tu
   servidor; nunca se abre un puerto de entrada.
 - **Red privada**: MAC aleatoria por red Wi-Fi, IPv6 temporal, no envía el nombre del equipo al router.
 - **DNS cifrado** (DNS-over-TLS a Quad9, respaldo Cloudflare) con systemd-resolved.
 - **Kernel endurecido** (`/etc/sysctl.d/90-zen-hardening.conf`), `sudo` con registro y 5 min de
   validez, bloqueo de 10 min tras 5 contraseñas fallidas.
-- `zen-hwcheck` incluye una sección de seguridad que comprueba todo lo anterior.
+- **AppArmor** activo y **kernel lockdown=integrity**: no se cargan módulos sin firmar ni se accede
+  a `/dev/mem`. Endurecimiento de memoria sin costo perceptible (`slab_nomerge`,
+  `page_alloc.shuffle`, `randomize_kstack_offset`, `vsyscall=none`, `debugfs=off`).
+  Si instalas el driver NVIDIA propietario (DKMS, sin firmar), `zen-hwsetup` quita el lockdown.
+  La hibernación no está disponible con lockdown (la suspensión sí).
+- Sin volcados de memoria en disco; protocolos de red raros y sistemas de archivos antiguos bloqueados.
+- `zen-hwcheck` incluye secciones de seguridad y rendimiento que comprueban todo lo anterior.
 
-MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo oficial y compatible
-(cliente `mysql`, `pdo_mysql`, `mysqli`).
+## Rendimiento
+- **Nada corre en segundo plano sin motivo.** Residentes: niri, waybar, swaybg, swayidle, el agente
+  polkit y el historial del portapapeles. mako arranca por D-Bus con la primera notificación; el
+  calendario (Rust, ~15 MB) solo queda en memoria si hay tareas pendientes; Bluetooth, audio y red se
+  abren en terminal y se cierran al salir. Los servicios que instala `zen-apps` quedan apagados.
+- SDDM solo durante el login; grub-btrfs sin demonio (systemd vigila `/.snapshots`).
+- **zram** (zstd, hasta la mitad de la RAM / 8 GB) en vez de zswap; `systemd-oomd` evita que el
+  equipo se congele cuando falta memoria.
+- Red con **TCP BBR + fq**, colas amplias y TCP Fast Open; límites de archivos abiertos 65 536 / 524 288
+  e inotify ampliado (IDEs, node, go, rust, podman).
+- Escritura a disco en bloques chicos (el escritorio no se traba al copiar), journal acotado a 256 MB,
+  btrfs con `noatime` + `zstd`, sin watchdog.
+
+## Aplicaciones opcionales: `zen-apps`
+```sh
+zen-apps                 # menú: Tab marca varias, Enter instala
+zen-apps brave wps       # directo por nombre
+zen-apps --list          # todo lo disponible
+```
+| id | Qué instala |
+|---|---|
+| `brave` · `wps` | Navegador Brave · WPS Office en español (AUR con `yay`) |
+| `claude` · `herdr` | Claude Code · herdr (instaladores oficiales, en `~/.local/bin`) |
+| `php` · `mariadb` · `postgresql` | PHP + php-fpm + Composer · MariaDB solo en localhost · PostgreSQL (inicializados, apagados) |
+| `podman` · `node` · `go` · `rust` · `gh` | Podman sin root (`alias docker=podman`) · Node.js · Go · Rust (rustup) · GitHub CLI |
+| `huella` · `gui` | fprintd · pavucontrol, blueman, nwg-look |
+
+Al final muestra el comando para encender lo que lo necesite (por ejemplo `sudo systemctl start mariadb`).
+MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo oficial y compatible.
 
 ## Mirrors
 `system/pacman.d/mirrorlist`: Brasil (ufscar, c3sl/ufpr, unicamp) → Chile (anquan) → EE.UU.
@@ -62,16 +95,14 @@ Graba con Ventoy, Rufus (modo DD) o `dd`.
 - Instalar: abre una terminal (`Super+Enter`) y ejecuta `zen-install`.
   Pide disco, usuario, contraseñas, zona horaria (por defecto America/Lima), idioma y teclado.
   Soporta UEFI y BIOS. **Necesita internet.**
-- Primer inicio del sistema instalado: se abre una terminal que instala **Claude Code** y **herdr**
-  en `~/.local/bin` (ambos se auto-actualizan).
-- Bases de datos: inicializadas pero apagadas. `sudo systemctl enable --now mariadb postgresql`.
+- Primer inicio del sistema instalado: una bienvenida que sugiere `zen-apps` (no instala nada sola).
 
 ## Atajos (Super = tecla Windows)
 | Atajo | Acción | | Atajo | Acción |
 |---|---|---|---|---|
 | `Super+Enter` | terminal | | `Super+1..9` | ir a escritorio |
 | `Super+Space` / `Super+D` | lanzador | | `Super+Shift+1..9` | enviar ventana |
-| `Super+B` | Brave | | `Super+H/J/K/L` | foco |
+| `Super+B` | Brave (si falta, ofrece instalarlo) | | `Super+H/J/K/L` | foco |
 | `Super+E` | archivos (Thunar) | | `Super+Shift+H/J/K/L` | mover |
 | `Super+W` | cerrar | | `Super+R` | ancho 1/3 · 1/2 · 2/3 · 1 |
 | `Super+T` | flotante | | `Super+F` / `Super+Shift+F` | maximizar / pantalla completa |
@@ -79,6 +110,33 @@ Graba con Ventoy, Rufus (modo DD) o `dd`.
 | `Super+V` | portapapeles | | `Print` / `Shift+Print` | captura / captura + anotar |
 | `Super+Alt+L` | bloquear | | `Super+Alt+Q` | salir de niri |
 | `Super+Shift+/` | ver todos los atajos | | `Super+Tab` | escritorio anterior |
+| `Super+A` | calendario y tareas | | | |
+
+## Barra y calendario
+La barra: CPU · RAM · disco | escritorios de cada pantalla |
+bluetooth · red + batería · volumen · brillo · actualizaciones · hora · bandeja · teclado · energía.
+Con dos pantallas sale en ambas, y cada una muestra sus escritorios.
+
+Clic en la hora (o `Super+A`) abre el calendario en la pantalla enfocada; se cierra con `Esc` o al
+hacer clic fuera. Izquierda: reloj y mes (rueda del mouse = cambiar mes; rojo = feriado, naranja = día
+no laborable, morado = celebración, amarillo = tiene tareas). Derecha: el día elegido, su agenda,
+alta rápida de tareas/alarmas (hora `15:30`, `3pm` o vacía = todo el día) y los próximos feriados.
+
+- Feriados nacionales del Perú calculados para cualquier año (Semana Santa incluida).
+- Días no laborables que decrete el gobierno: `~/.config/zen-calendar/feriados.json`
+  `[{"date": "2026-12-24", "name": "Día no laborable"}]`
+- Tareas en `~/.local/share/tasks/tasks.json` (mismo formato que el script `Tasks` de bspwm).
+- Avisos 30 y 5 min antes; a la hora suena y se repite cada 5 min hasta marcarla. Clic en el aviso:
+  abre el día · clic central: marcar hecha / posponer 15 min.
+
+## Terminal
+- Al abrir alacritty sale un banner pixel-art al azar (`zen-banner`; `zen-banner --list` los lista; se agregan en `~/.local/share/zen-banners`).
+- **Recuerda** todo lo que escribes (`~/.config/zsh/zhistory`, compartido entre terminales).
+  Mientras escribes sugiere en gris lo que ya usaste o lo que existe (`→` acepta);
+  `↑`/`↓` buscan en el historial lo ya escrito; `Ctrl+R` búsqueda difusa con fzf.
+- `Tab` completa comandos, opciones y argumentos de todo lo instalado (zsh-completions);
+  un comando que no existe dice qué paquete lo trae (pkgfile).
+- `z <fragmento>` salta a carpetas visitadas · `neofetch` = fastfetch con el diseño TokyoNight.
 
 **bspwm vs niri:** niri no divide en árbol BSP; cada escritorio es una tira horizontal de columnas
 que se desplaza. `Super+R` y `Super+,` dan el equivalente práctico a las divisiones de bspwm.
@@ -91,10 +149,10 @@ Antes de actualizar, `news` muestra las noticias de archlinux.org (también apar
 ## Estructura
 ```
 build.sh                  construye la ISO (releng oficial + overlay)
-aur/build-local-repo.sh   compila brave-bin, yay-bin → repo [custom]
-packages/                 desktop.txt (común) · install-base.txt · custom.txt (AUR, ISO+sistema) · custom-install.txt (AUR, solo sistema)
+aur/build-local-repo.sh   repo [custom]: AUR (brave-bin, yay-bin…), aur/local/ (temas TokyoNight, Nordzy-dark, Qogir)
+packages/                 desktop.txt (común) · install-base.txt · custom.txt (repo local: yay, tema, zen-calendar)
 profile/pacman.conf.in    pacman.conf de build
-system/                   greetd, mirrors, hooks, reflector, scripts (zen-install…), wallpaper
+system/                   sddm (tema Dark Pirate), wallpaper.svg → wallpaper.jpg, mirrors, hooks, reflector, scripts (zen-install…), wallpaper
 dotfiles/                 /etc/skel: niri, waybar, rofi, mako, alacritty, swaylock, gtk, zsh
 ```
 

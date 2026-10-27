@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# ghost — proceso fantasma pixel-art (4 líneas + texto)
+map=(
+"..111111.."
+".11111111."
+"11..11..11"
+"1111111111"
+"1111111111"
+"1111111111"
+"1.11.11.11"
+".........."
+)
+info=(
+""
+$'  \e[1;35m❯ proceso fantasma\e[0m'
+$'  \e[2;37mPID 666 · oculto\e[0m'
+""
+)
+
+lila() { printf '%d;%d;%d' $(( 197 - $1 * 8 )) $(( 164 - $1 * 7 )) 247; }
+
+out=""
+for (( y=0; y<${#map[@]}; y+=2 )); do
+  top=${map[y]}; bot=${map[y+1]}
+  line="   "
+  for (( i=0; i<${#top}; i++ )); do
+    t=${top:i:1}; b=${bot:i:1}
+    if [[ $t == 1 && $b == 1 ]]; then
+      line+=$'\e[38;2;'"$(lila $y)"$';48;2;'"$(lila $((y+1)))"$'m▀\e[0m'
+    elif [[ $t == 1 ]]; then
+      line+=$'\e[38;2;'"$(lila $y)"$'m▀\e[0m'
+    elif [[ $b == 1 ]]; then
+      line+=$'\e[38;2;'"$(lila $((y+1)))"$'m▄\e[0m'
+    else
+      line+=" "
+    fi
+  done
+  out+="$line ${info[y/2]}"$'\n'
+done
+printf '\n%s\n' "$out"

@@ -1,46 +1,37 @@
 #!/usr/bin/env bash
-# Primer inicio de sesión: instala Claude Code y herdr con sus instaladores oficiales
-# en ~/.local/bin (por usuario, se auto-actualizan). Se ejecuta una sola vez.
+# Primer inicio de sesión: bienvenida. El sistema trae solo lo mínimo; aquí se sugiere qué instalar
+# con zen-apps y no se instala nada sin que el usuario lo pida. Se ejecuta una sola vez.
 
 MARK="$HOME/.config/zen-niri-first-login.done"
 [[ -e $MARK ]] && exit 0
 
 if [[ "${1:-}" != --run ]]; then
-    exec alacritty --title "Configuración inicial" -e "$0" --run
+    exec alacritty --title "Bienvenida" -e "$0" --run
 fi
 
 set -u
-echo "== Configuración inicial de arch-zen-niri =="
-echo
+mkdir -p "$(dirname "$MARK")" && touch "$MARK"
 
-# la portada de claude.ai puede responder 403 (filtro anti-bots) aunque haya internet
-until curl -fsS --max-time 5 -o /dev/null https://archlinux.org; do
-    echo "Sin conexión a internet. Conéctate (icono de red en la barra) y pulsa Enter..."
-    read -r
-done
+cat <<'EOF'
 
-ok=1
-echo "--> Claude Code (instalador nativo oficial de Anthropic)"
-if command -v claude >/dev/null || [[ -x $HOME/.local/bin/claude ]]; then
-    echo "    ya instalado"
-else
-    curl -fsSL https://claude.ai/install.sh | bash || ok=0
+  Bienvenido a arch-zen-niri
+
+  El sistema viene con lo mínimo para ir rápido y gastar pocos recursos:
+  escritorio, terminal, red, audio, Bluetooth y seguridad. Lo demás lo eliges tú.
+
+  Instalar aplicaciones (navegador, oficina, bases de datos, lenguajes…):
+
+      zen-apps                 menú: Tab marca varias, Enter instala
+      zen-apps brave wps       directo por nombre
+      zen-apps --list          ver todo lo disponible
+
+  Sugeridas:  brave · wps · claude · herdr · php · mariadb · postgresql · podman · node
+
+  Atajos: Super+Enter terminal · Super+Space lanzador · Super+A calendario · Super+Shift+/ todos
+
+EOF
+read -rp "  ¿Abrir el menú de zen-apps ahora? [s/N] " ans
+if [[ $ans == [sSyY]* ]]; then
+    zen-apps
+    read -rp "  Enter para cerrar " _
 fi
-
-echo
-echo "--> herdr (instalador oficial de herdr.dev)"
-if [[ -x $HOME/.local/bin/herdr ]]; then
-    echo "    ya instalado"
-else
-    curl -fsSL https://herdr.dev/install.sh | sh || ok=0
-fi
-
-echo
-if (( ok )); then
-    mkdir -p "$(dirname "$MARK")" && touch "$MARK"
-    echo "Listo. Abre una terminal (Super+Enter) y ejecuta: claude  /  herdr"
-else
-    echo "Hubo errores; se volverá a intentar en el próximo inicio de sesión."
-fi
-echo "Pulsa Enter para cerrar."
-read -r

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# skull — calavera pixel-art con gradiente verde (5 líneas)
+map=(
+"..111111.."
+".11111111."
+"1111111111"
+"11..11..11"
+"11..11..11"
+"1111..1111"
+".11111111."
+"..111111.."
+"..1.11.1.."
+".........."
+)
+info=(
+""
+$' \e[1;32mroot@arch\e[2;37m:~#\e[0m \e[0;32mwhoami\e[0m'
+$' \e[2;32m└─\e[0m \e[1;32methical_hacker\e[0m'
+$' \e[2;37m[sudo] acceso concedido\e[0m'
+""
+)
+
+bone() { printf '%d;%d;%d' $(( 200 - $1 * 9 )) $(( 235 - $1 * 8 )) $(( 150 - $1 * 6 )); }
+
+out=""
+for (( y=0; y<${#map[@]}; y+=2 )); do
+  top=${map[y]}; bot=${map[y+1]}
+  line="   "
+  for (( i=0; i<${#top}; i++ )); do
+    t=${top:i:1}; b=${bot:i:1}
+    if [[ $t == 1 && $b == 1 ]]; then
+      line+=$'\e[38;2;'"$(bone $y)"$';48;2;'"$(bone $((y+1)))"$'m▀\e[0m'
+    elif [[ $t == 1 ]]; then
+      line+=$'\e[38;2;'"$(bone $y)"$'m▀\e[0m'
+    elif [[ $b == 1 ]]; then
+      line+=$'\e[38;2;'"$(bone $((y+1)))"$'m▄\e[0m'
+    else
+      line+=" "
+    fi
+  done
+  out+="$line ${info[y/2]}"$'\n'
+done
+printf '\n%s\n' "$out"

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# terminal — mini terminal que escribe sola (~1s), termina sola
+c=$'\e[0;36m'; d=$'\e[2;37m'; g=$'\e[1;32m'; w=$'\e[1;97m'; x=$'\e[0m'
+inner=16
+cmd='nmap target'
+
+frame() { # frame <texto_linea2> <texto_linea3>
+  local l2="$1" l3="$2" p2 p3 sp='                    '
+  p2=$(( inner - 4 - ${#l2} )); p3=$(( inner - 2 - ${#l3} ))
+  (( p2 < 0 )) && p2=0; (( p3 < 0 )) && p3=0
+  printf '  %s╭────────────────╮%s\n' "$c" "$x"
+  printf '  %s│%s %s$ %s%s%s %s│%s\n' "$c" "$x" "$d" "$w" "$l2$x" "${sp:0:p2}" "$c" "$x"
+  printf '  %s│%s %s%s%s %s│%s\n' "$c" "$x" "$g" "$l3$x" "${sp:0:p3}" "$c" "$x"
+  printf '  %s╰────────────────╯%s\n' "$c" "$x"
+  printf '        %s──┴──%s\n' "$d" "$x"
+}
+
+tput civis 2>/dev/null
+trap 'printf "\e[?25h"' EXIT
+trap 'printf "\e[?25h"; exit 130' INT TERM HUP
+echo
+
+# tipeo del comando
+for (( k=0; k<=${#cmd}; k++ )); do
+  frame "${cmd:0:k}▊" ""
+  sleep 0.02
+  printf '\e[5A'
+done
+# resultado + parpadeo del cursor
+frame "$cmd" "✔ 3 hosts up"
+for b in 1 2; do
+  sleep 0.09; printf '\e[5A'
+  frame "$cmd ▊" "✔ 3 hosts up"
+  sleep 0.09; printf '\e[5A'
+  frame "$cmd" "✔ 3 hosts up"
+done
+echo

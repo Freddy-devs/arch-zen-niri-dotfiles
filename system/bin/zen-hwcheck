@@ -82,7 +82,7 @@ if lspci -nn 2>/dev/null | grep -qiE 'Network controller|Wireless'; then
             n=$(nmcli -t -f SSID dev wifi list --rescan yes 2>/dev/null | grep -c .)
             ((n > 0)) && ok "Escaneo: $n redes visibles" || warn "El escaneo no encontró redes"
             st=$(nmcli -t -f DEVICE,STATE dev 2>/dev/null | awk -F: -v i="$IFACE" '$1==i{print $2}')
-            [[ $st == connected ]] && ok "Conectado: $(nmcli -t -f GENERAL.CONNECTION dev show "$IFACE" | cut -d: -f2)" || info "Wi-Fi sin conectar (conéctate con 'nmtui' o el icono de red)"
+            [[ $st == connected ]] && ok "Conectado: $(nmcli -t -f GENERAL.CONNECTION dev show "$IFACE" | cut -d: -f2)" || info "Wi-Fi sin conectar (conéctate con 'nmtui' o clic en la red de la barra)"
         fi
     else
         fail "No hay interfaz inalámbrica"
@@ -166,7 +166,7 @@ if [[ -n $FP ]]; then
             info "Registra tu huella con: zen-hwsetup  (opción huella)"
         fi
     else
-        info "fprintd no instalado"
+        info "fprintd no instalado (si quieres huella: zen-apps huella)"
     fi
 else
     info "No se detectó el sensor de huella ELAN7001"
@@ -266,6 +266,22 @@ if systemctl is-active -q systemd-resolved; then
 fi
 [[ $(sysctl -n kernel.kptr_restrict 2>/dev/null) == 2 && $(sysctl -n kernel.dmesg_restrict 2>/dev/null) == 1 ]] \
     && ok "Kernel endurecido (sysctl zen-hardening)" || warn "sysctl de endurecimiento no aplicado"
+if [[ ! -d /run/archiso ]]; then
+    aa=$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)
+    [[ $aa == Y ]] && ok "AppArmor activo ($(aa-enabled >/dev/null 2>&1 && aa-status --profiled 2>/dev/null || echo '?') perfiles)" \
+        || warn "AppArmor no activo (revisa lsm= en la línea del kernel)"
+    lk=$(grep -o '\[[a-z]*\]' /sys/kernel/security/lockdown 2>/dev/null)
+    [[ $lk == "[integrity]" || $lk == "[confidentiality]" ]] && ok "Kernel lockdown: ${lk//[\[\]]/}" \
+        || info "Kernel lockdown desactivado (normal si instalaste el driver NVIDIA propietario)"
+    [[ $(cat /proc/sys/kernel/core_pattern) == *systemd-coredump* ]] && grep -qs 'Storage=none' /etc/systemd/coredump.conf.d/*.conf \
+        && ok "Volcados de memoria desactivados"
+fi
+section "Rendimiento"
+zr=$(swapon --show=NAME,SIZE --noheadings 2>/dev/null | awk '/zram/{print $2}')
+[[ -n $zr ]] && ok "zram activo ($zr comprimido con zstd)" || warn "zram no activo"
+[[ $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) == bbr ]] && ok "Red: TCP BBR + fq" || info "TCP sin BBR"
+systemctl is-active -q systemd-oomd && ok "systemd-oomd activo (evita que el equipo se congele sin RAM)" || info "systemd-oomd inactivo"
+[[ $(ulimit -Hn) -ge 524288 ]] && ok "Límite de archivos abiertos: $(ulimit -Sn) / $(ulimit -Hn)"
 
 # ---------------------------------------------------------------- resumen
 out ""

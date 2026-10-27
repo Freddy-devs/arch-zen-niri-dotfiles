@@ -33,7 +33,8 @@ gestures {
 }
 
 layout {
-    gaps 10
+    // espacios mínimos: máximo espacio para las ventanas
+    gaps 4
     center-focused-column "never"
     always-center-single-column
 
@@ -51,22 +52,22 @@ layout {
         proportion 0.66667
     }
 
-    // bordes sólidos tipo bspwm (normal_border_color / focused_border_color)
+    // bordes finos y suaves (paleta de la barra)
     focus-ring {
         off
     }
     border {
-        width 2
-        active-color "#89b4fa"
-        inactive-color "#313244"
-        urgent-color "#f38ba8"
+        width 1
+        active-color "#7aa2f7"
+        inactive-color "#292e42"
+        urgent-color "#f7768e"
     }
     shadow {
         off
     }
     tab-indicator {
-        active-color "#89b4fa"
-        inactive-color "#45475a"
+        active-color "#7aa2f7"
+        inactive-color "#292e42"
     }
     struts {
         left 0
@@ -77,7 +78,7 @@ layout {
 }
 
 cursor {
-    xcursor-theme "Adwaita"
+    xcursor-theme "Qogir-white-cursors"
     xcursor-size 24
     hide-when-typing
 }
@@ -102,18 +103,19 @@ animations {
 
 // ---------- autostart ----------
 spawn-at-startup "waybar"
-spawn-at-startup "mako"
-spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.png"
+// mako no se lanza: D-Bus lo arranca solo con la primera notificación
+// calendario: solo queda en memoria si hay tareas pendientes (clic en el reloj o Super+A)
+spawn-at-startup "zen-calendar" "--daemon"
+spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
-spawn-at-startup "nm-applet" "--indicator"
 spawn-at-startup "wl-paste" "--watch" "cliphist" "store"
 spawn-at-startup "swayidle" "-w" "timeout" "600" "swaylock -f" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "swaylock -f"
-spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme adw-gtk3-dark; gsettings set org.gnome.desktop.interface icon-theme Papirus-Dark"
+spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme TokyoNight-Dark; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
 spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------
 window-rule {
-    geometry-corner-radius 6
+    geometry-corner-radius 10
     clip-to-geometry true
 }
 
@@ -133,6 +135,14 @@ window-rule {
     open-floating true
 }
 
+// paneles en terminal (Bluetooth, audio, red, zen-apps): flotantes y centrados
+window-rule {
+    match app-id=r#"^zen-tui$"#
+    open-floating true
+    default-column-width { fixed 900; }
+    default-window-height { fixed 560; }
+}
+
 window-rule {
     match app-id=r#"^brave-browser$"#
     default-column-width { proportion 0.66667; }
@@ -149,6 +159,18 @@ layer-rule {
     block-out-from "screencast"
 }
 
+layer-rule {
+    match namespace="^zen-calendar$"
+    geometry-corner-radius 14
+    shadow {
+        on
+        softness 24
+        spread 2
+        offset x=0 y=6
+        color "#0008"
+    }
+}
+
 // ---------- atajos (estilo sxhkd) ----------
 binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
@@ -157,7 +179,9 @@ binds {
     Mod+Return hotkey-overlay-title="Terminal" { spawn "alacritty"; }
     Mod+Space hotkey-overlay-title="Lanzador" { spawn "rofi" "-show" "drun"; }
     Mod+D { spawn "rofi" "-show" "drun"; }
-    Mod+B hotkey-overlay-title="Brave" { spawn "brave"; }
+    // Brave es opcional: si no está instalado, ofrece instalarlo
+    Mod+B hotkey-overlay-title="Navegador (Brave)" { spawn "sh" "-c" "command -v brave >/dev/null && exec brave || exec alacritty --class zen-tui -e zen-apps brave"; }
+    Mod+A hotkey-overlay-title="Calendario y tareas" { spawn "zen-calendar"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles" { spawn "sh" "-c" "cliphist list | rofi -dmenu -display-columns 2 -theme ~/.config/rofi/clipboard.rasi | cliphist decode | wl-copy"; }
     Mod+Alt+L hotkey-overlay-title="Bloquear" { spawn "swaylock" "-f"; }

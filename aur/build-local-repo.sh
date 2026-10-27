@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Compila paquetes del AUR (binarios oficiales reempaquetados) y crea el repo local [custom].
+# Compila los paquetes de packages/custom.txt y crea el repo local [custom].
+# Origen de cada paquete: aur/local/<pkg>/PKGBUILD propio (temas desde sus autores originales) o el AUR.
 # Uso: build-local-repo.sh <directorio-repo>
 set -euo pipefail
 
 REPO="${1:?falta directorio del repo}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-mapfile -t PKGS < <(cat "$HERE/../packages/custom.txt" "$HERE/../packages/custom-install.txt" | grep -vE '^\s*(#|$)')
+mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$HERE/../packages/custom.txt")
 
 # makepkg no corre como root: usar el usuario que llamó a sudo o uno temporal
 BUILDER="${SUDO_USER:-}"
@@ -28,8 +29,15 @@ chmod 644 "$CONF"
 
 for pkg in "${PKGS[@]}"; do
     echo "--> $pkg"
-    runuser -u "$BUILDER" -- git clone --depth 1 "https://aur.archlinux.org/$pkg.git" "$SRC/$pkg"
-    # Son paquetes -bin: no necesitan dependencias instaladas para empaquetar
+    if [[ -f "$HERE/local/$pkg/PKGBUILD" ]]; then
+        cp -r "$HERE/local/$pkg" "$SRC/$pkg"
+        # apps propias (Rust): el código va junto al PKGBUILD
+        [[ -d "$HERE/../apps/$pkg" ]] && cp -r "$HERE/../apps/$pkg" "$SRC/$pkg/src-app"
+        chown -R "$BUILDER:" "$SRC/$pkg"
+    else
+        runuser -u "$BUILDER" -- git clone --depth 1 "https://aur.archlinux.org/$pkg.git" "$SRC/$pkg"
+    fi
+    # -bin, temas y apps propias: sin dependencias instaladas (sassc y cargo los instala build.sh)
     (cd "$SRC/$pkg" && runuser -u "$BUILDER" -- makepkg --config "$CONF" --nodeps --noconfirm --cleanbuild)
     find "$SRC/$pkg" -maxdepth 1 -name '*.pkg.tar.zst' ! -name '*-debug-*' -exec cp {} "$REPO/" \;
 done

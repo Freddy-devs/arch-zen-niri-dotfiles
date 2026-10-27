@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# access — terminal de pentest con efecto de tipeo (~1s) y termina solo
+g=$'\e[1;32m'; G=$'\e[0;32m'; d=$'\e[2;37m'; c=$'\e[0;36m'; x=$'\e[0m'
+
+type_line() {
+  local s="$1"
+  for ((i=0; i<${#s}; i++)); do
+    printf '%s' "${s:i:1}"
+    sleep 0.0015
+  done
+  printf '\n'
+}
+
+echo
+printf '%s' "$c"
+type_line " ❯ escaneando objetivo"
+printf '%s' "$d"
+type_line "   └ 3 puertos abiertos · 0 vulnerables"
+printf '%s' "$c"
+type_line " ❯ auditando servicios"
+printf '%s' "$d"
+type_line "   └ ssh · https · dns"
+printf '%s' "$x"
+sleep 0.08
+printf " ${g}╭──────────────────────╮${x}\n"
+printf " ${g}│${x}    ${g}✔ ACCESS GRANTED${x}   ${g}│${x}\n"
+printf " ${g}╰──────────────────────╯${x}\n"
+echo

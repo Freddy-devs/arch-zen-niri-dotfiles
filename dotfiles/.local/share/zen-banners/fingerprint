@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# fingerprint — huella digital que se escanea (~1.2s), termina sola
+lines=(
+"  ╭───────────╮  "
+" ╭╯╭───────╮ ╰╮ "
+"╭╯╭╯╭─────╮╰╮╰╮"
+"│╭╯╭╯╭───╮╰╮╰╮│"
+"││╭╯│╭─╮ ╰╮│ ││"
+"│││ ││ ╰─╮│╰╮││"
+"││╰╮╰╯╭─╯│╭╯╭╯│"
+"╰╮╰╮╰─╯╭─╯╭╯╭╯"
+" ╰╮╰───╯╭─╯╭╯ "
+"  ╰─────┴──╯  "
+)
+n=${#lines[@]}
+
+tput civis 2>/dev/null
+trap 'printf "\e[?25h"' EXIT
+trap 'printf "\e[?25h"; exit 130' INT TERM HUP
+echo
+
+# 1) dibuja la huella tenue
+for l in "${lines[@]}"; do
+  printf '   \e[38;2;60;70;100m%s\e[0m\n' "$l"
+done
+
+# 2) barra de escaneo que baja iluminando cada fila en cyan brillante
+for pass in 0 1; do
+  for (( scan=0; scan<n; scan++ )); do
+    printf '\e[%dA' "$n"
+    for (( y=0; y<n; y++ )); do
+      if (( y == scan )); then
+        printf '   \e[1;97m%s\e[0m\n' "${lines[y]}"          # línea de barrido
+      elif (( y < scan )); then
+        printf '   \e[38;2;80;220;255m%s\e[0m\n' "${lines[y]}"  # ya escaneado, neón
+      else
+        printf '   \e[38;2;60;70;100m%s\e[0m\n' "${lines[y]}"   # pendiente, tenue
+      fi
+    done
+    sleep 0.02
+  done
+done
+
+# 3) estado final
+printf '\e[%dA' "$n"
+for l in "${lines[@]}"; do
+  printf '   \e[38;2;80;220;255m%s\e[0m\n' "$l"
+done
+printf '   \e[1;32m✔ identidad verificada\e[0m\n\n'

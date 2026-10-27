@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # zen-install — instala arch-zen-niri en disco desde la ISO live.
 #   btrfs (@ @home @log @pkg @snapshots) + snapper + grub-btrfs
-#   linux-zen (+ linux-lts de respaldo), niri, greetd/ReGreet, entorno de desarrollo.
+#   linux-zen (+ linux-lts de respaldo), niri, SDDM (tema Dark Pirate), entorno de desarrollo.
 # Requiere internet (los paquetes se descargan de los mirrors oficiales).
 set -euo pipefail
 
@@ -33,7 +33,7 @@ clear 2>/dev/null || true
 cat <<'EOF'
   ┌──────────────────────────────────────────────┐
   │   arch-zen-niri · instalador                 │
-  │   linux-zen · niri · greetd/ReGreet · btrfs  │
+  │   linux-zen · niri · SDDM · btrfs            │
   └──────────────────────────────────────────────┘
 EOF
 
@@ -116,7 +116,7 @@ cp /usr/share/zen-niri/system/pacman.d/mirrorlist /etc/pacman.d/mirrorlist
 mapfile -t PKGS < <(cat "$SHARE/install-base.txt" "$SHARE/desktop.txt" | grep -vE '^\s*(#|$)')
 pacstrap -K "$MNT" "${PKGS[@]}"
 
-log "Paquetes AUR precompilados (brave-bin, yay-bin, wps-office)"
+log "Paquetes del repo local (yay, tema, zen-calendar)"
 mkdir -p "$MNT/var/tmp/zen-pkgs"
 cp "$LOCAL_REPO"/*.pkg.tar.zst "$MNT/var/tmp/zen-pkgs/"
 arch-chroot "$MNT" sh -c 'pacman -U --noconfirm /var/tmp/zen-pkgs/*.pkg.tar.zst && rm -rf /var/tmp/zen-pkgs'
@@ -128,26 +128,37 @@ sed -i 's/subvolid=[0-9]*,//g' "$MNT/etc/fstab"
 # ---------- archivos del sistema ----------
 log "Copiando configuración"
 S="$SHARE/system"
-install -d "$MNT/etc/greetd" "$MNT/etc/pacman.d/hooks" "$MNT/etc/xdg/reflector" \
+install -d "$MNT/etc/sddm.conf.d" "$MNT/usr/share/sddm/themes" "$MNT/etc/pacman.d/hooks" "$MNT/etc/xdg/reflector" \
            "$MNT/usr/share/backgrounds/zen-niri" "$MNT/usr/local/bin" "$MNT/etc/skel"
-install -m644 "$S"/greetd/* "$MNT/etc/greetd/"
+install -m644 "$S/sddm/10-zen.conf" "$MNT/etc/sddm.conf.d/"
+cp -r "$S"/sddm/themes/* "$MNT/usr/share/sddm/themes/"
+install -Dm644 "$S/sddm/default.face" "$MNT/var/lib/AccountsService/icons/default.face"
 install -m644 "$S/pacman.d/mirrorlist" "$MNT/etc/pacman.d/mirrorlist"
 install -m644 "$S"/pacman.d/hooks/*.hook "$MNT/etc/pacman.d/hooks/"
 install -m644 "$S/reflector.conf" "$MNT/etc/xdg/reflector/reflector.conf"
-install -m644 "$S"/tmpfiles.d/*.conf "$MNT/etc/tmpfiles.d/"
-install -m755 "$S"/bin/arch-news "$S"/bin/zen-first-login "$S"/bin/zen-power \
+install -m755 "$S"/bin/arch-news "$S"/bin/zen-first-login "$S"/bin/zen-power "$S"/bin/zen-apps \
                "$S"/bin/zen-hwcheck "$S"/bin/zen-hwsetup "$MNT/usr/local/bin/"
-install -m644 /usr/share/backgrounds/zen-niri/wallpaper.png "$MNT/usr/share/backgrounds/zen-niri/"
+install -m644 /usr/share/backgrounds/zen-niri/wallpaper.jpg "$MNT/usr/share/backgrounds/zen-niri/"
 install -Dm755 "$S/environment/90-zen-vm-render" "$MNT/usr/lib/systemd/user-environment-generators/90-zen-vm-render"
 # seguridad: cortafuegos, sysctl, privacidad de red, DNS cifrado, MariaDB solo local
 install -Dm644 "$S/security/nftables.conf"          "$MNT/etc/nftables.conf"
 install -Dm644 "$S/security/90-zen-hardening.conf"  "$MNT/etc/sysctl.d/90-zen-hardening.conf"
 install -Dm644 "$S/security/20-zen-privacy.conf"    "$MNT/etc/NetworkManager/conf.d/20-zen-privacy.conf"
 install -Dm644 "$S/security/zen-dns.conf"           "$MNT/etc/systemd/resolved.conf.d/zen-dns.conf"
-install -Dm644 "$S/security/zen-mariadb.cnf"        "$MNT/etc/my.cnf.d/zen-mariadb.cnf"
+install -Dm644 "$S/systemd/zen-grub-snapshots.path"    "$MNT/etc/systemd/system/zen-grub-snapshots.path"
+install -Dm644 "$S/systemd/zen-grub-snapshots.service" "$MNT/etc/systemd/system/zen-grub-snapshots.service"
+install -Dm644 "$S/security/zen-coredump.conf"      "$MNT/etc/systemd/coredump.conf.d/zen-coredump.conf"
+install -Dm644 "$S/security/zen-blacklist.conf"     "$MNT/etc/modprobe.d/zen-blacklist.conf"
+# rendimiento: zram, sysctl de memoria/red, límites de archivos, journal acotado
+install -Dm644 "$S/perf/zram-generator.conf"        "$MNT/etc/systemd/zram-generator.conf"
+install -Dm644 "$S/perf/80-zen-performance.conf"    "$MNT/etc/sysctl.d/80-zen-performance.conf"
+install -Dm644 "$S/perf/zen-limits.conf"            "$MNT/etc/systemd/system.conf.d/zen-limits.conf"
+install -Dm644 "$S/perf/zen-limits.conf"            "$MNT/etc/systemd/user.conf.d/zen-limits.conf"
+install -Dm644 "$S/perf/zen-journald.conf"          "$MNT/etc/systemd/journald.conf.d/zen-journald.conf"
+echo tcp_bbr | install -Dm644 /dev/stdin "$MNT/etc/modules-load.d/zen-bbr.conf"
 cp -rT /etc/skel "$MNT/etc/skel"
 rm -f "$MNT/etc/skel/.config/zen-niri-first-login.done"
-sed -i "s/layout \"latam\"/layout \"$XKB\"/" "$MNT/etc/skel/.config/niri/config.kdl" "$MNT/etc/greetd/niri-greeter.kdl"
+sed -i "s/layout \"latam\"/layout \"$XKB\"/" "$MNT/etc/skel/.config/niri/config.kdl"
 
 # ---------- configuración dentro del sistema ----------
 log "Configurando el sistema (chroot)"
@@ -209,7 +220,11 @@ mkinitcpio -P
 sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=3/' /etc/default/grub
 sed -i 's|^#\?GRUB_TOP_LEVEL=.*||' /etc/default/grub
 echo 'GRUB_TOP_LEVEL="/boot/vmlinuz-linux-zen"' >> /etc/default/grub
-sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet"/' /etc/default/grub
+# kernel: AppArmor + lockdown=integrity (sin módulos sin firmar ni acceso a /dev/mem), endurecimiento
+# de memoria sin costo perceptible, sin watchdog y sin zswap (se usa zram)
+KCMD="loglevel=3 quiet nowatchdog zswap.enabled=0 lsm=landlock,lockdown,yama,integrity,apparmor,bpf"
+KCMD+=" lockdown=integrity slab_nomerge page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none debugfs=off"
+sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"$KCMD\"/" /etc/default/grub
 sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$CRYPT_CMDLINE\"|" /etc/default/grub
 if [[ $BOOTMODE == uefi ]]; then
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=ZenNiri
@@ -239,26 +254,15 @@ fi
 chmod 750 /.snapshots
 chown :wheel /.snapshots
 
-# Bases de datos: inicializadas pero NO arrancan solas (systemctl start mariadb / postgresql)
-chattr +C /var/lib/mysql /var/lib/postgres 2>/dev/null || true
-mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql >/dev/null
-install -d -o postgres -g postgres /var/lib/postgres/data
-runuser -u postgres -- initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data >/dev/null
-
-# PHP: extensiones para MariaDB/PostgreSQL y frameworks comunes
-for ext in mysqli pdo_mysql pgsql pdo_pgsql gd intl sqlite3 pdo_sqlite iconv bcmath zip sodium; do
-    sed -i "s/^;extension=$ext$/extension=$ext/" /etc/php/php.ini
-done
-sed -i "s|^;date.timezone =.*|date.timezone = $TIMEZONE|" /etc/php/php.ini
-
-# Podman: imágenes cortas resuelven a Docker Hub
-mkdir -p /etc/containers/registries.conf.d
-echo 'unqualified-search-registries = ["docker.io"]' > /etc/containers/registries.conf.d/10-docker-hub.conf
+# Navegador, oficina, bases de datos, lenguajes, Podman…: no vienen instalados. El usuario los
+# elige después con "zen-apps" (ver README).
 
 # Servicios
-systemctl enable greetd NetworkManager bluetooth systemd-timesyncd fstrim.timer \
-    reflector.timer paccache.timer snapper-timeline.timer snapper-cleanup.timer grub-btrfsd
-systemctl --global enable podman.socket
+systemctl enable sddm NetworkManager bluetooth systemd-timesyncd fstrim.timer pkgfile-update.timer \
+    systemd-oomd apparmor \
+    reflector.timer paccache.timer snapper-timeline.timer snapper-cleanup.timer zen-grub-snapshots.path
+# base de datos de pkgfile: la terminal dice qué paquete trae un comando que no existe
+pkgfile -u >/dev/null 2>&1 || true
 
 # Hardware: thermald, perfiles de energía, ahorro de Wi-Fi y GPU NVIDIA en reposo
 /usr/local/bin/zen-hwsetup --auto

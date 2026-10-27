@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# boot — barra de carga con gradiente y spinner (~1s), termina solo
+width=26
+spin=( ⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷ )
+
+bar() { # bar <porcentaje>
+  local p=$1 filled i r g b out=""
+  filled=$(( p * width / 100 ))
+  for (( i=0; i<width; i++ )); do
+    if (( i < filled )); then
+      r=$(( 187 - i * 62 / width ))
+      g=$(( 154 + i * 53 / width ))
+      b=$(( 247 + i * 8 / width ))
+      out+=$'\e[38;2;'"$r;$g;$b"$'m█'
+    else
+      out+=$'\e[38;2;55;58;80m░'
+    fi
+  done
+  printf '%s\e[0m' "$out"
+}
+
+status() {
+  local p=$1
+  if   (( p < 30 )); then printf 'compilando módulos'
+  elif (( p < 60 )); then printf 'cargando framework '
+  elif (( p < 90 )); then printf 'cifrando el túnel  '
+  else                    printf 'finalizando        '
+  fi
+}
+
+tput civis 2>/dev/null
+trap 'printf "\e[?25h"' EXIT
+trap 'printf "\e[?25h"; exit 130' INT TERM HUP
+echo
+
+f=0
+for p in 0 4 8 12 16 20 25 30 35 40 46 52 58 64 70 76 82 88 92 96 100; do
+  printf '  \e[1;36m%s\e[0m \e[2;37m%s\e[0m\n' "${spin[f % 8]}" "$(status $p)"
+  printf '  %s \e[1;97m%3d%%\e[0m\n' "$(bar $p)" "$p"
+  if (( p < 100 )); then
+    sleep 0.02
+    printf '\e[2A'
+  fi
+  (( f++ ))
+done
+printf '\e[2A'
+printf '  \e[1;32m✔ SYSTEM ONLINE\e[0m \e[2;37m· todos los módulos ok\e[0m\n'
+printf '  %s \e[1;32m100%%\e[0m\n\n' "$(bar 100)"

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# zen-banner — muestra un banner pixel-art de ~/.local/share/zen-banners al abrir la terminal.
+#   zen-banner            uno al azar (sin repetir el anterior)
+#   zen-banner <nombre>   ese banner
+#   zen-banner --list     los disponibles
+dir="${XDG_DATA_HOME:-$HOME/.local/share}/zen-banners"
+mapfile -t all < <(find "$dir" -maxdepth 1 -type f -executable -printf '%f\n' 2>/dev/null | sort)
+(( ${#all[@]} )) || exit 0
+
+case "${1:-}" in
+    --list|-l) printf '%s\n' "${all[@]}"; exit 0 ;;
+    "") ;;
+    *) [[ -x $dir/$1 ]] && exec "$dir/$1"; echo "No existe el banner «$1» (zen-banner --list)" >&2; exit 1 ;;
+esac
+
+last_file="${XDG_CACHE_HOME:-$HOME/.cache}/zen-banner-last"
+last=$(cat "$last_file" 2>/dev/null)
+pick=${all[RANDOM % ${#all[@]}]}
+(( ${#all[@]} > 1 )) && while [[ $pick == "$last" ]]; do pick=${all[RANDOM % ${#all[@]}]}; done
+mkdir -p "${last_file%/*}" && printf '%s\n' "$pick" > "$last_file"
+exec "$dir/$pick"

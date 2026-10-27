@@ -20,16 +20,18 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 [[ -f /etc/arch-release ]] || die "se necesita Arch Linux (o WSL2 con Arch)"
 
 log "Dependencias de build"
-pacman -Sy --needed --noconfirm archiso base-devel git librsvg openssl rsync
+pacman -Sy --needed --noconfirm archiso base-devel git openssl rsync sassc gtk4 gtk4-layer-shell
+# cargo para las apps propias en Rust (rustup también sirve si ya está instalado)
+command -v cargo >/dev/null || pacman -S --needed --noconfirm rust
 
 # Los archivos pudieron editarse en Windows: quitar CRLF de todo lo de texto.
-find "$ROOT/profile" "$ROOT/dotfiles" "$ROOT/system" "$ROOT/packages" "$ROOT/aur" \
-    -type f ! -name '*.png' -exec sed -i 's/\r$//' {} +
+find "$ROOT/profile" "$ROOT/dotfiles" "$ROOT/system" "$ROOT/packages" "$ROOT/aur" "$ROOT/apps" \
+    -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.face' -exec sed -i 's/\r$//' {} +
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD" "$OUT"
 
-log "Paquetes AUR (brave-bin, yay-bin, wps-office) -> repo local [custom]"
+log "Repo local [custom]: yay, tema TokyoNight, Nordzy, Qogir, zen-calendar"
 bash "$ROOT/aur/build-local-repo.sh" "$REPO"
 
 log "Copiando perfil releng oficial"
@@ -99,26 +101,27 @@ file_permissions+=(
   ["/usr/local/bin/zen-power"]="0:0:755"
   ["/usr/local/bin/zen-hwcheck"]="0:0:755"
   ["/usr/local/bin/zen-hwsetup"]="0:0:755"
+  ["/usr/local/bin/zen-apps"]="0:0:755"
   ["/usr/lib/systemd/user-environment-generators/90-zen-vm-render"]="0:0:755"
 )
 EOF
 
-log "Configuración del sistema (greetd, pacman hooks, reflector, mirrors)"
-mkdir -p "$A/etc/greetd" "$A/etc/pacman.d/hooks" "$A/etc/xdg/reflector" \
+log "Configuración del sistema (SDDM, pacman hooks, reflector, mirrors)"
+mkdir -p "$A/etc/sddm.conf.d" "$A/usr/share/sddm/themes" "$A/etc/pacman.d/hooks" "$A/etc/xdg/reflector" \
          "$A/usr/share/zen-niri" "$A/usr/local/bin" "$A/opt/zen-niri/repo"
-cp "$ROOT"/system/greetd/* "$A/etc/greetd/"
-cat >> "$A/etc/greetd/config.toml" <<EOF
-
+cp "$ROOT/system/sddm/10-zen.conf" "$A/etc/sddm.conf.d/"
+cp -r "$ROOT/system/sddm/themes/"* "$A/usr/share/sddm/themes/"
+install -Dm644 "$ROOT/system/sddm/default.face" "$A/var/lib/AccountsService/icons/default.face"
 # Solo en la ISO live: entra directo a niri
-[initial_session]
-command = "niri-session"
-user = "$LIVE_USER"
+cat > "$A/etc/sddm.conf.d/20-live.conf" <<EOF
+[Autologin]
+User=$LIVE_USER
+Session=niri.desktop
 EOF
 cp "$ROOT/system/pacman.d/mirrorlist" "$A/etc/pacman.d/mirrorlist"
 cp "$ROOT/system/pacman.d/hooks/"*.hook "$A/etc/pacman.d/hooks/"
 cp "$ROOT/system/reflector.conf" "$A/etc/xdg/reflector/reflector.conf"
 mkdir -p "$A/etc/tmpfiles.d"
-cp "$ROOT/system/tmpfiles.d/"*.conf "$A/etc/tmpfiles.d/"
 cp "$ROOT"/system/bin/* "$A/usr/local/bin/"
 
 # Material que el instalador copia al disco
@@ -128,8 +131,7 @@ cp "$REPO"/*.pkg.tar.zst "$A/opt/zen-niri/repo/"
 
 log "Wallpaper"
 mkdir -p "$A/usr/share/backgrounds/zen-niri"
-rsvg-convert -w 3840 -h 2160 "$ROOT/system/wallpaper.svg" \
-    -o "$A/usr/share/backgrounds/zen-niri/wallpaper.png"
+cp "$ROOT/system/wallpaper.jpg" "$A/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 
 log "Dotfiles -> /etc/skel y usuario live"
 mkdir -p "$A/etc/skel" "$A/home/$LIVE_USER"
@@ -166,7 +168,7 @@ printf '%s:100000:65536\n' "$LIVE_USER" | tee "$A/etc/subuid" > "$A/etc/subgid"
 log "Servicios de la ISO live"
 S="$A/etc/systemd/system"
 mkdir -p "$S/multi-user.target.wants" "$S/bluetooth.target.wants"
-ln -sf /usr/lib/systemd/system/greetd.service "$S/display-manager.service"
+ln -sf /usr/lib/systemd/system/sddm.service "$S/display-manager.service"
 ln -sf /usr/lib/systemd/system/NetworkManager.service "$S/multi-user.target.wants/NetworkManager.service"
 ln -sf /usr/lib/systemd/system/NetworkManager-dispatcher.service "$S/dbus-org.freedesktop.nm-dispatcher.service"
 ln -sf /usr/lib/systemd/system/bluetooth.service "$S/bluetooth.target.wants/bluetooth.service"
@@ -187,6 +189,15 @@ install -Dm644 "$ROOT/system/security/zen-dns.conf" "$A/etc/systemd/resolved.con
 ln -sf /dev/null "$S/systemd-loop@.service"
 # hora de Lima en la sesión live (releng trae UTC)
 ln -sf /usr/share/zoneinfo/America/Lima "$A/etc/localtime"
+
+log "Rendimiento de la ISO live: zram, sysctl, límites, sin volcados de memoria"
+install -Dm644 "$ROOT/system/perf/zram-generator.conf"     "$A/etc/systemd/zram-generator.conf"
+install -Dm644 "$ROOT/system/perf/80-zen-performance.conf" "$A/etc/sysctl.d/80-zen-performance.conf"
+install -Dm644 "$ROOT/system/perf/zen-limits.conf"         "$A/etc/systemd/system.conf.d/zen-limits.conf"
+install -Dm644 "$ROOT/system/perf/zen-limits.conf"         "$A/etc/systemd/user.conf.d/zen-limits.conf"
+install -Dm644 "$ROOT/system/security/zen-coredump.conf"   "$A/etc/systemd/coredump.conf.d/zen-coredump.conf"
+install -Dm644 "$ROOT/system/security/zen-blacklist.conf"  "$A/etc/modprobe.d/zen-blacklist.conf"
+echo tcp_bbr | install -Dm644 /dev/stdin "$A/etc/modules-load.d/zen-bbr.conf"
 
 log "mkarchiso"
 mkarchiso -v -r -w "$WORK" -o "$OUT" "$PROFILE"

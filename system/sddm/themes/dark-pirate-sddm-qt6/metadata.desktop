@@ -1,0 +1,16 @@
+[SddmGreeterTheme]
+Name=Dark Pirate SDDM
+Description=Dark pirate-styled SDDM login theme
+Author=Freddy Sedano
+Copyright=Copyright (C) 2025 Freddy Sedano
+License=GPL-3.0-or-later
+Type=sddm-theme
+Version=1.0
+Website=https://github.com/Freddy-system
+MainScript=Main.qml
+ConfigFile=theme.conf
+TranslationsDirectory=translations
+Email=freddy.sc.dev@gmail.com
+Theme-Id=dark-pirate-sddm
+Theme-API=2.11
+QtVersion=6

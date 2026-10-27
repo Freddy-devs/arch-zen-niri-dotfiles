@@ -1,5 +1,5 @@
-# Escritorio + desarrollo: común a la ISO live y al sistema instalado.
-# Solo repos oficiales (core/extra).
+# Base mínima: común a la ISO live y al sistema instalado. Solo repos oficiales (core/extra).
+# Todo lo demás (navegador, oficina, bases de datos, lenguajes…) lo instala el usuario con: zen-apps
 
 # Wayland / niri
 niri
@@ -9,6 +9,9 @@ xdg-desktop-portal-gtk
 polkit-gnome
 gnome-keyring
 waybar
+# calendario de la barra (zen-calendar, Rust): GTK4 + layer-shell, sonidos de alarma
+gtk4-layer-shell
+sound-theme-freedesktop
 rofi
 mako
 swaybg
@@ -26,28 +29,34 @@ vulkan-intel
 vulkan-radeon
 intel-media-driver
 
-# Login
-greetd
-greetd-regreet
+# Login: SDDM con el tema Dark Pirate (QML Qt6; el greeter usa X11 solo en el login)
+sddm
+qt6-5compat
+qt6-svg
+qt6-virtualkeyboard
+xorg-server
 
 # Audio / red / bluetooth
 pipewire
 pipewire-pulse
 pipewire-alsa
 wireplumber
-pavucontrol
 networkmanager
-network-manager-applet
 bluez
 bluez-utils
-blueman
+# Bluetooth y mezclador de audio en terminal (Rust): sin applets residentes
+bluetui
+wiremix
 
 # Terminal / CLI
 alacritty
 zsh
 zsh-autosuggestions
 zsh-syntax-highlighting
-starship
+zsh-history-substring-search
+zsh-completions
+zoxide
+pkgfile
 fzf
 ripgrep
 fd
@@ -56,7 +65,6 @@ eza
 btop
 fastfetch
 git
-github-cli
 nano
 curl
 wget
@@ -71,41 +79,21 @@ ttf-jetbrains-mono-nerd
 ttf-nerd-fonts-symbols
 noto-fonts
 noto-fonts-emoji
-papirus-icon-theme
-adw-gtk-theme
-nwg-look
 qt6ct
 thunar
 imv
 
-# Desarrollo
-podman
-podman-compose
-buildah
-passt
-netavark
-aardvark-dns
-php
-php-fpm
-php-pgsql
-php-gd
-php-intl
-php-sqlite
-composer
-mariadb
-postgresql
-nodejs
-npm
 # Hardware (ASUS VivoBook X510UNO: Intel AC 8265, Conexant CX8200, ELAN1300, ELAN7001)
 sof-firmware
 alsa-utils
 thermald
+zram-generator
 power-profiles-daemon
 lm_sensors
-fprintd
 libinput-tools
 usbutils
 iw
 # Seguridad
 nftables
+apparmor
 wireguard-tools
