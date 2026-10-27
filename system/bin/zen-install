@@ -288,9 +288,15 @@ ln -sf ../run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
 log "Snapshot inicial"
 arch-chroot "$MNT" snapper --no-dbus -c root create -d "instalación limpia" || warn "No se pudo crear el snapshot inicial"
 
-umount -R "$MNT"
+# algún proceso del chroot (snapper, gpg-agent) puede tardar en soltar /mnt: reintentar antes de fallar
+sync
+for _ in 1 2 3 4 5 6 7 8 9 10; do umount -R "$MNT" 2>/dev/null && break; sleep 2; done
+if mountpoint -q "$MNT"; then
+    fuser -vm "$MNT" >&2 || true
+    die "No se pudo desmontar $MNT (ver procesos arriba). La instalación está completa: reinicia igual."
+fi
 cryptsetup close cryptroot
 echo
 log "Instalación completa. Retira el USB y reinicia:  reboot"
 log "Al encender te pedirá la contraseña de CIFRADO del disco y luego tu usuario."
-log "En el primer inicio de sesión se instalarán Claude Code y herdr (instaladores oficiales)."
+log "En el primer inicio de sesión verás la bienvenida; instala apps con:  zen-apps"
