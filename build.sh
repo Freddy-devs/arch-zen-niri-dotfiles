@@ -19,6 +19,21 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "ejecuta como root: sudo ./build.sh"
 [[ -f /etc/arch-release ]] || die "se necesita Arch Linux (o WSL2 con Arch)"
 
+# La laptop se apagó de golpe compilando con el cargador desconectado: con la batería
+# no aguanta la carga máxima. En WSL se consulta a Windows; ALLOW_BATTERY=1 lo salta.
+if [[ "${ALLOW_BATTERY:-0}" != 1 ]] && command -v powershell.exe >/dev/null; then
+    BAT="$(powershell.exe -NoProfile -Command '(Get-CimInstance Win32_Battery).BatteryStatus' 2>/dev/null | tr -dc '0-9')"
+    # 2 = conectado a la corriente; vacío = sin batería (PC de escritorio)
+    [[ -z "$BAT" || "$BAT" == 2 ]] || die "conecta el cargador antes de construir la ISO (o ALLOW_BATTERY=1)"
+fi
+
+# Límite de recursos: hilos de compilación/compresión = CPUs visibles (en WSL las
+# limita .wslconfig a ~90 %) y prioridad baja para que Windows siga respondiendo.
+JOBS="${BUILD_JOBS:-$(nproc)}"
+export MAKEFLAGS="-j$JOBS" CARGO_BUILD_JOBS="$JOBS"
+renice -n 10 -p $$ >/dev/null
+ionice -c 2 -n 7 -p $$ 2>/dev/null || true
+
 log "Dependencias de build"
 pacman -Sy --needed --noconfirm archiso base-devel git openssl rsync sassc gtk4 gtk4-layer-shell
 # cargo para las apps propias en Rust (rustup también sirve si ya está instalado)
@@ -92,6 +107,7 @@ sed -i -e 's|^iso_name=.*|iso_name="arch-zen-niri"|' \
        -e 's|^iso_application=.*|iso_application="Arch Linux zen + niri Live/Install"|' \
     "$PROFILE/profiledef.sh"
 cat >> "$PROFILE/profiledef.sh" <<'EOF'
+airootfs_image_tool_options+=('-processors' '@JOBS@')
 file_permissions+=(
   ["/etc/gshadow"]="0:0:400"
   ["/etc/sudoers.d/10-live"]="0:0:440"
@@ -105,6 +121,8 @@ file_permissions+=(
   ["/usr/lib/systemd/user-environment-generators/90-zen-vm-render"]="0:0:755"
 )
 EOF
+# mksquashfs usa todos los núcleos si no se le indica
+sed -i "s|@JOBS@|$JOBS|" "$PROFILE/profiledef.sh"
 
 log "Configuración del sistema (SDDM, pacman hooks, reflector, mirrors)"
 mkdir -p "$A/etc/sddm.conf.d" "$A/usr/share/sddm/themes" "$A/etc/pacman.d/hooks" "$A/etc/xdg/reflector" \
