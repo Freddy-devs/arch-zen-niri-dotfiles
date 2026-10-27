@@ -1,0 +1,111 @@
+# Escritorio + desarrollo: común a la ISO live y al sistema instalado.
+# Solo repos oficiales (core/extra).
+
+# Wayland / niri
+niri
+xwayland-satellite
+xdg-desktop-portal-gnome
+xdg-desktop-portal-gtk
+polkit-gnome
+gnome-keyring
+waybar
+rofi
+mako
+swaybg
+swayidle
+swaylock
+wl-clipboard
+cliphist
+grim
+slurp
+satty
+brightnessctl
+playerctl
+mesa
+vulkan-intel
+vulkan-radeon
+intel-media-driver
+
+# Login
+greetd
+greetd-regreet
+
+# Audio / red / bluetooth
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+pavucontrol
+networkmanager
+network-manager-applet
+bluez
+bluez-utils
+blueman
+
+# Terminal / CLI
+alacritty
+zsh
+zsh-autosuggestions
+zsh-syntax-highlighting
+starship
+fzf
+ripgrep
+fd
+bat
+eza
+btop
+fastfetch
+git
+github-cli
+nano
+curl
+wget
+unzip
+openssh
+
+# Apariencia
+# Fuentes: Inter = interfaz (barra, menús, GTK, login) · JetBrainsMono Nerd = solo terminal/editor
+# · Symbols Nerd Font = solo iconos (respaldo)
+inter-font
+ttf-jetbrains-mono-nerd
+ttf-nerd-fonts-symbols
+noto-fonts
+noto-fonts-emoji
+papirus-icon-theme
+adw-gtk-theme
+nwg-look
+qt6ct
+thunar
+imv
+
+# Desarrollo
+podman
+podman-compose
+buildah
+passt
+netavark
+aardvark-dns
+php
+php-fpm
+php-pgsql
+php-gd
+php-intl
+php-sqlite
+composer
+mariadb
+postgresql
+nodejs
+npm
+# Hardware (ASUS VivoBook X510UNO: Intel AC 8265, Conexant CX8200, ELAN1300, ELAN7001)
+sof-firmware
+alsa-utils
+thermald
+power-profiles-daemon
+lm_sensors
+fprintd
+libinput-tools
+usbutils
+iw
+# Seguridad
+nftables
+wireguard-tools

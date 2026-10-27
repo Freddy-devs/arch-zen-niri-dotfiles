@@ -1,0 +1,22 @@
+#
+# pacman.conf usado SOLO para construir la ISO (build.sh rellena las rutas @...@)
+#
+[options]
+HoldPkg     = pacman glibc
+Architecture = auto
+ParallelDownloads = 10
+Color
+SigLevel    = Required DatabaseOptional
+LocalFileSigLevel = Optional
+
+# Nunca habilitar [core-testing] / [extra-testing]: priorizamos estabilidad.
+
+[core]
+Include = @MIRRORLIST@
+
+[extra]
+Include = @MIRRORLIST@
+
+[custom]
+SigLevel = Optional TrustAll
+Server = file://@CUSTOM_REPO@

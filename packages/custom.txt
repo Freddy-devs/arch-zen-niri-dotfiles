@@ -1,0 +1,3 @@
+# Paquetes del AUR compilados al repo local [custom] (reempaquetan binarios oficiales)
+brave-bin
+yay-bin

@@ -1,0 +1,108 @@
+// Waybar estilo polybar/bspwm — arch-zen-niri
+{
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "spacing": 6,
+    "margin-top": 6,
+    "margin-left": 10,
+    "margin-right": 10,
+
+    "modules-left": ["custom/arch", "niri/workspaces", "niri/window"],
+    "modules-center": ["clock"],
+    "modules-right": ["cpu", "memory", "disk", "network", "pulseaudio", "power-profiles-daemon", "battery", "tray", "custom/power"],
+
+    "power-profiles-daemon": {
+        "format": "{icon}",
+        "tooltip-format": "Perfil de energía: {profile}  (clic para cambiar)",
+        "format-icons": {
+            "power-saver": "",
+            "balanced": "",
+            "performance": ""
+        }
+    },
+
+    "custom/power": {
+        "format": "󰐥",
+        "tooltip-format": "Apagar · reiniciar · cerrar sesión  (Super+Shift+C)",
+        "on-click": "zen-power"
+    },
+
+    "custom/arch": {
+        "format": "󰣇",
+        "tooltip": false,
+        "on-click": "rofi -show drun"
+    },
+
+    "niri/workspaces": {
+        "format": "{icon}",
+        "format-icons": {
+            "active": "●",
+            "default": "○"
+        }
+    },
+
+    "niri/window": {
+        "format": "{title}",
+        "max-length": 60,
+        "separate-outputs": true
+    },
+
+    "clock": {
+        "format": "󰅐  {:%H:%M}",
+        "format-alt": "󰃭  {:%A %d %B %Y}",
+        "tooltip-format": "<tt><small>{calendar}</small></tt>",
+        "calendar": {
+            "mode": "month",
+            "format": {
+                "today": "<span color='#89b4fa'><b>{}</b></span>"
+            }
+        }
+    },
+
+    "cpu": {
+        "format": "󰻠  {usage}%",
+        "interval": 3,
+        "on-click": "alacritty -e btop"
+    },
+
+    "memory": {
+        "format": "󰍛  {percentage}%",
+        "interval": 5,
+        "tooltip-format": "{used:0.1f} / {total:0.1f} GiB"
+    },
+
+    "disk": {
+        "format": "󰋊  {percentage_used}%",
+        "path": "/",
+        "interval": 60
+    },
+
+    "network": {
+        "format-wifi": "󰖩  {essid}",
+        "format-ethernet": "󰈀  {ipaddr}",
+        "format-disconnected": "󰖪  sin red",
+        "tooltip-format": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBits}  ↑ {bandwidthUpBits}",
+        "on-click": "nm-connection-editor"
+    },
+
+    "pulseaudio": {
+        "format": "{icon}  {volume}%",
+        "format-muted": "󰝟  mudo",
+        "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
+        "on-click": "pavucontrol",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    },
+
+    "battery": {
+        "states": { "warning": 25, "critical": 10 },
+        "format": "{icon}  {capacity}%",
+        "format-charging": "󰂄  {capacity}%",
+        "format-icons": ["󰁺", "󰁼", "󰁾", "󰂀", "󰁹"]
+    },
+
+    "tray": {
+        "icon-size": 15,
+        "spacing": 8
+    }
+}

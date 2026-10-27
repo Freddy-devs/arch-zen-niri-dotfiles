@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# zen-power — menú de energía con rofi (Super+Shift+C o botón de waybar)
+set -euo pipefail
+
+THEME="$HOME/.config/rofi/power.rasi"
+[[ -f $THEME ]] || THEME=""
+
+# "texto\0icon\x1fnombre-de-icono": rofi muestra el icono de Papirus encima del texto
+choice=$(printf '%s\0icon\x1f%s\n' \
+    "Bloquear"      system-lock-screen \
+    "Cerrar sesión" system-log-out \
+    "Suspender"     system-suspend \
+    "Reiniciar"     system-reboot \
+    "Apagar"        system-shutdown \
+    | rofi -dmenu -i -no-custom -show-icons -p "" ${THEME:+-theme "$THEME"}) || exit 0
+
+case "$choice" in
+    Bloquear)        swaylock -f ;;
+    "Cerrar sesión") niri msg action quit --skip-confirmation ;;
+    Suspender)       systemctl suspend ;;
+    Reiniciar)       systemctl reboot ;;
+    Apagar)          systemctl poweroff ;;
+esac

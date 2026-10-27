@@ -1,0 +1,20 @@
+##
+## Arch Linux mirrorlist — arch-zen-niri
+## Elegidos de https://archlinux.org/mirrors/status/ (oct-2026): 100% sincronizados, HTTPS.
+## Brasil primero, Chile y EE.UU. de respaldo, CDN oficial al final.
+## En el sistema instalado reflector.timer la regenera cada semana (BR, CL, US).
+##
+
+# Brasil
+Server = https://mirror.ufscar.br/archlinux/$repo/os/$arch
+Server = https://archlinux.c3sl.ufpr.br/$repo/os/$arch
+Server = https://mirrors.ic.unicamp.br/archlinux/$repo/os/$arch
+
+# Chile
+Server = https://mirror.anquan.cl/archlinux/$repo/os/$arch
+
+# Estados Unidos
+Server = https://mirrors.logal.dev/archlinux/$repo/os/$arch
+
+# CDN oficial de Arch (último recurso)
+Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch

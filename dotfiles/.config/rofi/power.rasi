@@ -1,0 +1,47 @@
+/* rofi — menú de energía (zen-power · Super+Shift+C · botón de waybar)
+ * Hereda colores y estilo del lanzador; aquí solo cambia la disposición:
+ * una fila de 5 botones grandes, sin buscador. */
+
+@import "config.rasi"
+
+window {
+    width:        760px;
+    border-color: @red;
+}
+
+mainbox {
+    padding:  28px;
+    spacing:  22px;
+    children: [ "textbox-title", "listview" ];
+}
+
+textbox-title {
+    expand:           false;
+    str:              "¿Qué quieres hacer?";
+    font:             "Inter Bold 15";
+    text-color:       @text;
+    horizontal-align: 0.5;
+}
+
+listview {
+    columns:      5;
+    lines:        1;
+    spacing:      14px;
+    fixed-height: true;
+}
+
+element {
+    padding: 22px 8px 18px 8px;
+}
+
+element selected.normal {
+    border-color: @red;
+}
+
+element-icon {
+    size: 64px;
+}
+
+* {
+    red: #f38ba8;
+}

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Muestra las noticias de archlinux.org de los últimos 15 días.
+# Las noticias anuncian intervenciones manuales: leerlas evita romper el sistema.
+# Nunca falla (no debe bloquear pacman).
+
+DAYS="${1:-15}"
+feed="$(curl -fsS --max-time 5 https://archlinux.org/feeds/news/ 2>/dev/null)" || exit 0
+limit=$(date -d "-$DAYS days" +%s)
+
+printf '%s' "$feed" | tr -d '\n' | sed 's|<item>|\n|g' | tail -n +2 |
+while IFS= read -r item; do
+    title=$(sed -n 's|.*<title>\(.*\)</title>.*|\1|p' <<<"$item")
+    date=$(sed -n 's|.*<pubDate>\(.*\)</pubDate>.*|\1|p' <<<"$item")
+    [[ -n $title && -n $date ]] || continue
+    ts=$(date -d "$date" +%s 2>/dev/null) || continue
+    (( ts >= limit )) && printf '  ⚠  %s  —  %s\n' "$(date -d "$date" +%F)" "$title"
+done
+echo "  Detalles: https://archlinux.org/news/"
+exit 0

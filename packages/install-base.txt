@@ -1,0 +1,23 @@
+# Base del sistema instalado (pacstrap). Se suma a desktop.txt.
+base
+base-devel
+linux-zen
+linux-zen-headers
+linux-lts
+linux-firmware
+intel-ucode
+amd-ucode
+btrfs-progs
+cryptsetup
+dosfstools
+grub
+grub-btrfs
+inotify-tools
+efibootmgr
+snapper
+snap-pac
+sudo
+man-db
+man-pages
+reflector
+pacman-contrib

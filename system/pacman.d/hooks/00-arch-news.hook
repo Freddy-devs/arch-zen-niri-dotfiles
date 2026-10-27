@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Noticias recientes de archlinux.org (revisar antes de actualizar)...
+When = PreTransaction
+Exec = /usr/local/bin/arch-news

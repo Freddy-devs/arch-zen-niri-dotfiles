@@ -1,0 +1,151 @@
+/* rofi — lanzador de aplicaciones · Catppuccin Mocha
+ * Super+Space / Super+D / logo de Arch en waybar
+ * Cuadrícula de iconos grandes con el buscador al centro; búsqueda difusa en todas las apps. */
+
+configuration {
+    modi:                 "drun";
+    show-icons:           true;
+    icon-theme:           "Papirus-Dark";
+    drun-display-format:  "{name}";
+    display-drun:         "";
+    matching:             "fuzzy";
+    sort:                 true;
+    sorting-method:       "fzf";
+    case-sensitive:       false;
+    drun-match-fields:    "name,generic,exec,categories,keywords";
+    scroll-method:        0;
+    hover-select:         true;
+    kb-cancel:            "Escape,Super+space";
+}
+
+* {
+    base:      #1e1e2efa;
+    mantle:    #181825;
+    crust:     #11111b;
+    surface0:  #313244;
+    surface1:  #45475a;
+    overlay0:  #6c7086;
+    text:      #cdd6f4;
+    subtext:   #a6adc8;
+    mauve:     #cba6f7;
+    blue:      #89b4fa;
+    lavender:  #b4befe;
+
+    font:             "Inter 12";
+    background-color: transparent;
+    text-color:       @text;
+    margin:           0;
+    padding:          0;
+    spacing:          0;
+}
+
+window {
+    location:         center;
+    anchor:           center;
+    width:            800px;
+    border:           2px;
+    border-color:     @mauve;
+    border-radius:    20px;
+    background-color: @base;
+}
+
+mainbox {
+    padding:  28px;
+    spacing:  24px;
+    children: [ "inputbar", "message", "listview" ];
+}
+
+/* ---------- buscador al centro ---------- */
+inputbar {
+    padding:          14px 20px;
+    spacing:          14px;
+    border-radius:    14px;
+    border:           2px;
+    border-color:     @surface1;
+    background-color: @mantle;
+    children:         [ "textbox-search", "entry", "num-filtered-rows" ];
+}
+
+textbox-search {
+    expand:     false;
+    str:        "";
+    font:       "Symbols Nerd Font 16";
+    text-color: @mauve;
+    vertical-align: 0.5;
+}
+
+entry {
+    placeholder:       "Buscar aplicaciones…";
+    placeholder-color: @overlay0;
+    cursor:            text;
+    vertical-align:    0.5;
+    font:              "Inter 14";
+    text-color:        @text;
+}
+
+num-filtered-rows {
+    expand:     false;
+    text-color: @overlay0;
+    vertical-align: 0.5;
+}
+
+message {
+    padding:          10px 16px;
+    border-radius:    12px;
+    background-color: @surface0;
+}
+
+textbox {
+    text-color: @subtext;
+}
+
+/* ---------- cuadrícula de apps ---------- */
+listview {
+    columns:      5;
+    lines:        3;
+    spacing:      12px;
+    cycle:        true;
+    dynamic:      false;
+    fixed-height: true;
+    fixed-columns: true;
+    flow:         horizontal;
+    scrollbar:    false;
+}
+
+element {
+    orientation:      vertical;
+    padding:          18px 8px 14px 8px;
+    spacing:          10px;
+    border-radius:    16px;
+    border:           2px;
+    border-color:     transparent;
+    cursor:           pointer;
+}
+
+element normal.normal,
+element alternate.normal {
+    background-color: transparent;
+}
+
+element selected.normal {
+    background-color: @surface0;
+    border-color:     @mauve;
+}
+
+element-icon {
+    size:   56px;
+    cursor: inherit;
+    horizontal-align: 0.5;
+}
+
+element-text {
+    highlight:        bold #cba6f7;
+    horizontal-align: 0.5;
+    vertical-align:   0.5;
+    text-color:       @subtext;
+    cursor:           inherit;
+}
+
+element selected.normal element-text {
+    text-color: @text;
+}

@@ -1,0 +1,5 @@
+# arch-zen-niri — MariaDB solo escucha en la propia laptop (nunca en la red)
+[mysqld]
+bind-address = 127.0.0.1
+skip-name-resolve
+local-infile = 0

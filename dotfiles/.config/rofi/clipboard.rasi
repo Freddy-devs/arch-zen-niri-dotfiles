@@ -1,0 +1,31 @@
+/* rofi — historial del portapapeles (Super+V)
+ * Hereda colores y buscador del lanzador; aquí es una lista vertical de textos. */
+
+@import "config.rasi"
+
+window {
+    width: 760px;
+}
+
+entry {
+    placeholder: "Buscar en el portapapeles…";
+}
+
+listview {
+    columns:      1;
+    lines:        8;
+    spacing:      6px;
+    fixed-height: true;
+}
+
+element {
+    orientation:   horizontal;
+    padding:       10px 16px;
+    border-radius: 12px;
+    children:      [ "element-text" ];
+}
+
+element-text {
+    horizontal-align: 0;
+    font:             "JetBrainsMono Nerd Font 11";
+}

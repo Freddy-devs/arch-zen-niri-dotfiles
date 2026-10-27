@@ -1,0 +1,6 @@
+#!/bin/sh
+# Generador de entorno de usuario (systemd): en VirtualBox la GPU virtual (vmwgfx) dibuja mal
+# el texto de Alacritty y deja cajas negras; ahí las apps usan render por software.
+# En hardware real (la laptop) no imprime nada y no cambia nada.
+[ "$(systemd-detect-virt 2>/dev/null)" = oracle ] && echo "LIBGL_ALWAYS_SOFTWARE=1"
+exit 0

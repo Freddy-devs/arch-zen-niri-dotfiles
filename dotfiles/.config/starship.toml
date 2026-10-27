@@ -1,0 +1,45 @@
+"$schema" = "https://starship.rs/config-schema.json"
+# la paleta va arriba: dentro de una sección starship la ignora ("Unknown key")
+palette = "mocha"
+add_newline = true
+format = "$directory$git_branch$git_status$php$nodejs$container$cmd_duration$line_break$character"
+
+[character]
+success_symbol = "[❯](bold mauve)"
+error_symbol = "[❯](bold red)"
+
+[directory]
+style = "bold blue"
+truncation_length = 3
+truncation_symbol = "…/"
+
+[git_branch]
+style = "bold mauve"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "peach"
+
+[php]
+style = "lavender"
+
+[nodejs]
+style = "green"
+
+[cmd_duration]
+min_time = 2000
+style = "yellow"
+format = "[󱦟 $duration]($style) "
+
+[palettes.mocha]
+rosewater = "#f5e0dc"
+mauve = "#cba6f7"
+red = "#f38ba8"
+peach = "#fab387"
+yellow = "#f9e2af"
+green = "#a6e3a1"
+teal = "#94e2d5"
+blue = "#89b4fa"
+lavender = "#b4befe"
+text = "#cdd6f4"
+overlay0 = "#6c7086"

@@ -1,0 +1,21 @@
+[background]
+path = "/usr/share/backgrounds/zen-niri/wallpaper.png"
+fit = "Cover"
+
+[GTK]
+application_prefer_dark_theme = true
+cursor_theme_name = "Adwaita"
+font_name = "Inter 12"
+icon_theme_name = "Papirus-Dark"
+
+[commands]
+reboot = ["systemctl", "reboot"]
+poweroff = ["systemctl", "poweroff"]
+
+[appearance]
+greeting_msg = "Bienvenido"
+
+[widget.clock]
+format = "%A %d de %B  ·  %H:%M"
+resolution = "500ms"
+label_width = 300

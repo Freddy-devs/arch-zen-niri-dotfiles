@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# zen-hwcheck — diagnóstico de hardware (pensado para ASUS VivoBook X510UNO, sirve en cualquier equipo).
+# Uso:  zen-hwcheck            (en la ISO live antes de instalar, o en el sistema instalado)
+# No instala ni cambia nada. Guarda un informe en ~/zen-hwcheck-AAAAMMDD-HHMM.txt
+set -u
+
+[[ $EUID -eq 0 ]] || exec sudo -E "$0" "$@"
+
+USR="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
+UID_USR="$(id -u "$USR" 2>/dev/null || echo 0)"
+HOME_USR="$(getent passwd "$USR" | cut -d: -f6)"
+REPORT="${HOME_USR:-/root}/zen-hwcheck-$(date +%Y%m%d-%H%M).txt"
+
+c_g=$'\033[1;32m'; c_y=$'\033[1;33m'; c_r=$'\033[1;31m'; c_b=$'\033[1;34m'; c_d=$'\033[2m'; c_0=$'\033[0m'
+N_OK=0; N_WARN=0; N_FAIL=0
+LOG=""
+
+out()     { printf '%s\n' "$*"; LOG+="$(printf '%s' "$*" | sed 's/\x1b\[[0-9;]*m//g')"$'\n'; }
+section() { out ""; out "${c_b}━━ $* ${c_0}"; }
+ok()      { N_OK=$((N_OK+1));     out "  ${c_g}✓ OK   ${c_0} $*"; }
+warn()    { N_WARN=$((N_WARN+1)); out "  ${c_y}! AVISO${c_0} $*"; }
+fail()    { N_FAIL=$((N_FAIL+1)); out "  ${c_r}✗ FALLA${c_0} $*"; }
+info()    { out "  ${c_d}·${c_0} $*"; }
+has()     { command -v "$1" >/dev/null 2>&1; }
+mod()     { [[ -d /sys/module/$1 ]]; }
+kmsg()    { journalctl -k -b --no-pager -o cat 2>/dev/null; }
+as_user() { sudo -u "$USR" XDG_RUNTIME_DIR="/run/user/$UID_USR" "$@"; }
+
+KMSG="$(kmsg)"
+
+# ---------------------------------------------------------------- sistema
+section "Sistema"
+info "Equipo:  $(cat /sys/class/dmi/id/sys_vendor 2>/dev/null) $(cat /sys/class/dmi/id/product_name 2>/dev/null)"
+info "BIOS:    $(cat /sys/class/dmi/id/bios_version 2>/dev/null) ($(cat /sys/class/dmi/id/bios_date 2>/dev/null))"
+info "Kernel:  $(uname -r)"
+[[ -d /sys/firmware/efi ]] && ok "Arranque UEFI" || warn "Arranque BIOS/legacy (funciona, pero UEFI es lo recomendado)"
+if grep -qm1 '^microcode' /proc/cpuinfo; then
+    ok "Microcódigo CPU cargado (revisión $(grep -m1 '^microcode' /proc/cpuinfo | awk '{print $3}'))"
+fi
+[[ $(cat /sys/devices/system/cpu/intel_pstate/status 2>/dev/null) == active ]] \
+    && ok "Control de frecuencia intel_pstate activo" || info "intel_pstate no activo"
+
+# ---------------------------------------------------------------- gráficos
+section "Gráficos"
+if lspci -d 8086: -nn 2>/dev/null | grep -qiE 'VGA|Display'; then
+    drv=$(lspci -k 2>/dev/null | awk '/VGA compatible controller: Intel/{f=1} f&&/Kernel driver in use/{print $NF; exit}')
+    [[ $drv == i915 || $drv == xe ]] && ok "Intel UHD (driver $drv)" || fail "Intel UHD sin driver i915 (driver: ${drv:-ninguno})"
+fi
+ls /dev/dri/renderD* >/dev/null 2>&1 && ok "Aceleración 3D disponible ($(ls /dev/dri/renderD* | tr '\n' ' '))" || fail "Sin /dev/dri/renderD* (sin aceleración)"
+NV=$(lspci -D -d 10de: 2>/dev/null | awk '/3D|VGA/{print $1; exit}')
+if [[ -n $NV ]]; then
+    nvdrv=$(lspci -k -s "$NV" | awk -F': ' '/Kernel driver in use/{print $2}')
+    rt=$(cat "/sys/bus/pci/devices/$NV/power/runtime_status" 2>/dev/null)
+    info "NVIDIA $(lspci -s "$NV" | sed 's/.*: //') — driver: ${nvdrv:-ninguno}, energía: ${rt:-?}"
+    case "$rt" in
+        suspended) ok "GPU NVIDIA apagada cuando no se usa (ahorra batería)" ;;
+        active)    warn "GPU NVIDIA encendida: gasta batería. 'zen-hwsetup' puede dejarla en ahorro" ;;
+        *)         info "Estado de energía de la NVIDIA desconocido" ;;
+    esac
+fi
+
+# ---------------------------------------------------------------- wifi
+section "Wi-Fi"
+if lspci -nn 2>/dev/null | grep -qiE 'Network controller|Wireless'; then
+    info "$(lspci 2>/dev/null | grep -iE 'Network controller' | sed 's/.*: //' | head -1)"
+    mod iwlwifi && ok "Driver iwlwifi cargado" || { mod cfg80211 && info "Driver no Intel"; }
+    fw=$(grep -m1 -oE 'iwlwifi.*loaded firmware version [^ ]+' <<<"$KMSG")
+    [[ -n $fw ]] && ok "Firmware cargado: ${fw##*version }" || \
+        { grep -qiE 'iwlwifi.*(no suitable firmware|failed to load)' <<<"$KMSG" && fail "Falta firmware Wi-Fi (paquete linux-firmware-intel)" || info "No se encontró el mensaje de firmware"; }
+    IFACE=$(iw dev 2>/dev/null | awk '/Interface/{print $2; exit}')
+    if [[ -n $IFACE ]]; then
+        ok "Interfaz inalámbrica: $IFACE"
+        read -r soft hard < <(rfkill -rno TYPE,SOFT,HARD 2>/dev/null | awk '$1=="wlan"{print $2, $3; exit}')
+        if [[ ${hard:-} == blocked ]]; then
+            fail "Wi-Fi bloqueado por HARDWARE (tecla Fn de modo avión)"
+        elif [[ ${soft:-} == blocked ]]; then
+            warn "Wi-Fi bloqueado por software: 'rfkill unblock wifi'"
+        else
+            ok "Radio Wi-Fi desbloqueada"
+        fi
+        if has nmcli; then
+            n=$(nmcli -t -f SSID dev wifi list --rescan yes 2>/dev/null | grep -c .)
+            ((n > 0)) && ok "Escaneo: $n redes visibles" || warn "El escaneo no encontró redes"
+            st=$(nmcli -t -f DEVICE,STATE dev 2>/dev/null | awk -F: -v i="$IFACE" '$1==i{print $2}')
+            [[ $st == connected ]] && ok "Conectado: $(nmcli -t -f GENERAL.CONNECTION dev show "$IFACE" | cut -d: -f2)" || info "Wi-Fi sin conectar (conéctate con 'nmtui' o el icono de red)"
+        fi
+    else
+        fail "No hay interfaz inalámbrica"
+    fi
+else
+    warn "No se detectó tarjeta Wi-Fi PCI"
+fi
+if has nmcli; then
+    case "$(nmcli networking connectivity check 2>/dev/null)" in
+        full) ok "Internet: conectado" ;;
+        *)    warn "Internet: sin conexión completa" ;;
+    esac
+fi
+
+# ---------------------------------------------------------------- bluetooth
+section "Bluetooth"
+if [[ -d /sys/class/bluetooth/hci0 ]]; then
+    ok "Adaptador hci0 presente ($(lsusb 2>/dev/null | grep -iE '8087:|bluetooth' | sed 's/.*ID //' | head -1))"
+    grep -qiE 'Bluetooth: hci0: (Found device firmware|Firmware loaded|Waiting for firmware download to complete|Firmware already loaded)' <<<"$KMSG" \
+        && ok "Firmware Bluetooth cargado" || info "No se encontró el mensaje de firmware Bluetooth"
+    rfkill -rno TYPE,SOFT,HARD 2>/dev/null | awk '$1=="bluetooth"' | grep -q ' blocked' \
+        && warn "Bluetooth bloqueado (rfkill unblock bluetooth)" || ok "Radio Bluetooth desbloqueada"
+    systemctl is-active -q bluetooth && ok "Servicio bluetooth activo" || warn "Servicio bluetooth inactivo: 'systemctl enable --now bluetooth'"
+    has bluetoothctl && bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && ok "Bluetooth encendido"
+else
+    fail "No hay adaptador Bluetooth (hci0)"
+fi
+
+# ---------------------------------------------------------------- touchpad / teclado
+section "Touchpad y teclado"
+TP=$(awk -v RS= '/[Tt]ouchpad/' /proc/bus/input/devices | awk -F'"' '/^N:/{print $2; exit}')
+if [[ -n $TP ]]; then
+    ok "Touchpad detectado: $TP"
+    mod hid_multitouch && ok "Driver hid_multitouch (gestos y multitáctil)" || warn "hid_multitouch no cargado"
+    if has libinput; then
+        caps=$(libinput list-devices 2>/dev/null | awk -v RS= -v n="$TP" 'index($0,n)')
+        grep -q 'Tap-to-click:' <<<"$caps" && info "Tap: $(awk -F': *' '/Tap-to-click/{print $2}' <<<"$caps") · Scroll: $(awk -F': *' '/Scroll methods/{print $2}' <<<"$caps") · Clic: $(awk -F': *' '/Click methods/{print $2}' <<<"$caps")"
+        grep -q 'two-finger' <<<"$caps" && ok "Scroll con dos dedos soportado"
+    fi
+else
+    fail "No se detectó touchpad (revisa que i2c_hid_acpi esté cargado)"
+fi
+mod asus_nb_wmi && ok "Teclas Fn de ASUS (asus-nb-wmi)" || info "asus-nb-wmi no cargado (no es un ASUS o no hace falta)"
+mod asus_wireless && ok "Tecla de modo avión de ASUS (asus-wireless)"
+
+# ---------------------------------------------------------------- audio
+section "Audio"
+if [[ -r /proc/asound/cards ]] && grep -q . /proc/asound/cards; then
+    while read -r l; do info "Tarjeta: $l"; done < <(grep -E '^\s*[0-9]+ \[' /proc/asound/cards | sed 's/^ *//')
+    codec=$(cat /proc/asound/card*/codec#* 2>/dev/null | awk -F': ' '/^Codec:/{print $2}' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+    [[ -n $codec ]] && ok "Códecs: $codec"
+    if [[ $UID_USR != 0 ]] && has wpctl; then
+        sinks=$(as_user wpctl status 2>/dev/null | awk '/Sinks:/{f=1;next} /Sources:/{f=0} f&&/[0-9]+\./' | sed 's/[│*]//g; s/^ *//' | head -3)
+        [[ -n $sinks ]] && ok "Salidas de audio (PipeWire): $(tr '\n' ';' <<<"$sinks")" || warn "PipeWire no muestra salidas (¿sesión gráfica iniciada?)"
+    fi
+    grep -qiE 'sof-audio.*(error|failed)|snd_hda.*(No codecs|error)' <<<"$KMSG" && warn "Hay errores de audio en el registro del kernel" || ok "Sin errores de audio en el kernel"
+else
+    fail "No hay tarjetas de sonido"
+fi
+
+# ---------------------------------------------------------------- cámara
+section "Cámara"
+if ls /dev/video* >/dev/null 2>&1; then
+    ok "Cámara presente: $(cat /sys/class/video4linux/video0/name 2>/dev/null) ($(ls /dev/video* | tr '\n' ' '))"
+    mod uvcvideo && ok "Driver uvcvideo"
+else
+    warn "No hay /dev/video* (¿cámara desactivada con Fn?)"
+fi
+
+# ---------------------------------------------------------------- huella
+section "Lector de huella"
+FP=$(ls -d /sys/bus/acpi/devices/ELAN7001* 2>/dev/null | head -1)
+if [[ -n $FP ]]; then
+    info "Sensor ELAN7001 (SPI) presente en ACPI"
+    if has fprintd-list; then
+        r=$(fprintd-list "$USR" 2>&1)
+        if grep -qi 'No devices available' <<<"$r"; then
+            warn "fprintd no reconoce el sensor (puede que este modelo no esté soportado por libfprint)"
+        else
+            ok "fprintd reconoce el sensor: $(grep -m1 -oE 'Device at [^ ]+|found [0-9]+ devices' <<<"$r")"
+            info "Registra tu huella con: zen-hwsetup  (opción huella)"
+        fi
+    else
+        info "fprintd no instalado"
+    fi
+else
+    info "No se detectó el sensor de huella ELAN7001"
+fi
+
+# ---------------------------------------------------------------- sensores
+section "Sensores y temperatura"
+if has sensors; then
+    pkg=$(sensors 2>/dev/null | awk '/^Package id 0:/{print $4; exit}')
+    [[ -n $pkg ]] && ok "CPU: $pkg" || warn "No se leyó la temperatura del CPU"
+    while read -r l; do info "$l"; done < <(sensors 2>/dev/null | awk '/^(acpitz|nvme|pch_|iwlwifi|asus|BAT)/{n=$1} /temp1:|fan1:|Composite:/{sub(/\(.*/,""); print n" "$0}' | head -6)
+fi
+for z in /sys/class/thermal/thermal_zone*; do
+    [[ $(cat "$z/type" 2>/dev/null) == x86_pkg_temp ]] || continue
+    t=$(( $(cat "$z/temp") / 1000 ))
+    ((t < 85)) && ok "Temperatura del paquete CPU normal: ${t}°C" || warn "Temperatura alta: ${t}°C"
+done
+systemctl list-unit-files thermald.service >/dev/null 2>&1 && { systemctl is-active -q thermald && ok "thermald activo (control térmico Intel)" || info "thermald instalado pero inactivo"; }
+if has powerprofilesctl && systemctl is-active -q power-profiles-daemon; then
+    ok "Perfil de energía: $(powerprofilesctl get 2>/dev/null)"
+fi
+
+# ---------------------------------------------------------------- batería
+section "Batería y energía"
+BAT=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)
+if [[ -n $BAT ]]; then
+    cap=$(cat "$BAT/capacity"); st=$(cat "$BAT/status")
+    ok "Batería $(basename "$BAT"): ${cap}% ($st)"
+    full=$(cat "$BAT/energy_full" 2>/dev/null || cat "$BAT/charge_full" 2>/dev/null)
+    design=$(cat "$BAT/energy_full_design" 2>/dev/null || cat "$BAT/charge_full_design" 2>/dev/null)
+    if [[ -n $full && -n $design && $design -gt 0 ]]; then
+        h=$(( full * 100 / design ))
+        ((h >= 70)) && ok "Salud de la batería: ${h}% de su capacidad original" || warn "Batería desgastada: ${h}% de su capacidad original"
+    fi
+    if [[ -w $BAT/charge_control_end_threshold ]]; then
+        ok "Límite de carga soportado (actual: $(cat "$BAT/charge_control_end_threshold")%) — ajústalo con zen-hwsetup"
+    else
+        info "Este equipo no expone límite de carga"
+    fi
+else
+    info "Sin batería (equipo de escritorio o VM)"
+fi
+ls /sys/class/backlight/* >/dev/null 2>&1 && ok "Control de brillo: $(basename "$(ls -d /sys/class/backlight/* | head -1)")" || warn "Sin control de brillo"
+ms=$(cat /sys/power/mem_sleep 2>/dev/null)
+[[ -n $ms ]] && ok "Suspensión soportada: $ms"
+
+# ---------------------------------------------------------------- disco
+section "Almacenamiento"
+while read -r line; do
+    eval "$line"   # NAME=".." MODEL=".." ROTA=".." TRAN=".."
+    [[ $NAME =~ ^(loop|sr|zram) ]] && continue
+    disc=$(cat "/sys/block/$NAME/queue/discard_max_bytes" 2>/dev/null || echo 0)
+    t=$([[ $ROTA == 0 ]] && echo SSD || echo HDD)
+    ((disc > 0)) && ok "$NAME: ${MODEL:-?} ($t, ${TRAN:-?}, TRIM sí)" || info "$NAME: ${MODEL:-?} ($t, ${TRAN:-?}, sin TRIM)"
+done < <(lsblk -dnP -o NAME,MODEL,ROTA,TRAN 2>/dev/null)
+
+# ---------------------------------------------------------------- firmware
+section "Firmware y errores del kernel"
+miss=$(grep -iE 'firmware: failed to load|Direct firmware load for .* failed' <<<"$KMSG" | grep -v 'regulatory.db' | sort -u)
+if [[ -n $miss ]]; then
+    warn "Firmware que no se pudo cargar:"
+    while read -r l; do info "$l"; done <<<"$miss"
+else
+    ok "No falta ningún firmware"
+fi
+errs=$(journalctl -k -b -p err --no-pager -o cat 2>/dev/null | grep -vE 'regulatory|vmwgfx|ACPI BIOS Error|ACPI Error|Security Log not supported' | sort -u | head -8)
+[[ -z $errs ]] && ok "Sin errores importantes del kernel" || { warn "Errores del kernel (revisar):"; while read -r l; do info "$l"; done <<<"$errs"; }
+
+# ---------------------------------------------------------------- seguridad
+section "Seguridad"
+if nft list table inet zen_filter >/dev/null 2>&1; then
+    pol=$(nft list chain inet zen_filter input 2>/dev/null | grep -oE 'policy [a-z]+' | head -1)
+    [[ $pol == "policy drop" ]] && ok "Cortafuegos activo: entrada bloqueada por defecto" || warn "Cortafuegos activo pero la entrada no está en drop ($pol)"
+else
+    fail "Cortafuegos zen_filter NO cargado: 'sudo systemctl enable --now nftables'"
+fi
+listen=$(ss -Htuln 2>/dev/null | awk '{print $5}' | grep -vE '^(127\.|\[::1\]|::1|\[?fe80)' | grep -vE '%lo:' | sort -u | tr '\n' ' ')
+[[ -z $listen ]] && ok "Ningún servicio escuchando hacia la red" || warn "Puertos escuchando fuera de localhost (el cortafuegos los bloquea igual): $listen"
+if systemctl is-active -q sshd.service sshd.socket 2>/dev/null; then
+    fail "SSH está ACTIVO: 'sudo systemctl mask --now sshd.service sshd.socket'"
+else
+    ok "SSH desactivado"
+fi
+if [[ -d /run/archiso ]]; then
+    info "ISO live: el cifrado del disco se comprueba en el sistema instalado"
+else
+    rootsrc=$(findmnt -no SOURCE / | sed 's/\[.*//')
+    if [[ $(lsblk -no TYPE "$rootsrc" 2>/dev/null | head -1) == crypt ]]; then
+        ok "Disco del sistema cifrado (LUKS: $(cryptsetup status "$(basename "$rootsrc")" 2>/dev/null | awk -F': *' '/type:/{print $2}'))"
+    else
+        fail "El disco del sistema NO está cifrado"
+    fi
+fi
+if systemctl is-active -q systemd-resolved; then
+    dot=$(resolvectl status 2>/dev/null | grep -m1 -oE '\+DNSOverTLS|DNSOverTLS=[a-z]+|DNS over TLS: [a-z]+')
+    [[ -n $dot ]] && ok "DNS cifrado: $dot" || info "systemd-resolved activo (sin DNS-over-TLS configurado)"
+fi
+[[ $(sysctl -n kernel.kptr_restrict 2>/dev/null) == 2 && $(sysctl -n kernel.dmesg_restrict 2>/dev/null) == 1 ]] \
+    && ok "Kernel endurecido (sysctl zen-hardening)" || warn "sysctl de endurecimiento no aplicado"
+
+# ---------------------------------------------------------------- resumen
+out ""
+out "${c_b}━━ Resumen ${c_0}  ${c_g}$N_OK OK${c_0} · ${c_y}$N_WARN avisos${c_0} · ${c_r}$N_FAIL fallas${c_0}"
+printf '%s' "$LOG" > "$REPORT" && chown "$USR:" "$REPORT" 2>/dev/null
+out "Informe guardado en: $REPORT"
+((N_FAIL == 0))

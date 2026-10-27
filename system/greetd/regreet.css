@@ -1,0 +1,35 @@
+/* ReGreet — Catppuccin Mocha, acento azul (igual que niri/waybar) */
+window {
+    color: #cdd6f4;
+}
+
+frame,
+.background {
+    background-color: rgba(30, 30, 46, 0.85);
+    border: 2px solid #89b4fa;
+    border-radius: 8px;
+}
+
+entry,
+combobox button,
+dropdown button {
+    background-color: #313244;
+    color: #cdd6f4;
+    border-radius: 6px;
+    border: 1px solid #45475a;
+}
+
+entry:focus-within {
+    border-color: #89b4fa;
+}
+
+button.suggested-action {
+    background-color: #89b4fa;
+    color: #11111b;
+    border-radius: 6px;
+}
+
+button.destructive-action {
+    background-color: #f38ba8;
+    color: #11111b;
+}

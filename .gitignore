@@ -1,0 +1,5 @@
+# Resultados de build (ISO de varios GB, logs, paquetes compilados)
+out/
+*.iso
+build.log
+*.pkg.tar.zst

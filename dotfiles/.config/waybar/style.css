@@ -1,0 +1,122 @@
+/* Waybar — Catppuccin Mocha, barra fina flotante estilo polybar */
+@define-color base     #1e1e2e;
+@define-color mantle   #181825;
+@define-color crust    #11111b;
+@define-color surface0 #313244;
+@define-color surface1 #45475a;
+@define-color text     #cdd6f4;
+@define-color subtext  #a6adc8;
+@define-color blue     #89b4fa;
+@define-color mauve    #cba6f7;
+@define-color green    #a6e3a1;
+@define-color yellow   #f9e2af;
+@define-color peach    #fab387;
+@define-color red      #f38ba8;
+@define-color teal     #94e2d5;
+
+* {
+    /* Inter para texto; Symbols Nerd Font solo aporta los iconos */
+    font-family: "Inter", "Symbols Nerd Font", "Noto Sans", sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+}
+
+window#waybar {
+    background: alpha(@crust, 0.92);
+    color: @text;
+    border: 2px solid @surface0;
+    border-radius: 8px;
+}
+
+tooltip {
+    background: @base;
+    border: 2px solid @blue;
+    border-radius: 6px;
+}
+
+#custom-arch {
+    color: @blue;
+    font-size: 16px;
+    padding: 0 12px 0 14px;
+}
+
+#workspaces {
+    padding: 0 4px;
+}
+
+#workspaces button {
+    color: @surface1;
+    padding: 0 6px;
+    background: transparent;
+}
+
+#workspaces button.active {
+    color: @blue;
+}
+
+#workspaces button.urgent {
+    color: @red;
+}
+
+#workspaces button:hover {
+    background: @surface0;
+    border-radius: 6px;
+    box-shadow: none;
+}
+
+#window {
+    color: @subtext;
+    padding: 0 10px;
+}
+
+#clock {
+    color: @blue;
+    font-weight: bold;
+}
+
+#cpu, #memory, #disk, #network, #pulseaudio, #battery, #tray {
+    padding: 0 10px;
+    margin: 4px 0;
+    border-radius: 6px;
+    background: @base;
+}
+
+#cpu        { color: @green; }
+#memory     { color: @mauve; }
+#disk       { color: @peach; }
+#network    { color: @teal; }
+#pulseaudio { color: @yellow; }
+#battery    { color: @green; }
+#tray       { margin-right: 6px; }
+
+#network.disconnected,
+#pulseaudio.muted { color: @surface1; }
+
+#battery.warning:not(.charging)  { color: @peach; }
+#battery.critical:not(.charging) { color: @red; }
+
+#custom-power {
+    color: @red;
+    font-size: 15px;
+    padding: 0 14px 0 10px;
+}
+
+#custom-power:hover {
+    color: @peach;
+}
+
+#power-profiles-daemon {
+    color: @green;
+    padding: 0 8px;
+}
+
+#power-profiles-daemon.performance {
+    color: @red;
+}
+
+#power-profiles-daemon.power-saver {
+    color: @teal;
+}
