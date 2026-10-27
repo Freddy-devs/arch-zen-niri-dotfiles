@@ -172,6 +172,19 @@ layer-rule {
 }
 
 // ---------- atajos (estilo sxhkd) ----------
+// 10 escritorios fijos (existen aunque estén vacíos): 1-5 en la pantalla de la laptop y 6-10 en
+// el monitor externo. Con una sola pantalla los 10 quedan en ella. Nombres: niri msg outputs
+workspace "1" { open-on-output "eDP-1"; }
+workspace "2" { open-on-output "eDP-1"; }
+workspace "3" { open-on-output "eDP-1"; }
+workspace "4" { open-on-output "eDP-1"; }
+workspace "5" { open-on-output "eDP-1"; }
+workspace "6" { open-on-output "HDMI-A-1"; }
+workspace "7" { open-on-output "HDMI-A-1"; }
+workspace "8" { open-on-output "HDMI-A-1"; }
+workspace "9" { open-on-output "HDMI-A-1"; }
+workspace "10" { open-on-output "HDMI-A-1"; }
+
 binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
 
@@ -180,7 +193,7 @@ binds {
     Mod+Space hotkey-overlay-title="Lanzador" { spawn "rofi" "-show" "drun"; }
     Mod+D { spawn "rofi" "-show" "drun"; }
     // Brave es opcional: si no está instalado, ofrece instalarlo
-    Mod+B hotkey-overlay-title="Navegador (Brave)" { spawn "sh" "-c" "command -v brave >/dev/null && exec brave || exec alacritty --class zen-tui -e zen-apps brave"; }
+    Mod+B hotkey-overlay-title="Lanzador de apps" { spawn "rofi" "-show" "drun"; }
     Mod+A hotkey-overlay-title="Calendario y tareas" { spawn "zen-calendar"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles" { spawn "sh" "-c" "cliphist list | rofi -dmenu -display-columns 2 -theme ~/.config/rofi/clipboard.rasi | cliphist decode | wl-copy"; }
@@ -222,25 +235,38 @@ binds {
     Mod+Ctrl+Shift+H { move-column-to-monitor-left; }
     Mod+Ctrl+Shift+L { move-column-to-monitor-right; }
 
-    // escritorios  (super + {_,shift + }{1-9})
-    Mod+1 { focus-workspace 1; }
-    Mod+2 { focus-workspace 2; }
-    Mod+3 { focus-workspace 3; }
-    Mod+4 { focus-workspace 4; }
-    Mod+5 { focus-workspace 5; }
-    Mod+6 { focus-workspace 6; }
-    Mod+7 { focus-workspace 7; }
-    Mod+8 { focus-workspace 8; }
-    Mod+9 { focus-workspace 9; }
-    Mod+Shift+1 { move-column-to-workspace 1; }
-    Mod+Shift+2 { move-column-to-workspace 2; }
-    Mod+Shift+3 { move-column-to-workspace 3; }
-    Mod+Shift+4 { move-column-to-workspace 4; }
-    Mod+Shift+5 { move-column-to-workspace 5; }
-    Mod+Shift+6 { move-column-to-workspace 6; }
-    Mod+Shift+7 { move-column-to-workspace 7; }
-    Mod+Shift+8 { move-column-to-workspace 8; }
-    Mod+Shift+9 { move-column-to-workspace 9; }
+    // escritorios: Super+Shift+número (o Super+número) cambia de escritorio,
+    // Super+Ctrl+número lleva la ventana a ese escritorio. El 0 es el escritorio 10.
+    Mod+Shift+1 { focus-workspace "1"; }
+    Mod+Shift+2 { focus-workspace "2"; }
+    Mod+Shift+3 { focus-workspace "3"; }
+    Mod+Shift+4 { focus-workspace "4"; }
+    Mod+Shift+5 { focus-workspace "5"; }
+    Mod+Shift+6 { focus-workspace "6"; }
+    Mod+Shift+7 { focus-workspace "7"; }
+    Mod+Shift+8 { focus-workspace "8"; }
+    Mod+Shift+9 { focus-workspace "9"; }
+    Mod+Shift+0 { focus-workspace "10"; }
+    Mod+1 { focus-workspace "1"; }
+    Mod+2 { focus-workspace "2"; }
+    Mod+3 { focus-workspace "3"; }
+    Mod+4 { focus-workspace "4"; }
+    Mod+5 { focus-workspace "5"; }
+    Mod+6 { focus-workspace "6"; }
+    Mod+7 { focus-workspace "7"; }
+    Mod+8 { focus-workspace "8"; }
+    Mod+9 { focus-workspace "9"; }
+    Mod+0 { focus-workspace "10"; }
+    Mod+Ctrl+1 { move-column-to-workspace "1"; }
+    Mod+Ctrl+2 { move-column-to-workspace "2"; }
+    Mod+Ctrl+3 { move-column-to-workspace "3"; }
+    Mod+Ctrl+4 { move-column-to-workspace "4"; }
+    Mod+Ctrl+5 { move-column-to-workspace "5"; }
+    Mod+Ctrl+6 { move-column-to-workspace "6"; }
+    Mod+Ctrl+7 { move-column-to-workspace "7"; }
+    Mod+Ctrl+8 { move-column-to-workspace "8"; }
+    Mod+Ctrl+9 { move-column-to-workspace "9"; }
+    Mod+Ctrl+0 { move-column-to-workspace "10"; }
     Mod+Tab { focus-workspace-previous; }
     Mod+Page_Down { focus-workspace-down; }
     Mod+Page_Up   { focus-workspace-up; }

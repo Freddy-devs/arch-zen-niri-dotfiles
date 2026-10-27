@@ -289,6 +289,12 @@ log "Snapshot inicial"
 arch-chroot "$MNT" snapper --no-dbus -c root create -d "instalación limpia" || warn "No se pudo crear el snapshot inicial"
 
 # algún proceso del chroot (snapper, gpg-agent) puede tardar en soltar /mnt: reintentar antes de fallar
+# el gpg-agent del llavero de pacman queda vivo tras pacman-key y retiene /mnt (visto en VM):
+# terminar solo los procesos que siguen enjaulados en el sistema nuevo
+for p in /proc/[0-9]*; do
+    [[ $(readlink "$p/root" 2>/dev/null) == "$MNT" ]] && kill "${p#/proc/}" 2>/dev/null
+done
+sleep 1
 sync
 for _ in 1 2 3 4 5 6 7 8 9 10; do umount -R "$MNT" 2>/dev/null && break; sleep 2; done
 if mountpoint -q "$MNT"; then

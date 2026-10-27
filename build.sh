@@ -80,6 +80,9 @@ fi
 grep -rlE 'vmlinuz-linux|initramfs-linux' "$PROFILE/grub" "$PROFILE/syslinux" "$PROFILE/efiboot" 2>/dev/null \
     | xargs -r sed -i -E -e 's#vmlinuz-linux([^-a-z]|$)#vmlinuz-linux-zen\1#g' \
                          -e 's#initramfs-linux\.img#initramfs-linux-zen.img#g'
+# Sesión live: los cambios viven en RAM y archiso solo reserva 256 MB (instalar Brave lo llenaba)
+grep -rl 'archisobasedir=' "$PROFILE/grub" "$PROFILE/syslinux" "$PROFILE/efiboot" 2>/dev/null \
+    | xargs -r sed -i 's/archisobasedir=%INSTALL_DIR%/& cow_spacesize=1G/'
 # Abortar si alguna entrada de arranque sigue apuntando al kernel "linux"
 if grep -rqE 'vmlinuz-linux([^-]|$)|initramfs-linux\.img' "$PROFILE/grub" "$PROFILE/syslinux" "$PROFILE/efiboot"; then
     die "quedaron entradas de arranque con el kernel 'linux' en lugar de 'linux-zen'"

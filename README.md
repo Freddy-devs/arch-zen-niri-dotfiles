@@ -102,7 +102,7 @@ Graba con Ventoy, Rufus (modo DD) o `dd`.
 |---|---|---|---|---|
 | `Super+Enter` | terminal | | `Super+1..9` | ir a escritorio |
 | `Super+Space` / `Super+D` | lanzador | | `Super+Shift+1..9` | enviar ventana |
-| `Super+B` | Brave (si falta, ofrece instalarlo) | | `Super+H/J/K/L` | foco |
+| `Super+B` | Lanzador de apps (rofi) | | `Super+H/J/K/L` | foco |
 | `Super+E` | archivos (Thunar) | | `Super+Shift+H/J/K/L` | mover |
 | `Super+W` | cerrar | | `Super+R` | ancho 1/3 · 1/2 · 2/3 · 1 |
 | `Super+T` | flotante | | `Super+F` / `Super+Shift+F` | maximizar / pantalla completa |
