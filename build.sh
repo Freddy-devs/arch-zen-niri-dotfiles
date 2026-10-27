@@ -181,6 +181,12 @@ install -Dm644 "$ROOT/system/security/90-zen-hardening.conf" "$A/etc/sysctl.d/90
 install -Dm644 "$ROOT/system/security/20-zen-privacy.conf"   "$A/etc/NetworkManager/conf.d/20-zen-privacy.conf"
 ln -sf /usr/lib/systemd/system/nftables.service "$S/multi-user.target.wants/nftables.service"
 for u in sshd.service sshd.socket sshd@.service; do ln -sf /dev/null "$S/$u"; done
+# sin mDNS/LLMNR (puertos 5353/5355) y DNS cifrado, igual que el sistema instalado
+install -Dm644 "$ROOT/system/security/zen-dns.conf" "$A/etc/systemd/resolved.conf.d/zen-dns.conf"
+# systemd intenta abrir el DVD de arranque como imagen de disco y marca [FAILED] al iniciar
+ln -sf /dev/null "$S/systemd-loop@.service"
+# hora de Lima en la sesión live (releng trae UTC)
+ln -sf /usr/share/zoneinfo/America/Lima "$A/etc/localtime"
 
 log "mkarchiso"
 mkarchiso -v -r -w "$WORK" -o "$OUT" "$PROFILE"

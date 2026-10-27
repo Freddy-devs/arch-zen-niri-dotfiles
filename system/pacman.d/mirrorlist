@@ -6,9 +6,10 @@
 ##
 
 # Brasil
-Server = https://mirror.ufscar.br/archlinux/$repo/os/$arch
 Server = https://archlinux.c3sl.ufpr.br/$repo/os/$arch
 Server = https://mirrors.ic.unicamp.br/archlinux/$repo/os/$arch
+# ufscar se quedó sin transferir en la prueba del 27-oct-2026: va al final de Brasil
+Server = https://mirror.ufscar.br/archlinux/$repo/os/$arch
 
 # Chile
 Server = https://mirror.anquan.cl/archlinux/$repo/os/$arch

@@ -13,7 +13,8 @@ set -u
 echo "== Configuración inicial de arch-zen-niri =="
 echo
 
-until curl -fsS --max-time 5 -o /dev/null https://claude.ai; do
+# la portada de claude.ai puede responder 403 (filtro anti-bots) aunque haya internet
+until curl -fsS --max-time 5 -o /dev/null https://archlinux.org; do
     echo "Sin conexión a internet. Conéctate (icono de red en la barra) y pulsa Enter..."
     read -r
 done

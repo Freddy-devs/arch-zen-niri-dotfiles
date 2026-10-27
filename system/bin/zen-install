@@ -183,6 +183,7 @@ EOF
 # pacman: descargas paralelas, color, multilib
 sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 10/; s/^#Color/Color\nILoveCandy/' /etc/pacman.conf
 sed -i '/^#\[multilib\]/{N;s/#//g}' /etc/pacman.conf
+pacman -Sy --noconfirm >/dev/null   # descarga la base de multilib recién activada
 
 # Usuarios
 echo "root:$ROOTPASS" | chpasswd
