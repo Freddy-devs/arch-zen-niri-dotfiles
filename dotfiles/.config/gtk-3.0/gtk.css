@@ -1,0 +1,159 @@
+/* Thunar con la paleta del escritorio (TokyoNight, igual que la barra y rofi).
+ * Solo afecta a las ventanas de Thunar; el resto de apps GTK usa el tema tal cual. */
+
+@define-color zen_base     #1a1b26;
+@define-color zen_mantle   #16161e;
+@define-color zen_surface0 #24283b;
+@define-color zen_surface1 #3b4261;
+@define-color zen_overlay0 #565f89;
+@define-color zen_text     #c0caf5;
+@define-color zen_subtext  #a9b1d6;
+@define-color zen_blue     #7aa2f7;
+@define-color zen_purple   #bb9af7;
+
+/* ---------- fondo general ---------- */
+window.thunar,
+window.thunar menubar,
+window.thunar toolbar,
+window.thunar .view,
+window.thunar iconview,
+window.thunar treeview.view,
+window.thunar scrolledwindow,
+window.thunar viewport {
+    background-color: @zen_base;
+    color: @zen_text;
+}
+
+window.thunar menubar {
+    padding: 2px 6px;
+    border-bottom: 1px solid alpha(@zen_text, 0.06);
+}
+
+window.thunar menubar > menuitem:hover {
+    background-color: @zen_surface0;
+    border-radius: 6px;
+    color: @zen_text;
+    box-shadow: none;
+}
+
+/* ---------- barra de herramientas y ruta ---------- */
+window.thunar toolbar {
+    padding: 6px 8px;
+    border-bottom: 1px solid alpha(@zen_text, 0.06);
+}
+
+window.thunar toolbar button {
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 8px;
+    color: @zen_subtext;
+    min-height: 26px;
+    min-width: 26px;
+}
+
+window.thunar toolbar button:hover {
+    background-color: @zen_surface0;
+    color: @zen_blue;
+}
+
+window.thunar toolbar button:disabled {
+    color: alpha(@zen_subtext, 0.35);
+}
+
+window.thunar toolbar entry {
+    background-color: @zen_mantle;
+    background-image: linear-gradient(to right, alpha(@zen_blue, 0.10), alpha(@zen_purple, 0.12));
+    border: 1px solid alpha(@zen_blue, 0.18);
+    border-radius: 10px;
+    box-shadow: none;
+    color: @zen_text;
+    min-height: 30px;
+    padding: 0 10px;
+}
+
+window.thunar toolbar entry:focus {
+    border-color: alpha(@zen_blue, 0.55);
+}
+
+window.thunar toolbar entry image {
+    color: @zen_purple;
+}
+
+window.thunar entry selection {
+    background-color: alpha(@zen_blue, 0.35);
+    color: @zen_text;
+}
+
+/* ---------- panel lateral ---------- */
+window.thunar .sidebar,
+window.thunar .sidebar treeview.view,
+window.thunar .sidebar viewport {
+    background-color: @zen_mantle;
+    color: @zen_subtext;
+}
+
+window.thunar .sidebar {
+    border-right: 1px solid alpha(@zen_text, 0.06);
+}
+
+window.thunar .sidebar treeview.view {
+    padding: 2px 0;
+}
+
+window.thunar .sidebar treeview.view:hover {
+    background-color: alpha(@zen_surface0, 0.7);
+}
+
+window.thunar .sidebar treeview.view:selected,
+window.thunar .sidebar treeview.view:selected:focus {
+    background-color: @zen_surface0;
+    background-image: linear-gradient(to right, alpha(@zen_blue, 0.25), alpha(@zen_purple, 0.15));
+    color: @zen_text;
+}
+
+window.thunar .sidebar treeview.view header button,
+window.thunar .sidebar label {
+    color: @zen_purple;
+}
+
+/* ---------- vista de archivos ---------- */
+window.thunar iconview:selected,
+window.thunar .view:selected,
+window.thunar treeview.view:selected {
+    background-color: alpha(@zen_blue, 0.22);
+    color: @zen_text;
+    border-radius: 10px;
+}
+
+window.thunar iconview:hover,
+window.thunar .view:hover {
+    background-color: alpha(@zen_surface0, 0.6);
+}
+
+window.thunar treeview.view header button {
+    background-color: @zen_base;
+    border: none;
+    border-bottom: 1px solid alpha(@zen_text, 0.06);
+    color: @zen_overlay0;
+}
+
+window.thunar .view rubberband,
+window.thunar iconview rubberband {
+    background-color: alpha(@zen_blue, 0.15);
+    border: 1px solid alpha(@zen_blue, 0.6);
+}
+
+/* ---------- barra de estado ---------- */
+window.thunar statusbar,
+window.thunar .statusbar {
+    background-color: @zen_mantle;
+    color: @zen_overlay0;
+    border-top: 1px solid alpha(@zen_text, 0.06);
+    padding: 0 8px;
+}
+
+window.thunar paned > separator {
+    background-color: alpha(@zen_text, 0.06);
+    min-width: 1px;
+}
