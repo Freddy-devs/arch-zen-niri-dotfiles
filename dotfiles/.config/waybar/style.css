@@ -47,7 +47,7 @@ window#waybar {
 
 /* aire entre el borde de la barra y las islas */
 window#waybar > box {
-    padding: 0 4px;
+    padding: 0 6px;
 }
 
 tooltip {
@@ -76,9 +76,9 @@ tooltip label {
     background: linear-gradient(180deg, alpha(@nordic1, 0.96), alpha(@nordic0, 0.97));
     border: 1px solid alpha(@nordic3, 0.95);
     border-top-color: alpha(@frost, 0.30);
-    border-radius: 12px;
-    margin: 4px 3px;
-    padding: 0 13px;
+    border-radius: 10px;
+    margin: 7px 3px;
+    padding: 0 12px;
     box-shadow: 0 2px 6px alpha(black, 0.45), inset 0 1px 0 alpha(@fg, 0.04);
     transition: all 200ms ease;
 }
@@ -129,10 +129,10 @@ tooltip label {
 #workspaces button {
     font-size: 15px;
     padding: 0 5px;
-    margin: 3px 1px;
+    margin: 1px 1px;
     min-width: 18px;
     background: transparent;
-    border-radius: 9px;
+    border-radius: 8px;
     transition: color 200ms ease, background 200ms ease;
 }
 
