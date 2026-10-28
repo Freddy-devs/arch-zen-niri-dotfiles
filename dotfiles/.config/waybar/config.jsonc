@@ -1,12 +1,12 @@
-// Waybar — arch-zen-niri: una sola barra translúcida (vidrio con desenfoque de niri),
-// bordes suaves y esquinas apenas redondeadas (TokyoNight).
+// Waybar — arch-zen-niri: barra transparente con "islas" translúcidas por grupo,
+// bordes suaves y esquinas redondeadas (TokyoNight).
 // Izquierda: logo + CPU, RAM y disco · Centro: escritorios estilo Pac-Man
 // Derecha: conexiones, controles, bandeja, energía y la hora (clic = calendario).
 // Sale en todas las pantallas; los escritorios son los de cada pantalla.
 {
     "layer": "top",
     "position": "top",
-    "height": 34,
+    "height": 36,
     "spacing": 0,
     "margin-top": 6,
     "margin-left": 10,

@@ -1,5 +1,5 @@
-/* Waybar — TokyoNight: una sola barra de vidrio (translúcida; niri desenfoca lo de atrás),
-   borde suave de 1 px y esquinas apenas redondeadas. Escritorios estilo Pac-Man al centro. */
+/* Waybar — TokyoNight: barra transparente con "islas" (una por grupo) translúcidas,
+   borde suave de 1 px, esquinas redondeadas y sombra leve. Escritorios estilo Pac-Man al centro. */
 @define-color base     #1a1b26;
 @define-color mantle   #16161e;
 @define-color surface  #24283b;
@@ -28,13 +28,9 @@
     border-radius: 0;
 }
 
-/* la barra: vidrio oscuro translúcido, borde fino con brillo arriba, esquinas de 8 px
-   (el radio debe coincidir con geometry-corner-radius del layer-rule de waybar en niri) */
+/* la barra en sí es transparente: solo se ven las islas */
 window#waybar {
-    background: linear-gradient(180deg, alpha(@surface, 0.62), alpha(@base, 0.52));
-    border: 1px solid alpha(@fg, 0.10);
-    border-top-color: alpha(@fg, 0.16);
-    border-radius: 8px;
+    background: transparent;
     color: @fg;
 }
 
@@ -50,7 +46,7 @@ tooltip label {
     padding: 2px 4px;
 }
 
-/* ---------- módulos: planos sobre el vidrio; al pasar el mouse, un brillo tenue ---------- */
+/* ---------- islas: cada grupo con su fondo translúcido, borde suave y esquinas redondeadas ---------- */
 #custom-arch,
 #stats,
 #workspaces,
@@ -61,22 +57,27 @@ tooltip label {
 #language,
 #custom-power,
 #clock {
-    background: transparent;
-    border-radius: 6px;
-    margin: 4px 2px;
-    padding: 0 10px;
-    transition: background 200ms ease, color 200ms ease;
+    background: linear-gradient(180deg, alpha(@surface, 0.80), alpha(@base, 0.72));
+    border: 1px solid alpha(@fg, 0.10);
+    border-top-color: alpha(@fg, 0.17);
+    border-radius: 8px;
+    margin: 0 4px 6px 4px;
+    padding: 0 12px;
+    box-shadow: 0 3px 8px alpha(black, 0.35);
+    transition: all 200ms ease;
 }
 
 #custom-arch:hover,
 #stats:hover,
+#workspaces:hover,
 #netbat:hover,
 #controls:hover,
 #custom-updates:hover,
 #tray:hover,
 #language:hover,
 #clock:hover {
-    background: alpha(@fg, 0.08);
+    background: linear-gradient(180deg, alpha(@surface, 0.95), alpha(@base, 0.88));
+    border-color: alpha(@fg, 0.20);
 }
 
 /* módulos dentro de un grupo, separados con aire */
@@ -90,8 +91,8 @@ tooltip label {
 #custom-arch {
     color: @arch;
     font-size: 17px;
-    padding: 0 10px 0 9px;
-    margin-left: 4px;
+    padding: 0 12px 0 11px;
+    margin-left: 0;
 }
 
 #custom-arch:hover { color: @cyan; }
@@ -201,6 +202,7 @@ tooltip label {
 #clock {
     color: @fg;
     font-weight: 700;
-    padding: 0 12px;
-    margin-right: 4px;
+    padding: 0 14px;
+    margin-right: 0;
+    border-color: alpha(@purple, 0.40);
 }
