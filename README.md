@@ -19,24 +19,26 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Paneles | Bluetooth `bluetui`, audio `wiremix`, red `nmtui` (en terminal flotante, sin applets residentes) | extra |
 | Opcional | `zen-apps`: Brave, WPS, Claude Code, herdr, PHP, MariaDB, PostgreSQL, Podman, Node, Go, Rust, gh, huella, GUIs | a pedido |
 | Estabilidad | btrfs + snapper + snap-pac + grub-btrfs (sin demonio: una unidad .path de systemd), sin repos testing, aviso de noticias Arch | extra |
-| Seguridad | disco cifrado LUKS2, cortafuegos nftables (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
+| Seguridad | cortafuegos nftables (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
 
 ## Seguridad ("caja fuerte")
-- **Disco cifrado (LUKS2 + argon2id)**: todo menos los kernels (`/boot`). Contraseña al encender;
-  si se olvida, los datos no se recuperan.
+- **Disco sin cifrar** (a propósito): sin contraseña al encender y los datos se leen desde cualquier
+  USB live si algún día hay que recuperarlos.
 - **Cortafuegos** (`/etc/nftables.conf`): entrada bloqueada por defecto, sin puertos abiertos y sin
   responder a ping. La salida es libre. Ver: `sudo nft list ruleset` · bloqueos: `journalctl -k -g zen-fw`.
 - **Sin SSH**, sin avahi/cups. MariaDB (si la instalas con `zen-apps`) solo en localhost.
 - **Acceso remoto solo por túnel**: WireGuard (`wireguard-tools`) que inicia la laptop hacia tu
   servidor; nunca se abre un puerto de entrada.
 - **Red privada**: MAC aleatoria por red Wi-Fi, IPv6 temporal, no envía el nombre del equipo al router.
-- **DNS cifrado** (DNS-over-TLS a Quad9, respaldo Cloudflare) con systemd-resolved.
+- **DNS cifrado** (DNS-over-TLS a Quad9, respaldo Cloudflare) con systemd-resolved. NetworkManager no
+  pasa el DNS del router (`dns=none`): ninguna consulta sale al DNS del proveedor. Comprobar: `resolvectl status`.
 - **Kernel endurecido** (`/etc/sysctl.d/90-zen-hardening.conf`), `sudo` con registro y 5 min de
   validez, bloqueo de 10 min tras 5 contraseñas fallidas.
 - **AppArmor** activo y **kernel lockdown=integrity**: no se cargan módulos sin firmar ni se accede
   a `/dev/mem`. Endurecimiento de memoria sin costo perceptible (`slab_nomerge`,
   `page_alloc.shuffle`, `randomize_kstack_offset`, `vsyscall=none`, `debugfs=off`).
-  Si instalas el driver NVIDIA propietario (DKMS, sin firmar), `zen-hwsetup` quita el lockdown.
+  Si instalas el driver NVIDIA propietario (DKMS, sin firmar), `zen-hwsetup` quita el lockdown
+  y `install.sh` ya no lo vuelve a poner.
   La hibernación no está disponible con lockdown (la suspensión sí).
 - Sin volcados de memoria en disco; protocolos de red raros y sistemas de archivos antiguos bloqueados.
 - `zen-hwcheck` incluye secciones de seguridad y rendimiento que comprueban todo lo anterior.
@@ -85,7 +87,7 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
    | Opción de archinstall | Elegir |
    |---|---|
    | Disk configuration | *Use a best-effort default partition layout* → tu disco → **btrfs** → **sí** a subvolúmenes por defecto → compresión **sí** |
-   | Disk encryption | **LUKS** + contraseña de cifrado (se pide al encender; si se olvida, los datos se pierden) |
+   | Disk encryption | **No encryption** (sin cifrar: sin contraseña al encender y datos recuperables desde un USB live) |
    | Bootloader | **Grub** (necesario para los snapshots en el menú de arranque) |
    | Swap | **sí** (zram) |
    | Hostname / Root password / User account | los tuyos; el usuario como **superusuario (sudo)** |
@@ -110,13 +112,15 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
   luz, vuelve a ejecutar `./install.sh` y sigue desde el paso que falló (`--status` muestra el avance).
 - **Reintenta** las descargas de pacman, del AUR y de las fuentes; espera a que vuelva internet.
 - **Comprueba antes de empezar**: que sea Arch instalado (no la ISO), usuario normal con sudo, internet,
-  espacio libre (8 GB), batería (sin cargador exige 40 %) y candados viejos de pacman.
+  espacio libre (8 GB), batería (sin cargador exige 40 %; `--ignore-battery` si la batería marca mal) y candados viejos de pacman.
 - **Nunca deja el equipo sin arrancar**: añade parámetros del kernel sin quitar los de archinstall
-  (cifrado incluido) y, si `grub-mkconfig` falla, restaura la configuración original.
+  y, si `grub-mkconfig` falla, restaura la configuración original.
 - **Se adapta**: GRUB o systemd-boot, btrfs o ext4 (sin btrfs omite snapper), equipo físico o VM,
   NVIDIA detectada; pulseaudio/iptables en conflicto se reemplazan solos; paquetes que ya no existan
   o del AUR que fallen se avisan al final en vez de abortar todo.
-- Lo que ya tenías en tu carpeta personal queda respaldado como `archivo.~1~`.
+- Lo que ya tenías en tu carpeta personal queda respaldado como `archivo.~1~` (solo si cambia).
+- Si un paquete propio (yay, tema, calendario) no compila, el resto sigue; al volver a ejecutar
+  `./install.sh` se reintenta solo eso.
   Registro completo: `/var/log/zen-postinstall.log`.
 
 ### Opciones
@@ -124,7 +128,9 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
 ./install.sh --help            # todas las opciones
 ./install.sh -y -k latam       # sin preguntas, teclado latinoamericano
 ./install.sh --status          # qué pasos ya están hechos
-./install.sh --redo            # repetir todo (p. ej. tras actualizar el repo con git pull)
+./install.sh --redo dotfiles   # repetir solo un paso (p. ej. tras git pull); varios: --redo dotfiles,files
+./install.sh --redo            # repetir todos los pasos
+./install.sh --ignore-battery  # no exigir cargador (si la batería da lecturas raras)
 ./install.sh --no-aur          # sin compilar yay, tema, cursor ni zen-calendar
 ./install.sh --no-hw           # sin ajustes de hardware (zen-hwsetup --auto)
 ./install.sh --no-hardening    # sin lockdown/AppArmor en los parámetros del kernel
@@ -136,8 +142,8 @@ Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola
 ## Atajos (Super = tecla Windows)
 | Atajo | Acción | | Atajo | Acción |
 |---|---|---|---|---|
-| `Super+Enter` | terminal | | `Super+1..9` | ir a escritorio |
-| `Super+Space` / `Super+D` | lanzador | | `Super+Shift+1..9` | enviar ventana |
+| `Super+Enter` | terminal | | `Super+1..9`, `Super+0` | ir a escritorio (0 = 10) |
+| `Super+Space` / `Super+D` | lanzador | | `Super+Ctrl+1..9` | enviar ventana |
 | `Super+B` | Lanzador de apps (rofi) | | `Super+H/J/K/L` | foco |
 | `Super+E` | archivos (Thunar) | | `Super+Shift+H/J/K/L` | mover |
 | `Super+W` | cerrar | | `Super+R` | ancho 1/3 · 1/2 · 2/3 · 1 |
@@ -145,8 +151,8 @@ Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola
 | `Super+O` | vista general | | `Super+,` / `Super+.` | apilar / separar en columna |
 | `Super+V` | portapapeles | | `Print` / `Shift+Print` | captura / captura + anotar |
 | `Super+Alt+L` | bloquear | | `Super+Alt+Q` | salir de niri |
-| `Super+Shift+/` | ver todos los atajos | | `Super+Tab` | escritorio anterior |
-| `Super+A` | calendario y tareas | | | |
+| `Super+F1` | ver todos los atajos | | `Super+Tab` | escritorio anterior |
+| `Super+A` | calendario y tareas | | `Super+-` / `Super++` | columna más angosta / ancha |
 
 ## Barra y calendario
 La barra: CPU · RAM · disco | escritorios de cada pantalla |
@@ -180,6 +186,8 @@ que se desplaza. `Super+R` y `Super+,` dan el equivalente práctico a las divisi
 ## Si una actualización rompe algo
 En GRUB entra a *Arch Linux snapshots* y arranca el snapshot previo (creado por snap-pac),
 o elige el kernel `linux-lts`. Luego `snapper rollback` si quieres quedarte en él.
+Ojo: los snapshots no guardan el kernel (está en `/boot`, fuera de btrfs). Un snapshot de ANTES de
+una actualización del kernel puede arrancar sin Wi-Fi o GPU; en ese caso usa `linux-lts` o el más reciente.
 Antes de actualizar, `news` muestra las noticias de archlinux.org (también aparecen en cada `pacman -Syu`).
 
 ## Estructura

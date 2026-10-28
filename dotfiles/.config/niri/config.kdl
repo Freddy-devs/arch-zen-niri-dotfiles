@@ -220,13 +220,14 @@ workspace "9" { open-on-output "HDMI-A-1"; }
 workspace "10" { open-on-output "HDMI-A-1"; }
 
 binds {
+    // lista de atajos: Super+F1 (en latam/es no hay tecla "/" sin Shift, por eso Super+Shift+/ no llega)
+    Mod+F1 hotkey-overlay-title="Ver todos los atajos" { show-hotkey-overlay; }
     Mod+Shift+Slash { show-hotkey-overlay; }
 
     // apps
     Mod+Return hotkey-overlay-title="Terminal" { spawn "alacritty"; }
     Mod+Space hotkey-overlay-title="Lanzador" { spawn "rofi" "-show" "drun"; }
     Mod+D { spawn "rofi" "-show" "drun"; }
-    // Brave es opcional: si no está instalado, ofrece instalarlo
     Mod+B hotkey-overlay-title="Lanzador de apps" { spawn "rofi" "-show" "drun"; }
     Mod+A hotkey-overlay-title="Calendario y tareas" { spawn "zen-calendar"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
@@ -322,6 +323,9 @@ binds {
     Mod+Period { expel-window-from-column; }
     Mod+BracketLeft  { consume-or-expel-window-left; }
     Mod+BracketRight { consume-or-expel-window-right; }
+    // lo mismo en latam (las teclas { y } de la derecha de la Ñ)
+    Mod+BraceLeft  { consume-or-expel-window-left; }
+    Mod+BraceRight { consume-or-expel-window-right; }
     Mod+Ctrl+C { center-column; }
 
     // tamaños
@@ -332,6 +336,9 @@ binds {
     Mod+Equal { set-column-width "+10%"; }
     Mod+Shift+Minus { set-window-height "-10%"; }
     Mod+Shift+Equal { set-window-height "+10%"; }
+    // en latam/es "=" va con Shift (y niri usa la tecla sin Shift): agrandar con la tecla "+"
+    Mod+Plus { set-column-width "+10%"; }
+    Mod+Shift+Plus { set-window-height "+10%"; }
 
     // capturas
     Print { screenshot; }

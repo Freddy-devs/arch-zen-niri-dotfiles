@@ -39,7 +39,9 @@ Uso: ./install.sh [opciones]      (con tu usuario normal; pide sudo)
       --no-hw           no aplicar ajustes de hardware (zen-hwsetup --auto)
       --no-hardening    no cambiar parámetros del kernel (lockdown, AppArmor…)
       --no-reboot       no ofrecer reiniciar al final
+      --ignore-battery  no exigir cargador ni batería mínima (si la batería da lecturas raras)
       --redo            repetir todos los pasos aunque ya estén hechos
+      --redo PASO[,PASO] repetir solo esos pasos (p. ej. --redo aur o --redo dotfiles,boot)
       --status          mostrar qué pasos están hechos y salir
   -h, --help            esta ayuda
 
@@ -49,8 +51,9 @@ EOF
 }
 
 # ---------- opciones ----------
-YES=0; XKB=""; DO_AUR=1; DO_HW=1; DO_HARDEN=1; DO_REBOOT=1; REDO=0; STATUS=0
+YES=0; XKB=""; DO_AUR=1; DO_HW=1; DO_HARDEN=1; DO_REBOOT=1; REDO=0; REDO_STEPS=""; STATUS=0; IGNORE_BAT=0
 ARGS=("$@")
+is_step() { [[ " ${STEP_NAMES[*]} " == *" $1 "* ]]; }
 while (( $# )); do
     case $1 in
         -y|--yes) YES=1 ;;
@@ -60,7 +63,10 @@ while (( $# )); do
         --no-hw) DO_HW=0 ;;
         --no-hardening) DO_HARDEN=0 ;;
         --no-reboot) DO_REBOOT=0 ;;
-        --redo) REDO=1 ;;
+        --ignore-battery) IGNORE_BAT=1 ;;
+        --redo=*) REDO_STEPS=${1#*=} ;;
+        # --redo solo = todos los pasos; --redo aur,boot = solo esos
+        --redo) if [[ -n ${2:-} && $2 != -* ]]; then REDO_STEPS=$2; shift; else REDO=1; fi ;;
         --status) STATUS=1 ;;
         -h|--help) usage; exit 0 ;;
         *) die "Opción desconocida: $1 (usa --help)" ;;
@@ -68,6 +74,10 @@ while (( $# )); do
     shift
 done
 [[ -z $XKB || $XKB =~ ^(latam|es|us)$ ]] || die "Teclado inválido '$XKB': usa latam, es o us"
+REDO_STEPS=${REDO_STEPS//,/ }
+for s in $REDO_STEPS; do is_step "$s" || die "Paso desconocido '$s'. Pasos: ${STEP_NAMES[*]}"; done
+# ¿se pidió repetir este paso? (--redo o --redo PASO)
+redo_step() { (( REDO )) || [[ " $REDO_STEPS " == *" $1 "* ]]; }
 
 ask() { local v; (( YES )) && { printf '%s' "$2"; return; }; read -rp "$1 [$2]: " v; printf '%s' "${v:-$2}"; }
 yes_no() { [[ $(ask "$1 (s/n)" "${2:-s}") =~ ^[sSyY] ]]; }
@@ -95,15 +105,24 @@ fi
 
 # sin cargador y con poca batería se corta a mitad (ya pasó con el build de la ISO)
 check_power() {
-    local ac=1 bat cap
+    local p ac=0 mains=0 bat="" cap
     for p in /sys/class/power_supply/*; do
-        [[ -f $p/type ]] || continue
-        case $(<"$p/type") in Mains) [[ $(<"$p/online") == 1 ]] || ac=0 ;; Battery) bat=$p ;; esac
+        [[ -r $p/type ]] || continue
+        case $(<"$p/type") in
+            # basta una entrada de corriente conectada (algunos equipos tienen varias)
+            Mains|USB) mains=1; [[ $(cat "$p/online" 2>/dev/null) == 1 ]] && ac=1 ;;
+            Battery) [[ -n $bat ]] || bat=$p ;;
+        esac
     done
-    [[ -n ${bat:-} ]] || return 0
-    (( ac )) && return 0
-    cap=$(<"$bat/capacity")
-    (( cap >= MIN_BAT )) || die "Sin cargador y batería al $cap %. Conecta el cargador (mínimo $MIN_BAT % sin él)."
+    [[ -n $bat ]] || return 0
+    (( ac || ! mains )) && return 0
+    cap=$(cat "$bat/capacity" 2>/dev/null || true)
+    if [[ ! $cap =~ ^[0-9]+$ ]]; then
+        warn "No se pudo leer la batería: conecta el cargador por si acaso."; return 0
+    fi
+    if (( IGNORE_BAT )); then warn "Sin cargador (batería $cap %), se continúa por --ignore-battery."; return 0; fi
+    (( cap >= MIN_BAT )) || die "Sin cargador y batería al $cap %. Conecta el cargador (mínimo $MIN_BAT % sin él).
+Si el cargador está conectado y la batería marca mal: ./install.sh --ignore-battery"
     warn "Sin cargador (batería $cap %). Mejor conéctalo."
 }
 check_power
@@ -161,8 +180,9 @@ EOF
 [[ $BOOTLOADER == grub ]] || warn "Sin GRUB: no habrá snapshots en el menú de arranque (grub-btrfs)."
 [[ $ROOTFS == btrfs ]]    || warn "La raíz no es btrfs ($ROOTFS): se omite snapper."
 (( REDO )) && rm -f "$STATE_DIR"/*
+for s in $REDO_STEPS; do rm -f "$STATE_DIR/$s"; done
 done_steps=$(ls -1 "$STATE_DIR" 2>/dev/null | wc -l)
-(( done_steps )) && echo "  Pasos ya hechos en una ejecución anterior: $done_steps (se saltan; --redo para repetir)"
+(( done_steps )) && echo "  Pasos ya hechos en una ejecución anterior: $done_steps (se saltan; --redo PASO para repetir uno)"
 echo
 yes_no "¿Instalar y configurar todo?" s || die "Cancelado"
 
@@ -178,14 +198,15 @@ on_err() {
 }
 trap 'on_err $LINENO' ERR
 
-# ejecutar un paso una sola vez (marca en $STATE_DIR)
+# ejecutar un paso una sola vez (marca en $STATE_DIR). Un paso que termina con partes pendientes
+# (STEP_PENDING=1) no se marca: la próxima ejecución lo reintenta sin repetir los demás.
 run() {
     local name=$1
     if [[ -e $STATE_DIR/$name ]]; then ok "$name (ya hecho)"; return; fi
-    CUR_STEP=$name
+    CUR_STEP=$name; STEP_PENDING=0
     log "$2"
     "step_$name"
-    date '+%F %T' > "$STATE_DIR/$name"
+    (( STEP_PENDING )) || date '+%F %T' > "$STATE_DIR/$name"
 }
 
 # pacman con reintentos (mirror caído, red inestable). --ask 4: aceptar quitar paquetes en
@@ -264,14 +285,15 @@ EOF
     chmod 644 "$conf"
 
     for p in "${pkgs[@]}"; do
-        if pacman -Qq "$p" &>/dev/null && (( ! REDO )); then ok "$p ya instalado"; continue; fi
+        if pacman -Qq "$p" &>/dev/null && ! redo_step aur; then ok "$p ya instalado"; continue; fi
         echo "--> $p"
         if ! build_pkg "$p" "$src" "$conf"; then failed+=("$p"); warn "No se pudo compilar $p"; fi
     done
     rm -rf "$src"
     (( ${#makedeps[@]} )) && { pacman -Rns --noconfirm "${makedeps[@]}" || true; }
     if (( ${#failed[@]} )); then
-        warn "Paquetes propios que fallaron: ${failed[*]}. Reintenta luego con: ./install.sh --redo"
+        STEP_PENDING=1
+        warn "Paquetes propios que fallaron: ${failed[*]}. Vuelve a ejecutar ./install.sh: reintenta solo esos."
     fi
     return 0
 }
@@ -297,7 +319,10 @@ build_pkg() {   # $1 paquete, $2 carpeta de trabajo, $3 makepkg.conf
         (( i < DOWNLOAD_TRIES )) || return 1
         sleep 5
     done
-    pacman -U --needed --noconfirm $(find "$dir" -maxdepth 1 -name '*.pkg.tar.zst' ! -name '*-debug-*')
+    local -a built
+    mapfile -t built < <(find "$dir" -maxdepth 1 -name '*.pkg.tar.zst' ! -name '*-debug-*')
+    (( ${#built[@]} )) || return 1
+    pac -U --needed "${built[@]}"
 }
 
 step_files() {
@@ -344,15 +369,23 @@ step_dotfiles() {
     # Windows/editores pueden dejar CRLF si se copió el repo a mano
     find "$ROOT/dotfiles" -type f -exec grep -lI $'\r' {} + 2>/dev/null | xargs -r sed -i 's/\r$//' || true
     cp -rT "$ROOT/dotfiles" /etc/skel
-    # lo que el usuario ya tenía queda como archivo.~1~
-    cp -rT --backup=numbered "$ROOT/dotfiles" "$HOME_USR"
-    local f
-    for f in /etc/skel/.config/niri/config.kdl "$HOME_USR/.config/niri/config.kdl"; do
-        sed -i -E "s/layout \"[a-z]+\"/layout \"$XKB\"/" "$f"
-    done
+    sed -i -E "s/layout \"[a-z]+\"/layout \"$XKB\"/" /etc/skel/.config/niri/config.kdl
+    # en la carpeta personal se copia como el usuario (sin chown de todo el home: no toca podman ni
+    # nada más). Solo cambia lo distinto; lo que el usuario ya tenía queda como archivo.~1~
+    local src rel dst tmp n=0
+    tmp=$(mktemp -d); chmod 755 "$tmp"
+    cp -rT "$ROOT/dotfiles" "$tmp"
+    sed -i -E "s/layout \"[a-z]+\"/layout \"$XKB\"/" "$tmp/.config/niri/config.kdl"
+    while IFS= read -r -d '' src; do
+        rel=${src#"$tmp/"}; dst=$HOME_USR/$rel
+        cmp -s "$src" "$dst" && continue
+        runuser -u "$USR" -- mkdir -p "$(dirname "$dst")"
+        runuser -u "$USR" -- cp --backup=numbered --preserve=mode "$src" "$dst"
+        n=$((n + 1))
+    done < <(find "$tmp" -type f -print0)
+    rm -rf "$tmp"
     rm -f "$HOME_USR/.config/zen-niri-first-login.done"
-    chown -R "$USR:" "$HOME_USR"
-    ok "Dotfiles en $HOME_USR y /etc/skel (usuarios nuevos)"
+    ok "Dotfiles: $n archivos actualizados en $HOME_USR y /etc/skel (usuarios nuevos)"
 }
 
 step_users() {
@@ -375,12 +408,14 @@ EOF
 }
 
 # kernel: AppArmor + lockdown=integrity, memoria endurecida sin costo perceptible, sin watchdog,
-# sin zswap (se usa zram). Se AÑADEN a lo que dejó archinstall (cifrado incluido), nunca se quitan.
+# sin zswap (se usa zram). Se AÑADEN a lo que dejó archinstall, nunca se quitan.
 KCMD="nowatchdog zswap.enabled=0"
-KCMD_HARD="lsm=landlock,lockdown,yama,integrity,apparmor,bpf lockdown=integrity slab_nomerge page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none debugfs=off"
+KCMD_HARD="lsm=landlock,lockdown,yama,integrity,apparmor,bpf slab_nomerge page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none debugfs=off"
 add_params() {   # $1 línea de parámetros → imprime la línea con los que falten
     local line=$1 p all=$KCMD
     (( DO_HARDEN )) && all+=" $KCMD_HARD"
+    # lockdown impide cargar módulos DKMS sin firmar (driver NVIDIA de zen-hwsetup): no se pone si hay DKMS
+    (( DO_HARDEN )) && ! pacman -Qq dkms &>/dev/null && all+=" lockdown=integrity"
     for p in $all; do [[ " $line " == *" ${p%%=*}="* || " $line " == *" $p "* ]] || line+=" $p"; done
     printf '%s' "${line# }"
 }

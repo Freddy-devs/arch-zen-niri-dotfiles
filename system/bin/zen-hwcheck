@@ -257,7 +257,7 @@ else
     if [[ $(lsblk -no TYPE "$rootsrc" 2>/dev/null | head -1) == crypt ]]; then
         ok "Disco del sistema cifrado (LUKS: $(cryptsetup status "$(basename "$rootsrc")" 2>/dev/null | awk -F': *' '/type:/{print $2}'))"
     else
-        fail "El disco del sistema NO está cifrado"
+        info "Disco del sistema sin cifrar (elegido así: se puede leer desde cualquier USB live)"
     fi
 fi
 if systemctl is-active -q systemd-resolved; then
