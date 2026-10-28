@@ -1,20 +1,21 @@
-// Waybar — arch-zen-niri: barra de "islas" flotantes (TokyoNight)
-// Izquierda: logo + escritorios + barra de tareas (iconos de las apps abiertas)
-// Centro: reloj · Derecha: sistema, conexiones, controles, bandeja y energía.
-// Sale en todas las pantallas; escritorios y tareas son los de cada pantalla.
+// Waybar — arch-zen-niri: una sola barra translúcida (vidrio con desenfoque de niri),
+// bordes suaves y esquinas apenas redondeadas (TokyoNight).
+// Izquierda: logo + CPU, RAM y disco · Centro: escritorios estilo Pac-Man
+// Derecha: conexiones, controles, bandeja, energía y la hora (clic = calendario).
+// Sale en todas las pantallas; los escritorios son los de cada pantalla.
 {
     "layer": "top",
     "position": "top",
-    "height": 36,
+    "height": 34,
     "spacing": 0,
     "margin-top": 6,
     "margin-left": 10,
     "margin-right": 10,
     "reload_style_on_change": true,
 
-    "modules-left": ["custom/arch", "niri/workspaces"],
-    "modules-center": ["clock"],
-    "modules-right": ["group/stats", "group/netbat", "group/controls", "custom/updates", "tray", "niri/language", "custom/power"],
+    "modules-left": ["custom/arch", "group/stats"],
+    "modules-center": ["niri/workspaces"],
+    "modules-right": ["group/netbat", "group/controls", "custom/updates", "tray", "niri/language", "custom/power", "clock"],
 
     // logo: abre el lanzador (igual que Super+Space)
     "custom/arch": {
@@ -23,42 +24,25 @@
         "on-click": "rofi -show drun"
     },
 
-    // escritorios: píldora ancha = actual · punto = con ventanas · anillo = vacío
+    // escritorios estilo Pac-Man: 󰮯 actual · 󰊠 con ventanas (fantasmas de colores)
+    // · 󰧞 vacío (bolitas) · fantasma azul parpadeando = pide atención
     "niri/workspaces": {
         "format": "{icon}",
         "format-icons": {
-            "urgent": "󰀨",
-            "empty": "",
-            "focused": "",
-            "active": "",
-            "default": ""
+            "urgent": "󰊠",
+            "focused": "󰮯",
+            "active": "󰮯",
+            "empty": "󰧞",
+            "default": "󰊠"
         }
     },
 
-    // barra de tareas: iconos de las apps abiertas en esta pantalla
-    // clic = enfocar · clic central = cerrar
-    "wlr/taskbar": {
-        "format": "{icon}",
-        "icon-size": 20,
-        "icon-theme": "Papirus-Dark",
-        "all-outputs": false,
-        "tooltip-format": "{title}",
-        "on-click": "activate",
-        "on-click-middle": "close",
-        "ignore-list": ["zen-calendar"],
-        "app_ids-mapping": {
-            "zen-tui": "utilities-terminal",
-            "zen-installer": "system-software-install"
-        }
-    },
-
-    // clic: calendario (feriados del Perú, agenda y alarmas)
+    // clic: abre/cierra el calendario (feriados del Perú, agenda y alarmas).
+    // Sin "format-alt" ni "mode": el clic nunca cambia lo que muestra el reloj.
     "clock": {
-        "format": "<span color='#bb9af7'></span>  {:%I:%M %p}",
-        "format-alt": "<span color='#bb9af7'></span>  {:%a %d %b · %I:%M %p}",
+        "format": "<span color='#bb9af7'>󰥔</span>  {:%I:%M %p}",
         "tooltip-format": "{:%A %d de %B de %Y}",
-        "on-click": "zen-calendar",
-        "on-click-right": "mode"
+        "on-click": "zen-calendar"
     },
 
     // ---------- sistema ----------
@@ -68,14 +52,14 @@
     },
 
     "cpu": {
-        "format": "<span color='#f7768e'>\uf4bc</span> {usage}%",
+        "format": "<span color='#f7768e' size='large' rise='-1pt'>󰻠</span>  {usage}%",
         "interval": 2,
         "states": { "high": 80 },
         "on-click": "alacritty -e btop"
     },
 
     "memory": {
-        "format": "<span color='#7dcfff'>\uf2db</span> {used:0.1f}G",
+        "format": "<span color='#7dcfff' size='large' rise='-1pt'>󰍛</span>  {used:0.1f} GiB",
         "interval": 3,
         "states": { "high": 85 },
         "tooltip-format": "{used:0.2f} / {total:0.2f} GiB · swap {swapUsed:0.2f} GiB",
@@ -83,10 +67,11 @@
     },
 
     "disk": {
-        "format": "<span color='#e0af68'>\uf0a0</span> {percentage_used}%",
+        "format": "<span color='#e0af68' size='large' rise='-1pt'>󰋊</span>  {percentage_used}%",
         "path": "/",
         "interval": 60,
-        "tooltip-format": "{used} usados de {total} · libre {free}"
+        "tooltip-format": "{used} usados de {total} · libre {free}",
+        "on-click": "alacritty --class zen-tui -e sh -c 'df -h -x tmpfs -x devtmpfs; read -p \"Enter para cerrar\" _'"
     },
 
     // ---------- conexiones ----------

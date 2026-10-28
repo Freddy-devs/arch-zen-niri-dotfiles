@@ -1,24 +1,25 @@
-/* Waybar — TokyoNight: "islas" flotantes con esquinas redondeadas, sombra suave y acentos en degradado */
+/* Waybar — TokyoNight: una sola barra de vidrio (translúcida; niri desenfoca lo de atrás),
+   borde suave de 1 px y esquinas apenas redondeadas. Escritorios estilo Pac-Man al centro. */
 @define-color base     #1a1b26;
 @define-color mantle   #16161e;
 @define-color surface  #24283b;
-@define-color overlay  #2f334d;
 @define-color line     #3b4261;
 @define-color fg       #c0caf5;
 @define-color sub      #a9b1d6;
 @define-color dim      #565f89;
 @define-color blue     #7aa2f7;
 @define-color cyan     #7dcfff;
-@define-color teal     #73daca;
 @define-color purple   #bb9af7;
+@define-color magenta  #ff79c6;
 @define-color red      #f7768e;
 @define-color orange   #ff9e64;
 @define-color yellow   #e0af68;
+@define-color pacman   #ffd75f;
 @define-color green    #9ece6a;
 @define-color arch     #1793d1;
 
 * {
-    font-family: "Inter", "Symbols Nerd Font", sans-serif;
+    font-family: "Inter", "Symbols Nerd Font", "JetBrainsMono Nerd Font", sans-serif;
     font-size: 13px;
     font-weight: 600;
     font-feature-settings: "tnum";
@@ -27,16 +28,20 @@
     border-radius: 0;
 }
 
-/* la barra en sí es transparente: solo se ven las islas */
+/* la barra: vidrio oscuro translúcido, borde fino con brillo arriba, esquinas de 8 px
+   (el radio debe coincidir con geometry-corner-radius del layer-rule de waybar en niri) */
 window#waybar {
-    background: transparent;
+    background: linear-gradient(180deg, alpha(@surface, 0.62), alpha(@base, 0.52));
+    border: 1px solid alpha(@fg, 0.10);
+    border-top-color: alpha(@fg, 0.16);
+    border-radius: 8px;
     color: @fg;
 }
 
 tooltip {
-    background: alpha(@mantle, 0.97);
-    border: 1px solid @line;
-    border-radius: 12px;
+    background: alpha(@mantle, 0.96);
+    border: 1px solid alpha(@fg, 0.10);
+    border-radius: 8px;
 }
 
 tooltip label {
@@ -45,140 +50,111 @@ tooltip label {
     padding: 2px 4px;
 }
 
-/* ---------- islas ---------- */
+/* ---------- módulos: planos sobre el vidrio; al pasar el mouse, un brillo tenue ---------- */
 #custom-arch,
-#workspaces,
-#taskbar,
-#clock,
 #stats,
+#workspaces,
 #netbat,
 #controls,
 #custom-updates,
 #tray,
 #language,
-#custom-power {
-    background: alpha(@base, 0.88);
-    border: 1px solid alpha(@line, 0.7);
-    border-radius: 14px;
-    margin: 0 4px 6px 4px;
-    padding: 0 12px;
-    box-shadow: 0 3px 8px alpha(black, 0.35);
-    transition: all 200ms ease;
+#custom-power,
+#clock {
+    background: transparent;
+    border-radius: 6px;
+    margin: 4px 2px;
+    padding: 0 10px;
+    transition: background 200ms ease, color 200ms ease;
 }
 
-/* módulos dentro de un grupo: sin isla propia, separados por un punto de aire */
+#custom-arch:hover,
+#stats:hover,
+#netbat:hover,
+#controls:hover,
+#custom-updates:hover,
+#tray:hover,
+#language:hover,
+#clock:hover {
+    background: alpha(@fg, 0.08);
+}
+
+/* módulos dentro de un grupo, separados con aire */
 #cpu, #memory, #disk,
 #bluetooth, #network, #battery,
 #pulseaudio, #backlight {
-    padding: 0 7px;
-    transition: color 200ms ease;
+    padding: 0 6px;
 }
 
-/* ---------- izquierda ---------- */
+/* ---------- izquierda: logo + CPU · RAM · disco ---------- */
 #custom-arch {
     color: @arch;
-    font-size: 19px;
-    padding: 0 14px 0 12px;
-    margin-left: 0;
+    font-size: 17px;
+    padding: 0 10px 0 9px;
+    margin-left: 4px;
 }
 
-#custom-arch:hover {
-    color: @cyan;
-    background: alpha(@surface, 0.95);
+#custom-arch:hover { color: @cyan; }
+
+#stats {
+    color: @sub;
 }
 
-/* escritorios: el actual es una píldora ancha con degradado */
+#cpu.high    { color: @red; }
+#memory.high { color: @orange; }
+
+/* ---------- centro: Pac-Man ---------- */
+/* 󰮯 pacman = escritorio actual · 󰊠 fantasma = con ventanas · 󰧞 bolita = vacío */
 #workspaces {
     padding: 0 6px;
 }
 
 #workspaces button {
-    color: @dim;
-    font-size: 10px;
-    padding: 0 6px;
-    margin: 6px 2px;
-    min-width: 12px;
+    font-size: 15px;
+    padding: 0 5px;
+    margin: 0 1px;
+    min-width: 18px;
     background: transparent;
-    border-radius: 10px;
-    transition: all 250ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    border-radius: 6px;
+    transition: color 200ms ease, background 200ms ease;
 }
 
-#workspaces button.empty  { color: alpha(@dim, 0.6); }
-#workspaces button:not(.empty) { color: @sub; }
+/* fantasmas con los colores clásicos: rojo, rosa, celeste y naranja */
+#workspaces button:nth-child(4n+1) { color: @red; }
+#workspaces button:nth-child(4n+2) { color: @magenta; }
+#workspaces button:nth-child(4n+3) { color: @cyan; }
+#workspaces button:nth-child(4n+4) { color: @orange; }
 
+/* bolitas: chicas y tenues */
+#workspaces button.empty {
+    color: alpha(@sub, 0.55);
+    font-size: 12px;
+}
+
+/* pac-man amarillo, con un leve resplandor */
 #workspaces button.active,
 #workspaces button.focused {
-    color: @mantle;
-    min-width: 30px;
-    background-image: linear-gradient(90deg, @blue, @purple);
+    color: @pacman;
+    font-size: 17px;
+    text-shadow: 0 0 6px alpha(@pacman, 0.45);
 }
 
+/* pide atención: fantasma asustado (azul) parpadeando */
 #workspaces button.urgent {
-    color: @mantle;
-    background: @red;
+    color: @blue;
+    animation: asustado 0.6s steps(2) infinite;
+}
+
+@keyframes asustado {
+    to { color: @fg; }
 }
 
 #workspaces button:hover {
-    color: @fg;
-    background: @overlay;
+    background: alpha(@fg, 0.08);
     box-shadow: none;
-    text-shadow: none;
-}
-
-/* barra de tareas: iconos de las apps abiertas, con subrayado en la activa */
-#taskbar {
-    padding: 0 4px;
-}
-
-#taskbar.empty {
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-    padding: 0;
-    margin: 0;
-}
-
-#taskbar button {
-    padding: 0 7px;
-    margin: 4px 1px;
-    border-radius: 10px;
-    border-bottom: 2px solid transparent;
-    background: transparent;
-    transition: all 200ms ease;
-}
-
-#taskbar button:hover {
-    background: @overlay;
-}
-
-#taskbar button.active {
-    background: alpha(@blue, 0.16);
-    border-bottom: 2px solid @blue;
-}
-
-#taskbar button.minimized {
-    opacity: 0.5;
-}
-
-/* ---------- centro: reloj destacado ---------- */
-#clock {
-    color: @fg;
-    font-weight: 700;
-    padding: 0 16px;
-    border: 1px solid alpha(@purple, 0.45);
-    background-image: linear-gradient(90deg, alpha(@blue, 0.18), alpha(@purple, 0.22));
-    background-color: alpha(@base, 0.92);
-}
-
-#clock:hover {
-    border-color: @purple;
-    background-image: linear-gradient(90deg, alpha(@blue, 0.30), alpha(@purple, 0.34));
 }
 
 /* ---------- derecha ---------- */
-#cpu.high            { color: @red; }
-#memory.high         { color: @orange; }
-
 #bluetooth            { color: @blue; }
 #bluetooth.connected  { color: @cyan; }
 #bluetooth.off,
@@ -202,38 +178,29 @@ tooltip label {
 #custom-updates { color: @fg; }
 
 #tray {
-    padding: 0 10px;
+    padding: 0 8px;
 }
 
 #tray > .needs-attention {
     background: alpha(@red, 0.35);
-    border-radius: 8px;
-}
-
-#language {
-    padding: 0 10px;
+    border-radius: 6px;
 }
 
 #custom-power {
     color: @red;
-    font-size: 15px;
-    padding: 0 14px 0 13px;
-    margin-right: 0;
+    font-size: 14px;
+    padding: 0 9px;
 }
 
 #custom-power:hover {
     color: @mantle;
     background: @red;
-    border-color: @red;
 }
 
-/* hover común: la isla se ilumina un poco */
-#stats:hover,
-#netbat:hover,
-#controls:hover,
-#custom-updates:hover,
-#language:hover,
-#tray:hover {
-    background: alpha(@surface, 0.95);
-    border-color: @line;
+/* la hora, al extremo derecho */
+#clock {
+    color: @fg;
+    font-weight: 700;
+    padding: 0 12px;
+    margin-right: 4px;
 }

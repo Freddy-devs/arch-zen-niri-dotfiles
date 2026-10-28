@@ -193,6 +193,20 @@ layer-rule {
     block-out-from "screencast"
 }
 
+// barra: vidrio esmerilado (desenfoca lo que hay detrás), esquinas de 8 px y sombra suave
+layer-rule {
+    match namespace="^waybar$"
+    geometry-corner-radius 8
+    background-effect { blur true; }
+    shadow {
+        on
+        softness 18
+        spread 1
+        offset x=0 y=4
+        color "#0006"
+    }
+}
+
 layer-rule {
     match namespace="^zen-bluetooth$"
     match namespace="^zen-calendar$"
