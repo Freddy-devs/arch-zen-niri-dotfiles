@@ -31,7 +31,14 @@ listview {
 }
 
 element {
-    padding: 22px 8px 18px 8px;
+    orientation:   vertical;
+    padding:       22px 8px 18px 8px;
+    spacing:       10px;
+    border-radius: 18px;
+}
+
+element-text {
+    horizontal-align: 0.5;
 }
 
 element selected.normal {
@@ -39,7 +46,8 @@ element selected.normal {
 }
 
 element-icon {
-    size: 64px;
+    size:             64px;
+    horizontal-align: 0.5;
 }
 
 * {

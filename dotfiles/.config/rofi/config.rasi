@@ -1,12 +1,12 @@
 /* rofi — lanzador de aplicaciones · TokyoNight (misma paleta que la barra)
  * Super+Space / Super+D / logo de Arch en waybar
- * Cuadrícula de iconos grandes con el buscador al centro; búsqueda difusa en todas las apps. */
+ * Lista de dos columnas: icono, nombre y descripción; búsqueda difusa en todas las apps. */
 
 configuration {
     modi:                 "drun";
     show-icons:           true;
     icon-theme:           "Papirus-Dark";
-    drun-display-format:  "{name}";
+    drun-display-format:  "{name}\n[<span size='small' alpha='60%'>{generic}</span>]";
     display-drun:         "";
     matching:             "fuzzy";
     sort:                 true;
@@ -41,9 +41,9 @@ configuration {
 window {
     location:         center;
     anchor:           center;
-    width:            820px;
-    border:           2px;
-    border-color:     @blue;
+    width:            860px;
+    border:           1px;
+    border-color:     #7aa2f759;
     border-radius:    22px;
     background-color: @base;
 }
@@ -98,27 +98,27 @@ textbox {
     text-color: @subtext;
 }
 
-/* ---------- cuadrícula de apps ---------- */
+/* ---------- lista de apps en dos columnas ---------- */
 listview {
-    columns:      5;
-    lines:        3;
-    spacing:      12px;
-    cycle:        true;
-    dynamic:      false;
-    fixed-height: true;
+    columns:       2;
+    lines:         7;
+    spacing:       8px 12px;
+    cycle:         true;
+    dynamic:       true;
+    fixed-height:  false;
     fixed-columns: true;
-    flow:         horizontal;
-    scrollbar:    false;
+    flow:          horizontal;
+    scrollbar:     false;
 }
 
 element {
-    orientation:      vertical;
-    padding:          18px 8px 14px 8px;
-    spacing:          10px;
-    border-radius:    18px;
-    border:           2px;
-    border-color:     transparent;
-    cursor:           pointer;
+    orientation:   horizontal;
+    padding:       10px 14px;
+    spacing:       14px;
+    border-radius: 12px;
+    border:        1px;
+    border-color:  transparent;
+    cursor:        pointer;
 }
 
 element normal.normal,
@@ -127,20 +127,20 @@ element alternate.normal {
 }
 
 element selected.normal {
-    background-image: linear-gradient(to bottom, #7aa2f72e, #bb9af72e);
+    background-image: linear-gradient(to right, #7aa2f726, #bb9af71f);
     background-color: @surface0;
-    border-color:     @blue;
+    border-color:     #7aa2f766;
 }
 
 element-icon {
-    size:   56px;
-    cursor: inherit;
-    horizontal-align: 0.5;
+    size:           36px;
+    cursor:         inherit;
+    vertical-align: 0.5;
 }
 
 element-text {
     highlight:        bold #bb9af7;
-    horizontal-align: 0.5;
+    horizontal-align: 0;
     vertical-align:   0.5;
     text-color:       @subtext;
     cursor:           inherit;
