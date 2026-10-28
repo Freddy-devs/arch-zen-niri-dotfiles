@@ -13,7 +13,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Login | `sddm` con el tema propio **Dark Pirate** (QML Qt6; X11 solo en la pantalla de login) | extra |
 | Barra / menú / notif. | `waybar` (píldoras TokyoNight), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
 | Calendario | `zen-calendar` (Rust, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
-| Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Nordzy-dark** · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
+| Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Papirus-Dark** · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
 | Paneles | Bluetooth `bluetui`, audio `wiremix`, red `nmtui` (en terminal flotante, sin applets residentes) | extra |
@@ -125,7 +125,7 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
 ./install.sh -y -k latam       # sin preguntas, teclado latinoamericano
 ./install.sh --status          # qué pasos ya están hechos
 ./install.sh --redo            # repetir todo (p. ej. tras actualizar el repo con git pull)
-./install.sh --no-aur          # sin compilar yay, tema, iconos, cursor ni zen-calendar
+./install.sh --no-aur          # sin compilar yay, tema, cursor ni zen-calendar
 ./install.sh --no-hw           # sin ajustes de hardware (zen-hwsetup --auto)
 ./install.sh --no-hardening    # sin lockdown/AppArmor en los parámetros del kernel
 ```
@@ -186,7 +186,7 @@ Antes de actualizar, `news` muestra las noticias de archlinux.org (también apar
 ```
 install.sh     post-instalación: todo el sistema en pasos reanudables
 packages/      install-base.txt (base) · desktop.txt (escritorio) · custom.txt (se compilan: yay, tema, zen-calendar)
-aur/local/     PKGBUILD propios: tema TokyoNight, iconos Nordzy-dark, cursor Qogir, zen-calendar
+aur/local/     PKGBUILD propios: tema TokyoNight, cursor Qogir, zen-calendar
 apps/          zen-calendar (Rust)
 system/        sddm (tema Dark Pirate), seguridad, rendimiento, mirrors, hooks, reflector,
                scripts (zen-apps, zen-hwsetup, zen-hwcheck, zen-power…), wallpaper

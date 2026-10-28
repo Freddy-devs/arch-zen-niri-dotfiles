@@ -1,140 +1,239 @@
-/* Waybar — paleta TokyoNight: barra flotante fina con módulos en píldoras */
-@define-color bg       #1a1b26;
-@define-color pill     #222330;
-@define-color line     #292e42;
-@define-color fg       #f1f1f1;
+/* Waybar — TokyoNight: "islas" flotantes con esquinas redondeadas, sombra suave y acentos en degradado */
+@define-color base     #1a1b26;
+@define-color mantle   #16161e;
+@define-color surface  #24283b;
+@define-color overlay  #2f334d;
+@define-color line     #3b4261;
+@define-color fg       #c0caf5;
+@define-color sub      #a9b1d6;
 @define-color dim      #565f89;
-@define-color red      #f7768e;
 @define-color blue     #7aa2f7;
-@define-color arch     #0a9cf5;
 @define-color cyan     #7dcfff;
-@define-color green    #9ece6a;
-@define-color lime     #b9c244;
+@define-color teal     #73daca;
+@define-color purple   #bb9af7;
+@define-color red      #f7768e;
+@define-color orange   #ff9e64;
 @define-color yellow   #e0af68;
-@define-color amber    #fbc02d;
-@define-color purple   #583794;
-@define-color indigo   #6c77bb;
-@define-color bluegray #6d8895;
+@define-color green    #9ece6a;
+@define-color arch     #1793d1;
 
 * {
-    font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font", monospace;
-    font-size: 12px;
-    font-weight: bold;
+    font-family: "Inter", "Symbols Nerd Font", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    font-feature-settings: "tnum";
     min-height: 0;
     border: none;
     border-radius: 0;
 }
 
+/* la barra en sí es transparente: solo se ven las islas */
 window#waybar {
-    background: @bg;
+    background: transparent;
     color: @fg;
-    border: 1px solid @line;
-    border-radius: 10px;
 }
 
 tooltip {
-    background: @bg;
+    background: alpha(@mantle, 0.97);
     border: 1px solid @line;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 
 tooltip label {
     color: @fg;
-    font-weight: normal;
+    font-weight: 500;
+    padding: 2px 4px;
 }
 
-/* píldoras */
-#cpu, #memory, #disk, #workspaces, #bluetooth, #netbat, #pulseaudio,
-#backlight, #custom-updates, #clock {
-    background: @pill;
-    border-radius: 8px;
-    padding: 0 9px;
-    margin: 4px 0;
+/* ---------- islas ---------- */
+#custom-arch,
+#workspaces,
+#taskbar,
+#clock,
+#stats,
+#netbat,
+#controls,
+#custom-updates,
+#tray,
+#language,
+#custom-power {
+    background: alpha(@base, 0.88);
+    border: 1px solid alpha(@line, 0.7);
+    border-radius: 14px;
+    margin: 0 4px 6px 4px;
+    padding: 0 12px;
+    box-shadow: 0 3px 8px alpha(black, 0.35);
+    transition: all 200ms ease;
 }
 
+/* módulos dentro de un grupo: sin isla propia, separados por un punto de aire */
+#cpu, #memory, #disk,
+#bluetooth, #network, #battery,
+#pulseaudio, #backlight {
+    padding: 0 7px;
+    transition: color 200ms ease;
+}
+
+/* ---------- izquierda ---------- */
 #custom-arch {
     color: @arch;
-    font-size: 17px;
-    padding: 0 4px 0 10px;
+    font-size: 19px;
+    padding: 0 14px 0 12px;
+    margin-left: 0;
 }
 
-#custom-dots {
-    color: @bluegray;
-    font-size: 14px;
-    padding: 0 4px 0 0;
+#custom-arch:hover {
+    color: @cyan;
+    background: alpha(@surface, 0.95);
 }
 
-/* escritorios: 󰮯 actual · 󰊠 con ventanas · 󰑊 vacío */
+/* escritorios: el actual es una píldora ancha con degradado */
 #workspaces {
-    padding: 0 4px;
+    padding: 0 6px;
 }
 
 #workspaces button {
-    font-size: 15px;
-    padding: 0 5px;
-    color: @blue;
+    color: @dim;
+    font-size: 10px;
+    padding: 0 6px;
+    margin: 6px 2px;
+    min-width: 12px;
     background: transparent;
-    border-radius: 6px;
-    transition: color 150ms ease;
+    border-radius: 10px;
+    transition: all 250ms cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-#workspaces button.empty  { color: @purple; }
-#workspaces button.active { color: @yellow; }
-#workspaces button.focused { color: @yellow; }
-#workspaces button.urgent { color: @red; }
+#workspaces button.empty  { color: alpha(@dim, 0.6); }
+#workspaces button:not(.empty) { color: @sub; }
+
+#workspaces button.active,
+#workspaces button.focused {
+    color: @mantle;
+    min-width: 30px;
+    background-image: linear-gradient(90deg, @blue, @purple);
+}
+
+#workspaces button.urgent {
+    color: @mantle;
+    background: @red;
+}
 
 #workspaces button:hover {
-    background: @line;
+    color: @fg;
+    background: @overlay;
     box-shadow: none;
     text-shadow: none;
 }
+
+/* barra de tareas: iconos de las apps abiertas, con subrayado en la activa */
+#taskbar {
+    padding: 0 4px;
+}
+
+#taskbar.empty {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+}
+
+#taskbar button {
+    padding: 0 7px;
+    margin: 4px 1px;
+    border-radius: 10px;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    transition: all 200ms ease;
+}
+
+#taskbar button:hover {
+    background: @overlay;
+}
+
+#taskbar button.active {
+    background: alpha(@blue, 0.16);
+    border-bottom: 2px solid @blue;
+}
+
+#taskbar button.minimized {
+    opacity: 0.5;
+}
+
+/* ---------- centro: reloj destacado ---------- */
+#clock {
+    color: @fg;
+    font-weight: 700;
+    padding: 0 16px;
+    border: 1px solid alpha(@purple, 0.45);
+    background-image: linear-gradient(90deg, alpha(@blue, 0.18), alpha(@purple, 0.22));
+    background-color: alpha(@base, 0.92);
+}
+
+#clock:hover {
+    border-color: @purple;
+    background-image: linear-gradient(90deg, alpha(@blue, 0.30), alpha(@purple, 0.34));
+}
+
+/* ---------- derecha ---------- */
+#cpu.high            { color: @red; }
+#memory.high         { color: @orange; }
 
 #bluetooth            { color: @blue; }
 #bluetooth.connected  { color: @cyan; }
 #bluetooth.off,
 #bluetooth.disabled   { color: @dim; }
 
-#network              { padding-right: 8px; }
 #network.disconnected { color: @red; }
 
+#battery.charging                { color: @green; }
 #battery.warning:not(.charging)  { color: @yellow; }
-#battery.critical:not(.charging) { color: @red; }
+#battery.critical:not(.charging) {
+    color: @red;
+    animation: parpadeo 1s ease-in-out infinite alternate;
+}
+
+@keyframes parpadeo {
+    to { color: @fg; }
+}
 
 #pulseaudio.muted { color: @red; }
 
-#clock {
-    color: @fg;
-    padding: 0 11px;
-}
-
-#clock:hover,
-#cpu:hover,
-#memory:hover,
-#pulseaudio:hover,
-#bluetooth:hover,
-#custom-updates:hover {
-    background: @line;
-}
+#custom-updates { color: @fg; }
 
 #tray {
-    padding: 0 4px;
+    padding: 0 10px;
 }
 
 #tray > .needs-attention {
-    background: @red;
-    border-radius: 6px;
+    background: alpha(@red, 0.35);
+    border-radius: 8px;
 }
 
 #language {
-    padding: 0 4px;
+    padding: 0 10px;
 }
 
 #custom-power {
     color: @red;
-    font-size: 14px;
-    padding: 0 12px 0 6px;
+    font-size: 15px;
+    padding: 0 14px 0 13px;
+    margin-right: 0;
 }
 
 #custom-power:hover {
-    color: @yellow;
+    color: @mantle;
+    background: @red;
+    border-color: @red;
+}
+
+/* hover común: la isla se ilumina un poco */
+#stats:hover,
+#netbat:hover,
+#controls:hover,
+#custom-updates:hover,
+#language:hover,
+#tray:hover {
+    background: alpha(@surface, 0.95);
+    border-color: @line;
 }

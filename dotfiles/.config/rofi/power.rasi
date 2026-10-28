@@ -5,7 +5,7 @@
 @import "config.rasi"
 
 window {
-    width:        760px;
+    width:        780px;
     border-color: @red;
 }
 
@@ -43,5 +43,5 @@ element-icon {
 }
 
 * {
-    red: #f38ba8;
+    red: #f7768e;
 }

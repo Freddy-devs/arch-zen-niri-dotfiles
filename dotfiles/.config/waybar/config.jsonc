@@ -1,58 +1,98 @@
-// Waybar — arch-zen-niri: barra flotante fina con módulos en píldoras
-// Sale en todas las pantallas; los escritorios son los de cada pantalla.
+// Waybar — arch-zen-niri: barra de "islas" flotantes (TokyoNight)
+// Izquierda: logo + escritorios + barra de tareas (iconos de las apps abiertas)
+// Centro: reloj · Derecha: sistema, conexiones, controles, bandeja y energía.
+// Sale en todas las pantallas; escritorios y tareas son los de cada pantalla.
 {
     "layer": "top",
     "position": "top",
-    "height": 28,
-    "spacing": 4,
-    "margin-top": 4,
-    "margin-left": 4,
-    "margin-right": 4,
+    "height": 36,
+    "spacing": 0,
+    "margin-top": 6,
+    "margin-left": 10,
+    "margin-right": 10,
+    "reload_style_on_change": true,
 
-    "modules-left": ["custom/arch", "custom/dots", "cpu", "memory", "disk"],
-    "modules-center": ["niri/workspaces"],
-    "modules-right": ["bluetooth", "group/netbat", "pulseaudio", "backlight", "custom/updates", "clock", "tray", "niri/language", "custom/power"],
+    "modules-left": ["custom/arch", "niri/workspaces", "wlr/taskbar"],
+    "modules-center": ["clock"],
+    "modules-right": ["group/stats", "group/netbat", "group/controls", "custom/updates", "tray", "niri/language", "custom/power"],
 
-    // solo el logo: sin lanzador de apps
+    // logo: abre el lanzador (igual que Super+Space)
     "custom/arch": {
         "format": "󰣇",
-        "tooltip": false
+        "tooltip-format": "Aplicaciones  (Super+Space)",
+        "on-click": "rofi -show drun"
     },
 
-    "custom/dots": {
-        "format": "󰇙",
-        "tooltip": false
+    // escritorios: píldora ancha = actual · punto = con ventanas · anillo = vacío
+    "niri/workspaces": {
+        "format": "{icon}",
+        "format-icons": {
+            "urgent": "󰀨",
+            "empty": "",
+            "focused": "",
+            "active": "",
+            "default": ""
+        }
+    },
+
+    // barra de tareas: iconos de las apps abiertas en esta pantalla
+    // clic = enfocar · clic central = cerrar
+    "wlr/taskbar": {
+        "format": "{icon}",
+        "icon-size": 20,
+        "icon-theme": "Papirus-Dark",
+        "all-outputs": false,
+        "tooltip-format": "{title}",
+        "on-click": "activate",
+        "on-click-middle": "close",
+        "ignore-list": ["zen-calendar"],
+        "app_ids-mapping": {
+            "zen-tui": "utilities-terminal",
+            "zen-installer": "system-software-install"
+        }
+    },
+
+    // clic: calendario (feriados del Perú, agenda y alarmas)
+    "clock": {
+        "format": "<span color='#bb9af7'></span>  {:%I:%M %p}",
+        "format-alt": "<span color='#bb9af7'></span>  {:%a %d %b · %I:%M %p}",
+        "tooltip-format": "{:%A %d de %B de %Y}",
+        "on-click": "zen-calendar",
+        "on-click-right": "mode"
+    },
+
+    // ---------- sistema ----------
+    "group/stats": {
+        "orientation": "horizontal",
+        "modules": ["cpu", "memory", "disk"]
     },
 
     "cpu": {
-        "format": "<span color='#f7768e'></span> {usage}%",
+        "format": "<span color='#f7768e'>\uf4bc</span> {usage}%",
         "interval": 2,
+        "states": { "high": 80 },
         "on-click": "alacritty -e btop"
     },
 
     "memory": {
-        "format": "<span color='#7dcfff'></span> {used:0.2f} GiB",
+        "format": "<span color='#7dcfff'>\uf2db</span> {used:0.1f}G",
         "interval": 3,
+        "states": { "high": 85 },
         "tooltip-format": "{used:0.2f} / {total:0.2f} GiB · swap {swapUsed:0.2f} GiB",
         "on-click": "alacritty -e btop"
     },
 
     "disk": {
-        "format": "<span color='#fbc02d'></span> {used}",
+        "format": "<span color='#e0af68'>\uf0a0</span> {percentage_used}%",
         "path": "/",
         "interval": 60,
         "tooltip-format": "{used} usados de {total} · libre {free}"
     },
 
-    "niri/workspaces": {
-        "format": "{icon}",
-        "format-icons": {
-            "urgent": "󰀨",
-            "empty": "󰑊",
-            "focused": "󰮯",
-            "active": "󰮯",
-            "default": "󰊠"
-        }
+    // ---------- conexiones ----------
+    "group/netbat": {
+        "orientation": "horizontal",
+        "modules": ["bluetooth", "network", "battery"]
     },
 
     "bluetooth": {
@@ -60,7 +100,7 @@
         "format-disabled": "󰂲",
         "format-off": "󰂲",
         "format-connected": "󰂱",
-        "format-connected-battery": "󰂱 <span color='#f1f1f1'>{device_battery_percentage}%</span>",
+        "format-connected-battery": "󰂱 {device_battery_percentage}%",
         "tooltip-format": "{controller_alias} · {status}",
         "tooltip-format-connected": "{device_enumerate}",
         "tooltip-format-enumerate-connected": "{device_alias}",
@@ -68,16 +108,11 @@
         "on-click": "alacritty --class zen-tui -e bluetui"
     },
 
-    "group/netbat": {
-        "orientation": "horizontal",
-        "modules": ["network", "battery"]
-    },
-
     "network": {
         "interval": 3,
-        "format-wifi": "<span color='#9ece6a'>󰖩</span> <span color='#e0af68'>{bandwidthTotalBytes}</span>",
-        "format-ethernet": "<span color='#9ece6a'>󰈀</span> <span color='#e0af68'>{bandwidthTotalBytes}</span>",
-        "format-disconnected": "󰖪 Offline",
+        "format-wifi": "<span color='#9ece6a'>󰖩</span> {bandwidthTotalBytes}",
+        "format-ethernet": "<span color='#9ece6a'>󰈀</span> {bandwidthTotalBytes}",
+        "format-disconnected": "󰖪 Sin red",
         "tooltip-format-wifi": "{essid} ({signalStrength}%) · {ipaddr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}",
         "tooltip-format-ethernet": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}",
         "on-click": "alacritty --class zen-tui -e nmtui"
@@ -92,10 +127,17 @@
         "tooltip-format": "{timeTo}"
     },
 
+    // ---------- controles ----------
+    "group/controls": {
+        "orientation": "horizontal",
+        "modules": ["pulseaudio", "backlight"]
+    },
+
     "pulseaudio": {
-        "format": "<span color='#6c77bb'>{icon}</span> {volume}",
-        "format-muted": "󰝟 Muted",
+        "format": "<span color='#7aa2f7'>{icon}</span> {volume}%",
+        "format-muted": "󰝟 Mudo",
         "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
+        "scroll-step": 5,
         "on-click": "alacritty --class zen-tui -e wiremix",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
@@ -107,7 +149,7 @@
     },
 
     "custom/updates": {
-        "format": "<span color='#b9c244'>󰚰</span> {}",
+        "format": "<span color='#9ece6a'>󰚰</span> {}",
         "exec": "command -v checkupdates >/dev/null && checkupdates 2>/dev/null | wc -l",
         "exec-if": "command -v checkupdates",
         "interval": 1800,
@@ -115,16 +157,9 @@
         "on-click": "alacritty -e sh -c 'sudo pacman -Syu; read -rp \"Enter para cerrar\" _'"
     },
 
-    // clic: calendario (feriados del Perú, agenda y alarmas)
-    "clock": {
-        "format": "{:%I:%M %p}",
-        "tooltip-format": "{:%A %d de %B de %Y}",
-        "on-click": "zen-calendar"
-    },
-
     "tray": {
-        "icon-size": 14,
-        "spacing": 8
+        "icon-size": 16,
+        "spacing": 10
     },
 
     "niri/language": {

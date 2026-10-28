@@ -35,7 +35,7 @@ Uso: ./install.sh [opciones]      (con tu usuario normal; pide sudo)
 
   -y, --yes             sin preguntas (teclado detectado, reinicio no automático)
   -k, --keyboard XKB    teclado del escritorio: latam, es, us (por defecto: el de la consola)
-      --no-aur          no compilar yay, tema, iconos, cursor ni zen-calendar
+      --no-aur          no compilar yay, tema, cursor ni zen-calendar
       --no-hw           no aplicar ajustes de hardware (zen-hwsetup --auto)
       --no-hardening    no cambiar parámetros del kernel (lockdown, AppArmor…)
       --no-reboot       no ofrecer reiniciar al final
@@ -245,7 +245,7 @@ step_packages() {
 }
 
 step_aur() {
-    (( DO_AUR )) || { warn "--no-aur: sin yay, tema TokyoNight, iconos, cursor ni zen-calendar"; return 0; }
+    (( DO_AUR )) || { warn "--no-aur: sin yay, tema TokyoNight, cursor ni zen-calendar"; return 0; }
     local -a pkgs makedeps=() failed=()
     local p src conf
     mapfile -t pkgs < <(pkglist "$ROOT/packages/custom.txt")
@@ -511,7 +511,7 @@ step_snapshot() {
 run clock    "Reloj sincronizado"
 run pacman   "pacman: descargas paralelas, color, multilib, mirrors, llavero"
 run packages "Paquetes del sistema y escritorio"
-run aur      "Paquetes propios: yay, tema TokyoNight, Nordzy, Qogir, zen-calendar"
+run aur      "Paquetes propios: yay, tema TokyoNight, cursor Qogir, zen-calendar"
 run files    "Configuración del sistema (SDDM, seguridad, rendimiento)"
 run dotfiles "Dotfiles (niri, waybar, rofi, alacritty, zsh…)"
 run users    "Shell zsh, sudo y bloqueo por contraseñas fallidas"

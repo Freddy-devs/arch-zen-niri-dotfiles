@@ -1,11 +1,11 @@
-/* rofi — lanzador de aplicaciones · Catppuccin Mocha
+/* rofi — lanzador de aplicaciones · TokyoNight (misma paleta que la barra)
  * Super+Space / Super+D / logo de Arch en waybar
  * Cuadrícula de iconos grandes con el buscador al centro; búsqueda difusa en todas las apps. */
 
 configuration {
     modi:                 "drun";
     show-icons:           true;
-    icon-theme:           "Nordzy-dark";
+    icon-theme:           "Papirus-Dark";
     drun-display-format:  "{name}";
     display-drun:         "";
     matching:             "fuzzy";
@@ -19,17 +19,16 @@ configuration {
 }
 
 * {
-    base:      #1e1e2efa;
-    mantle:    #181825;
-    crust:     #11111b;
-    surface0:  #313244;
-    surface1:  #45475a;
-    overlay0:  #6c7086;
-    text:      #cdd6f4;
-    subtext:   #a6adc8;
-    mauve:     #cba6f7;
-    blue:      #89b4fa;
-    lavender:  #b4befe;
+    base:      #1a1b26f2;
+    mantle:    #16161e;
+    surface0:  #24283b;
+    surface1:  #3b4261;
+    overlay0:  #565f89;
+    text:      #c0caf5;
+    subtext:   #a9b1d6;
+    blue:      #7aa2f7;
+    purple:    #bb9af7;
+    cyan:      #7dcfff;
 
     font:             "Inter 12";
     background-color: transparent;
@@ -42,16 +41,16 @@ configuration {
 window {
     location:         center;
     anchor:           center;
-    width:            800px;
+    width:            820px;
     border:           2px;
-    border-color:     @mauve;
-    border-radius:    20px;
+    border-color:     @blue;
+    border-radius:    22px;
     background-color: @base;
 }
 
 mainbox {
     padding:  28px;
-    spacing:  24px;
+    spacing:  22px;
     children: [ "inputbar", "message", "listview" ];
 }
 
@@ -59,9 +58,9 @@ mainbox {
 inputbar {
     padding:          14px 20px;
     spacing:          14px;
-    border-radius:    14px;
-    border:           2px;
-    border-color:     @surface1;
+    border-radius:    16px;
+    border:           0;
+    background-image: linear-gradient(to right, #7aa2f726, #bb9af733);
     background-color: @mantle;
     children:         [ "textbox-search", "entry", "num-filtered-rows" ];
 }
@@ -70,7 +69,7 @@ textbox-search {
     expand:     false;
     str:        "";
     font:       "Symbols Nerd Font 16";
-    text-color: @mauve;
+    text-color: @purple;
     vertical-align: 0.5;
 }
 
@@ -116,7 +115,7 @@ element {
     orientation:      vertical;
     padding:          18px 8px 14px 8px;
     spacing:          10px;
-    border-radius:    16px;
+    border-radius:    18px;
     border:           2px;
     border-color:     transparent;
     cursor:           pointer;
@@ -128,8 +127,9 @@ element alternate.normal {
 }
 
 element selected.normal {
+    background-image: linear-gradient(to bottom, #7aa2f72e, #bb9af72e);
     background-color: @surface0;
-    border-color:     @mauve;
+    border-color:     @blue;
 }
 
 element-icon {
@@ -139,7 +139,7 @@ element-icon {
 }
 
 element-text {
-    highlight:        bold #cba6f7;
+    highlight:        bold #bb9af7;
     horizontal-align: 0.5;
     vertical-align:   0.5;
     text-color:       @subtext;

@@ -6,9 +6,9 @@ live_config_reload = true
 TERM = "xterm-256color"
 
 [window]
-padding = { x = 16, y = 14 }
+padding = { x = 18, y = 16 }
 dynamic_padding = true
-opacity = 0.94
+opacity = 0.92
 decorations = "None"
 title = "Terminal"
 dynamic_title = true
@@ -18,7 +18,7 @@ history = 10000
 multiplier = 3
 
 [font]
-size = 11.0
+size = 11.5
 offset = { x = 0, y = 2 }
 builtin_box_drawing = true
 normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
