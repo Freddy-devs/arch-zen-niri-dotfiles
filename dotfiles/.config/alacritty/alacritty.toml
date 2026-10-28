@@ -42,6 +42,8 @@ save_to_clipboard = true
 bindings = [
     { key = "C", mods = "Control|Shift", action = "Copy" },
     { key = "V", mods = "Control|Shift", action = "Paste" },
+    # zen-clip pega con Shift+Insert (Ctrl+Shift+V lo toma niri para el portapapeles)
+    { key = "Insert", mods = "Shift", action = "Paste" },
     { key = "Plus", mods = "Control", action = "IncreaseFontSize" },
     { key = "Minus", mods = "Control", action = "DecreaseFontSize" },
     { key = "Key0", mods = "Control", action = "ResetFontSize" },

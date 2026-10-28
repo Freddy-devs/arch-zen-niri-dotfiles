@@ -1,0 +1,40 @@
+#!/bin/sh
+# zen-clip — historial del portapapeles, solo en memoria y con los últimos 10.
+#
+#   zen-clip watch   lo lanza niri al iniciar: guarda cada copia (wl-paste + cliphist)
+#   zen-clip pick    Ctrl+Shift+V: ventanita con los últimos 10; flechas + Enter pega al instante
+#   zen-clip menu    Super+V: igual pero solo copia, sin pegar
+#   zen-clip wipe    borra todo el historial
+#
+# Privacidad: el historial vive en $XDG_RUNTIME_DIR (RAM, carpeta 700): nunca toca el disco y
+# desaparece al cerrar sesión o apagar. Las copias de gestores de contraseñas (KeePassXC…) que
+# marcan su contenido como sensible no se guardan (cliphist respeta esa marca).
+set -eu
+
+dir="${XDG_RUNTIME_DIR:?}/cliphist"
+mkdir -p -m 700 "$dir"
+export CLIPHIST_DB_PATH="$dir/db" CLIPHIST_MAX_ITEMS=10
+
+choose() {
+    cliphist list | head -n 10 |
+        rofi -dmenu -i -display-columns 2 -no-custom -p "" -theme ~/.config/rofi/clip-mini.rasi
+}
+
+case "${1:-pick}" in
+    watch)
+        # historial viejo que antes quedaba en disco: fuera
+        rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/cliphist/db"
+        exec wl-paste --watch cliphist store ;;
+    pick)
+        sel=$(choose) || exit 0
+        printf '%s' "$sel" | cliphist decode | wl-copy
+        # pegar donde estaba el cursor: Shift+Insert pega en GTK, Qt, navegadores y alacritty
+        sleep 0.15
+        command -v wtype >/dev/null && wtype -M shift -k Insert -m shift ;;
+    menu)
+        sel=$(choose) || exit 0
+        printf '%s' "$sel" | cliphist decode | wl-copy ;;
+    wipe)
+        cliphist wipe
+        notify-send -a Portapapeles "Historial del portapapeles borrado" 2>/dev/null || true ;;
+esac

@@ -23,6 +23,8 @@ swayidle
 swaylock
 wl-clipboard
 cliphist
+# zen-clip pega al instante la copia elegida (simula Shift+Insert)
+wtype
 flameshot
 xdg-user-dirs
 brightnessctl

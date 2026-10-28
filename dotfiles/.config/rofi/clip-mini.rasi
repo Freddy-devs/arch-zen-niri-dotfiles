@@ -1,0 +1,68 @@
+/* rofi — portapapeles mínimo (Ctrl+Shift+V · zen-clip)
+ * Ventanita con las últimas 10 copias, sin buscador visible: flechas + Enter pega.
+ * Si escribes, filtra igual. Hereda la paleta del lanzador. */
+
+@import "config.rasi"
+
+configuration {
+    show-icons: false;
+}
+
+window {
+    width:         440px;
+    border-radius: 12px;
+}
+
+mainbox {
+    padding:  8px;
+    spacing:  6px;
+    children: [ "inputbar", "listview" ];
+}
+
+/* el buscador se reduce a una línea fina con el título */
+inputbar {
+    padding:          4px 8px;
+    border:           0;
+    border-radius:    8px;
+    background-color: transparent;
+    children:         [ "textbox-title", "entry" ];
+}
+
+textbox-title {
+    expand:     false;
+    str:        "󰅌  Portapapeles";
+    font:       "Inter Bold 10";
+    text-color: @overlay0;
+    margin:     0 10px 0 0;
+}
+
+entry {
+    placeholder: "";
+    font:        "Inter 10";
+}
+
+listview {
+    columns:      1;
+    lines:        10;
+    spacing:      2px;
+    fixed-height: false;
+    dynamic:      true;
+}
+
+element {
+    orientation:   horizontal;
+    padding:       5px 10px;
+    border-radius: 7px;
+    border:        0;
+    children:      [ "element-text" ];
+}
+
+element selected.normal {
+    background-color: @surface0;
+    border:           0;
+}
+
+element-text {
+    horizontal-align: 0;
+    font:             "JetBrainsMono Nerd Font 10";
+}
