@@ -225,8 +225,14 @@ impl App {
         year.set_hexpand(true);
         head.append(&month);
         head.append(&year);
-        for (text, css, step) in [("", "nav", -1), ("Hoy", "nav today", 0), ("", "nav", 1)] {
+        // los iconos van como escapes: pegados como carácter se pierden con facilidad al editar
+        for (text, css, step, tip) in [
+            ("\u{f0141}", "nav", -1, "Mes anterior"),
+            ("Hoy", "nav today", 0, "Volver a hoy"),
+            ("\u{f0142}", "nav", 1, "Mes siguiente"),
+        ] {
             let b = gtk::Button::with_label(text);
+            b.set_tooltip_text(Some(tip));
             for c in css.split_whitespace() {
                 b.add_css_class(c);
             }
