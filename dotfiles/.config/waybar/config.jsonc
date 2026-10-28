@@ -52,7 +52,7 @@
     },
 
     "cpu": {
-        "format": "<span color='#f7768e' size='large' rise='-1pt'>󰻠</span>  {usage}%",
+        "format": "<span color='#f7768e' size='large' rise='-1pt'>󰍛</span>  {usage}%",
         "interval": 2,
         "states": { "high": 80 },
         "on-click": "alacritty -e btop"
