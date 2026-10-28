@@ -1,4 +1,4 @@
-/* Waybar — TokyoNight: la barra entera es de vidrio translúcido (niri desenfoca lo de atrás) con
+/* Waybar — TokyoNight con islas de fondo Nord: la barra entera es de vidrio translúcido (niri desenfoca lo de atrás) con
    borde suave y esquinas de 8 px; dentro, cada grupo es una "isla" con su fondo y bordes redondeados.
    Escritorios estilo Pac-Man al centro. */
 @define-color base     #1a1b26;
@@ -18,6 +18,12 @@
 @define-color pacman   #ffd75f;
 @define-color green    #9ece6a;
 @define-color arch     #1793d1;
+/* Nord: fondo de las islas (polar night) */
+@define-color nord0    #2e3440;
+@define-color nord1    #3b4252;
+@define-color nord2    #434c5e;
+@define-color nord3    #4c566a;
+@define-color nord4    #d8dee9;
 
 * {
     font-family: "Inter", "Symbols Nerd Font", "JetBrainsMono Nerd Font", sans-serif;
@@ -32,8 +38,8 @@
 /* la barra: fondo translúcido, borde fino con brillo arriba y esquinas de 8 px
    (el radio coincide con geometry-corner-radius del layer-rule de waybar en niri) */
 window#waybar {
-    background: linear-gradient(180deg, alpha(@surface, 0.45), alpha(@base, 0.38));
-    border: 1px solid alpha(@fg, 0.10);
+    background: linear-gradient(180deg, alpha(@nord1, 0.40), alpha(@nord0, 0.34));
+    border: 1px solid alpha(@nord4, 0.10);
     border-top-color: alpha(@fg, 0.18);
     border-radius: 8px;
     color: @fg;
@@ -67,9 +73,9 @@ tooltip label {
 #language,
 #custom-power,
 #clock {
-    background: linear-gradient(180deg, alpha(@base, 0.94), alpha(@mantle, 0.96));
-    border: 1px solid alpha(@line, 0.85);
-    border-top-color: alpha(@fg, 0.14);
+    background: linear-gradient(180deg, alpha(@nord1, 0.95), alpha(@nord0, 0.97));
+    border: 1px solid alpha(@nord3, 0.90);
+    border-top-color: alpha(@nord4, 0.16);
     border-radius: 12px;
     margin: 4px 3px;
     padding: 0 13px;
@@ -86,7 +92,7 @@ tooltip label {
 #tray:hover,
 #language:hover,
 #clock:hover {
-    background: linear-gradient(180deg, alpha(@surface, 0.96), alpha(@base, 0.98));
+    background: linear-gradient(180deg, @nord2, @nord1);
     border-color: alpha(@blue, 0.45);
 }
 
