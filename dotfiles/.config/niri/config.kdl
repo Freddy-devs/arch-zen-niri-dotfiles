@@ -140,7 +140,7 @@ spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wall
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 spawn-at-startup "wl-paste" "--watch" "cliphist" "store"
 spawn-at-startup "swayidle" "-w" "timeout" "600" "swaylock -f" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "swaylock -f"
-spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme TokyoNight-Dark; gsettings set org.gnome.desktop.interface icon-theme Papirus-Dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
+spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme TokyoNight-Dark; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
 spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------

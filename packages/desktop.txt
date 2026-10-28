@@ -77,7 +77,7 @@ openssh
 # Apariencia
 # Fuentes: Inter = interfaz (barra, menús, GTK, login) · JetBrainsMono Nerd = solo terminal/editor
 # · Symbols Nerd Font = solo iconos (respaldo)
-# Iconos: Papirus-Dark (apps de la barra de tareas, rofi, GTK y Qt)
+# Iconos: Nordzy-dark (en custom.txt); Papirus-Dark queda de respaldo para iconos que Nordzy no trae
 inter-font
 ttf-jetbrains-mono-nerd
 ttf-nerd-fonts-symbols

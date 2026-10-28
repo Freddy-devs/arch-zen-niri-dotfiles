@@ -5,7 +5,7 @@
 configuration {
     modi:                 "drun";
     show-icons:           true;
-    icon-theme:           "Papirus-Dark";
+    icon-theme:           "Nordzy-dark";
     drun-display-format:  "{name}\n[<span size='small' alpha='60%'>{generic}</span>]";
     display-drun:         "";
     matching:             "fuzzy";

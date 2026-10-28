@@ -13,7 +13,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Login | `sddm` con el tema propio **Dark Pirate** (QML Qt6; X11 solo en la pantalla de login) | extra |
 | Barra / menú / notif. | `waybar` (barra de vidrio translúcido con borde y esquinas redondeadas, con una isla redondeada por grupo: CPU · RAM · disco a la izquierda, escritorios Pac-Man al centro, hora a la derecha antes del idioma y del botón de apagado; clic en la hora = calendario), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
 | Calendario | `zen-calendar` (Rust, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
-| Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Papirus-Dark** · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
+| Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Nordzy-dark** (Nord) · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
 | Paneles | Bluetooth `zen-bluetooth` (panel bajo la barra, con el mouse; clic derecho abre `bluetui`), audio `wiremix`, red `nmtui` (en terminal flotante, sin applets residentes) | extra |

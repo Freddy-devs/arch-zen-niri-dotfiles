@@ -5,7 +5,7 @@ set -euo pipefail
 THEME="$HOME/.config/rofi/power.rasi"
 [[ -f $THEME ]] || THEME=""
 
-# "texto\0icon\x1fnombre-de-icono": rofi muestra el icono del tema (Papirus) encima del texto
+# "texto\0icon\x1fnombre-de-icono": rofi muestra el icono del tema (Nordzy) encima del texto
 choice=$(printf '%s\0icon\x1f%s\n' \
     "Bloquear"      system-lock-screen \
     "Cerrar sesión" system-log-out \
