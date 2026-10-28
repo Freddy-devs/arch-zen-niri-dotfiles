@@ -138,11 +138,13 @@
         "format": "<span color='#7aa2f7'>{icon}</span> {capacity}%",
         "format-charging": "<span color='#9ece6a'>{icon} 󱐋</span> {capacity}%",
         "format-plugged": "<span color='#9ece6a'>{icon} </span> {capacity}%",
+        "format-not-charging": "<span color='#9ece6a'>{icon} </span> {capacity}%",
         "format-full": "<span color='#9ece6a'>{icon} </span> {capacity}%",
         "format-icons": ["", "", "", "", ""],
         "tooltip-format": "Batería · {timeTo}",
         "tooltip-format-charging": "Cargando · {timeTo}",
-        "tooltip-format-plugged": "Cargador conectado",
+        "tooltip-format-plugged": "Cargador conectado · batería en reposo (rango 60–90 %)",
+        "tooltip-format-not-charging": "Cargador conectado · batería en reposo (rango 60–90 %)",
         "tooltip-format-full": "Cargador conectado · batería llena"
     },
 
