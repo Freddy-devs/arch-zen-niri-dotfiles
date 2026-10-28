@@ -25,14 +25,14 @@
     },
 
     // escritorios estilo Pac-Man: 󰮯 actual · 󰊠 con ventanas (fantasmas de colores)
-    // · 󰧞 vacío (bolitas) · fantasma azul parpadeando = pide atención
+    // · 󰝥 vacío (bolitas) · fantasma azul parpadeando = pide atención
     "niri/workspaces": {
         "format": "{icon}",
         "format-icons": {
             "urgent": "󰊠",
             "focused": "󰮯",
             "active": "󰮯",
-            "empty": "󰧞",
+            "empty": "󰝥",
             "default": "󰊠"
         }
     },
