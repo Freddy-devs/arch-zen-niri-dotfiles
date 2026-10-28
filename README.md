@@ -90,6 +90,36 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
 
 Graba con Ventoy, Rufus (modo DD) o `dd`.
 
+## Instalar (recomendado): ISO oficial + archinstall + `install.sh`
+No hace falta construir ninguna ISO.
+
+1. Descarga la ISO oficial de <https://archlinux.org/download/> y grábala con Ventoy o Rufus (modo DD).
+2. Arranca el USB. Si usas Wi-Fi: `iwctl` → `station wlan0 connect "TuRed"` → `exit`.
+3. Ejecuta `archinstall` y elige en sus menús:
+
+   | Opción de archinstall | Elegir |
+   |---|---|
+   | Disk configuration | *Use a best-effort default partition layout* → tu disco → **btrfs** → **sí** a subvolúmenes por defecto → compresión **sí** |
+   | Disk encryption | **LUKS** + contraseña de cifrado (se pide al encender; si se olvida, los datos se pierden) |
+   | Bootloader | **Grub** (necesario para los snapshots en el menú de arranque) |
+   | Swap | **sí** (zram) |
+   | Hostname / Root password / User account | los tuyos; el usuario como **superusuario (sudo)** |
+   | Profile | **Minimal** (el escritorio lo pone `install.sh`) |
+   | Audio | **pipewire** |
+   | Kernels | **linux-zen** y **linux-lts** (puedes quitar `linux`) |
+   | Network configuration | **NetworkManager** |
+   | Timezone / Locales | America/Lima · es_PE.UTF-8 · teclado `la-latin1` |
+
+   Luego *Install*. Al terminar, sin entrar al chroot: `reboot` y retira el USB.
+4. Entra con tu usuario (pantalla de texto), conéctate (`nmtui`) y ejecuta:
+   ```bash
+   sudo pacman -S --needed git
+   git clone https://github.com/Freddy-devs/arch-zen-niri-iso.git
+   cd arch-zen-niri-iso && ./install.sh
+   ```
+   Instala niri, SDDM Dark Pirate, tema, dotfiles, seguridad, snapper y ajustes de hardware.
+   Pregunta solo el teclado y una confirmación. Registro: `/var/log/zen-postinstall.log`. Reinicia al final.
+
 ## Usar
 - La ISO arranca directo en niri como usuario `live` (contraseña `live`).
 - Instalar: abre una terminal (`Super+Enter`) y ejecuta `zen-install`.
