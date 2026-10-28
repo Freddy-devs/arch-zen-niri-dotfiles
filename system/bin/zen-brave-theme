@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+# Personaliza Brave (brave-bin) para que combine con el escritorio:
+#   - toma los colores del tema GTK del sistema (TokyoNight-Dark) y sigue su modo oscuro
+#   - pestañas verticales en el lado izquierdo, sin barra de título
+# Brave debe estar cerrado: si está abierto sobrescribe las preferencias al salir.
+# Uso: zen-brave-theme [--wait]   (--wait espera a que cierres Brave y luego aplica)
+
+import json, os, subprocess, sys, time
+
+BASE = os.path.expanduser("~/.config/BraveSoftware/Brave-Browser")
+PREFS = os.path.join(BASE, "Default", "Preferences")
+STATE = os.path.join(BASE, "Local State")
+
+
+def running():
+    return subprocess.run(["pgrep", "-x", "brave"], capture_output=True).returncode == 0
+
+
+def patch(path, changes):
+    data = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+    for key, value in changes.items():
+        node = data
+        *parents, leaf = key.split(".")
+        for p in parents:
+            node = node.setdefault(p, {})
+        node[leaf] = value
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".zen-tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, separators=(",", ":"))
+    os.replace(tmp, path)
+
+
+if running():
+    if "--wait" not in sys.argv:
+        sys.exit("Cierra Brave primero (o usa: zen-brave-theme --wait)")
+    print("Esperando a que cierres Brave…")
+    while running():
+        time.sleep(1)
+    time.sleep(1)
+
+patch(PREFS, {
+    "extensions.theme.id": "",
+    "extensions.theme.system_theme": 1,                 # 1 = colores del tema GTK
+    "browser.custom_chrome_frame": True,                # sin barra de título del sistema
+    "brave.tabs.vertical_tabs_enabled": True,
+    "brave.tabs.vertical_tabs_on_right": False,
+    "brave.tabs.vertical_tabs_collapsed": False,
+    "brave.tabs.vertical_tabs_show_title_on_window": False,
+})
+patch(STATE, {
+    "brave.dark_mode": 0,                               # 0 = seguir al sistema (prefer-dark)
+})
+print("Listo: abre Brave para ver el tema del sistema y las pestañas a la izquierda.")
