@@ -148,7 +148,7 @@ Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola
 | Atajo | Acción | | Atajo | Acción |
 |---|---|---|---|---|
 | `Super+Enter` | terminal | | `Super+1..9`, `Super+0` | ir a escritorio (0 = 10) |
-| `Super+Space` / `Super+D` | lanzador | | `Super+Ctrl+1..9` | enviar ventana |
+| `Super+Space` / `Super+D` | lanzador | | `Super+Shift+1..0` | enviar ventana |
 | `Super+B` | Lanzador de apps (rofi) | | `Super+H/J/K/L` | foco |
 | `Super+E` | archivos (Thunar) | | `Super+Shift+H/J/K/L` | mover |
 | `Super+W` | cerrar | | `Super+R` | ancho 1/3 · 1/2 · 2/3 · 1 |
