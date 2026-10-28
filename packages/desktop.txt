@@ -6,6 +6,7 @@ niri
 xwayland-satellite
 xdg-desktop-portal-gnome
 xdg-desktop-portal-gtk
+xdg-desktop-portal-wlr
 polkit-gnome
 gnome-keyring
 waybar
@@ -22,9 +23,8 @@ swayidle
 swaylock
 wl-clipboard
 cliphist
-grim
-slurp
-satty
+flameshot
+xdg-user-dirs
 brightnessctl
 playerctl
 mesa

@@ -154,11 +154,19 @@ Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola
 | `Super+W` | cerrar | | `Super+R` | ancho 1/3 · 1/2 · 2/3 · 1 |
 | `Super+T` | flotante | | `Super+F` / `Super+Shift+F` | maximizar / pantalla completa |
 | `Super+O` | vista general | | `Super+,` / `Super+.` | apilar / separar en columna |
-| `Super+V` | portapapeles | | `Print` / `Shift+Print` | captura / captura + anotar |
+| `Super+V` | portapapeles | | `Print` | captura de área + anotar (flameshot) |
+| `Shift+Print` | captura de la pantalla actual | | `Ctrl+Print` | captura de todas las pantallas |
 | `Super+Alt+L` | bloquear | | `Super+Alt+Q` | salir de niri |
 | `Super+F1` | ver todos los atajos | | `Super+Tab` | escritorio anterior |
 | `Super+A` | calendario y tareas | | `Super+-` / `Super++` | columna más angosta / ancha |
 | `Super+Alt+Space` | teclado latam ⇄ inglés | | | |
+
+## Capturas: flameshot
+`Print` abre flameshot: eliges el área, dibujas, flechas, texto, y copias o guardas. Las capturas
+van a `~/Imágenes/Capturas` y al portapapeles. En Wayland flameshot captura por el portal; el de
+gnome en niri solo sirve con una pantalla, así que `~/.config/xdg-desktop-portal/niri-portals.conf`
+manda la captura a `xdg-desktop-portal-wlr` (funciona con varios monitores; usa `grim` por dentro,
+por eso grim y slurp quedan instalados como dependencias). Compartir pantalla sigue con gnome.
 
 ## Barra y calendario
 La barra: CPU · RAM · disco | escritorios de cada pantalla |

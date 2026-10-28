@@ -264,6 +264,12 @@ step_packages() {
     (( ${#missing[@]} )) && warn "No están en los repos (se omiten): ${missing[*]}"
     pac -Syu --needed "${avail[@]}"
     ok "${#avail[@]} paquetes instalados o al día"
+    # satty ya no se usa (las capturas son con flameshot): se quita si quedó de una instalación
+    # anterior. grim y slurp se quedan: xdg-desktop-portal-wlr los usa para capturar.
+    if pacman -Qq satty &>/dev/null; then
+        pacman -Rns --noconfirm satty && ok "Quitado: satty"
+    fi
+    return 0
 }
 
 step_aur() {
