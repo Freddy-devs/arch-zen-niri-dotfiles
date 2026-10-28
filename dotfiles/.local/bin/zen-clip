@@ -2,7 +2,7 @@
 # zen-clip — historial del portapapeles, solo en memoria y con los últimos 10.
 #
 #   zen-clip watch   lo lanza niri al iniciar: guarda cada copia (wl-paste + cliphist)
-#   zen-clip pick    Ctrl+Shift+V: ventanita con los últimos 10; flechas + Enter pega al instante
+#   zen-clip pick    Alt+Shift+V: ventanita con los últimos 10; flechas + Enter pega al instante
 #   zen-clip menu    Super+V: igual pero solo copia, sin pegar
 #   zen-clip wipe    borra todo el historial
 #
@@ -28,9 +28,11 @@ case "${1:-pick}" in
     pick)
         sel=$(choose) || exit 0
         printf '%s' "$sel" | cliphist decode | wl-copy
-        # pegar donde estaba el cursor: Shift+Insert pega en GTK, Qt, navegadores y alacritty
+        # pegar donde estaba el cursor: Ctrl+Shift+V pega en terminales, y en GTK, Qt y
+        # navegadores pega como texto plano. Se suelta Alt por si sigue apretado del atajo.
         sleep 0.15
-        command -v wtype >/dev/null && wtype -M shift -k Insert -m shift ;;
+        command -v wtype >/dev/null || { notify-send -a Portapapeles "Falta wtype para pegar" 2>/dev/null; exit 1; }
+        wtype -m alt -M ctrl -M shift -k v -m shift -m ctrl ;;
     menu)
         sel=$(choose) || exit 0
         printf '%s' "$sel" | cliphist decode | wl-copy ;;
