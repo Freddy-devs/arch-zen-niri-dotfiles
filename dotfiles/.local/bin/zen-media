@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+"""zen-media — mini reproductor centrado en pantalla para lo que esté sonando.
+
+Controla cualquier reproductor MPRIS: YouTube/música en Brave u otro navegador, Spotify,
+VLC, mpv… Muestra la miniatura, título, artista, progreso (con salto) y los controles.
+
+  zen-media            abre/cierra la ventanita (clic en el icono de la barra)
+  zen-media --waybar   salida para waybar (custom/media): icono y estado en vivo
+
+Teclas: Espacio reproducir/pausar · ← → anterior/siguiente · Tab cambia de reproductor · Esc cierra.
+"""
+import hashlib
+import json
+import os
+import sys
+import threading
+import urllib.request
+
+WAYBAR = "--waybar" in sys.argv
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if not WAYBAR and LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Playerctl", "2.0")
+from gi.repository import GLib, Playerctl  # noqa: E402
+
+CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "zen-media")
+
+# nombre bonito para cada reproductor (el bus MPRIS da "brave.instance1234", "spotify"…)
+NAMES = {
+    "brave": "Brave", "chromium": "Chromium", "chrome": "Chrome", "firefox": "Firefox",
+    "spotify": "Spotify", "vlc": "VLC", "mpv": "mpv", "zen": "Zen", "vivaldi": "Vivaldi",
+}
+
+
+def nice_name(player):
+    base = player.props.player_name or ""
+    return NAMES.get(base.split(".")[0].lower(), base.split(".")[0].capitalize() or "Reproductor")
+
+
+def meta(player, key, default=""):
+    try:
+        value = player.print_metadata_prop(key)
+    except GLib.Error:
+        return default
+    return value if value else default
+
+
+def status(player):
+    try:
+        return player.props.playback_status
+    except GLib.Error:
+        return Playerctl.PlaybackStatus.STOPPED
+
+
+class Players:
+    """Lleva la lista de reproductores MPRIS vivos y avisa de cualquier cambio."""
+
+    def __init__(self, on_change):
+        self.on_change = on_change
+        self.ready = False          # no avisar mientras se arma la lista inicial
+        self.manager = Playerctl.PlayerManager()
+        self.manager.connect("name-appeared", lambda m, name: self.add(name))
+        self.manager.connect("player-vanished", lambda m, p: self.on_change())
+        for name in self.manager.props.player_names:
+            self.add(name)
+        self.ready = True
+
+    def add(self, name):
+        try:
+            player = Playerctl.Player.new_from_name(name)
+        except GLib.Error:
+            return
+        for sig in ("metadata", "playback-status"):
+            player.connect(sig, lambda *a: self.ready and self.on_change())
+        self.manager.manage_player(player)
+        if self.ready:
+            self.on_change()
+
+    @property
+    def all(self):
+        return list(self.manager.props.players)
+
+    def best(self, prefer=None):
+        players = self.all
+        if prefer is not None and prefer in players:
+            return prefer
+        playing = [p for p in players if status(p) == Playerctl.PlaybackStatus.PLAYING]
+        return (playing or players or [None])[0]
+
+
+# ---------------------------------------------------------------- waybar
+def run_waybar():
+    last = [None]
+
+    def emit():
+        p = players.best()
+        if p is None:
+            out = {"text": "󰝚", "class": "none", "tooltip": "Nada sonando"}
+        else:
+            st = status(p)
+            title, artist = meta(p, "xesam:title"), meta(p, "xesam:artist")
+            line = " — ".join(x for x in (artist, title) if x) or nice_name(p)
+            out = {
+                "text": "󰝚",
+                "class": "playing" if st == Playerctl.PlaybackStatus.PLAYING else "paused",
+                "tooltip": GLib.markup_escape_text(f"{nice_name(p)} · {line}"),
+            }
+        js = json.dumps(out, ensure_ascii=False)
+        if js != last[0]:
+            last[0] = js
+            print(js, flush=True)
+
+    players = Players(emit)
+    emit()
+    GLib.MainLoop().run()
+
+
+# ---------------------------------------------------------------- ventana
+def run_window():
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("Gdk", "4.0")
+    gi.require_version("Gtk4LayerShell", "1.0")
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import Gdk, GdkPixbuf, Gtk, Gtk4LayerShell as Layer
+
+    ART = 92
+
+    CSS = """
+    window.zen-media { background: transparent; }
+    .panel {
+        background: #1a1b26; border-radius: 14px; padding: 14px;
+        border: 1px solid alpha(#7aa2f7, 0.18);
+        color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+    }
+    .art { border-radius: 10px; background: #222330; }
+    .art-empty { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 34px; color: #3b4261; }
+    .title { font-size: 14px; font-weight: 800; color: #f1f1f1; }
+    .artist { color: #a9b1d6; font-weight: 600; font-size: 12px; }
+    .source { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
+    .time { color: #565f89; font-size: 10px; font-weight: 600; font-feature-settings: "tnum"; }
+    scale { padding: 0; margin: 2px 0 0; }
+    scale trough { background: #292e42; border-radius: 3px; min-height: 3px; border: none; }
+    scale highlight { background: #7aa2f7; border-radius: 3px; }
+    scale slider { background: #c0caf5; border-radius: 50%; min-width: 10px; min-height: 10px;
+                   margin: -4px; border: none; box-shadow: none; }
+    scale:hover slider { background: #f1f1f1; }
+    button.ctl {
+        background: transparent; color: #a9b1d6; border: none; box-shadow: none; border-radius: 50%;
+        font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px;
+        min-width: 34px; min-height: 34px; padding: 0;
+    }
+    button.ctl:hover { background: #222330; color: #f1f1f1; }
+    button.ctl:disabled { color: #3b4261; }
+    button.play { background: #7aa2f7; color: #1a1b26; font-size: 18px; min-width: 40px; min-height: 40px; }
+    button.play:hover { background: #89b4fa; color: #1a1b26; }
+    button:focus, button:focus-visible { outline: none; }
+    .chips { margin-bottom: 10px; }
+    button.chip {
+        background: #16161e; color: #565f89; border: none; box-shadow: none; border-radius: 7px;
+        font-size: 11px; font-weight: 700; padding: 2px 10px; min-height: 0;
+    }
+    button.chip:hover { color: #a9b1d6; }
+    button.chip.on { background: #292e42; color: #f1f1f1; }
+    .empty { color: #565f89; font-weight: 600; }
+    """
+
+    class Window:
+        def __init__(self, app):
+            self.app = app
+            self.player = None
+            self.art_url = None
+            self.dragging = False
+            self.updating = False
+            self.build()
+            self.players = Players(lambda: GLib.idle_add(self.refresh))
+            self.refresh()
+            GLib.timeout_add(500, self.tick)
+
+        def build(self):
+            provider = Gtk.CssProvider()
+            provider.load_from_string(CSS)
+            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                      Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            win = Gtk.ApplicationWindow(application=self.app)
+            win.add_css_class("zen-media")
+            Layer.init_for_window(win)
+            Layer.set_namespace(win, "zen-media")
+            Layer.set_layer(win, Layer.Layer.OVERLAY)
+            Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)   # sin anclas = centrado
+
+            keys = Gtk.EventControllerKey()
+            keys.connect("key-pressed", self.on_key)
+            win.add_controller(keys)
+
+            panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            panel.add_css_class("panel")
+            panel.set_size_request(360, -1)
+
+            self.chips = Gtk.Box(spacing=4)
+            self.chips.add_css_class("chips")
+            panel.append(self.chips)
+
+            body = Gtk.Box(spacing=14)
+            self.art_stack = Gtk.Stack()
+            self.art_stack.set_size_request(ART, ART)
+            self.art_stack.set_valign(Gtk.Align.START)
+            self.art = Gtk.Image(pixel_size=ART)
+            self.art.add_css_class("art")
+            self.art.set_overflow(Gtk.Overflow.HIDDEN)
+            placeholder = Gtk.Label(label="󰝚")
+            placeholder.add_css_class("art")
+            placeholder.add_css_class("art-empty")
+            self.art_stack.add_named(self.art, "art")
+            self.art_stack.add_named(placeholder, "none")
+            body.append(self.art_stack)
+
+            info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+            self.source = Gtk.Label(xalign=0)
+            self.source.add_css_class("source")
+            self.title = Gtk.Label(xalign=0, ellipsize=3, max_width_chars=26)
+            self.title.add_css_class("title")
+            self.artist = Gtk.Label(xalign=0, ellipsize=3, max_width_chars=30)
+            self.artist.add_css_class("artist")
+            info.append(self.source)
+            info.append(self.title)
+            info.append(self.artist)
+
+            self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 1)
+            self.scale.set_draw_value(False)
+            self.scale.connect("change-value", self.on_seek)
+            info.append(self.scale)
+            times = Gtk.Box()
+            self.pos_lbl = Gtk.Label(xalign=0, hexpand=True)
+            self.len_lbl = Gtk.Label(xalign=1)
+            for lbl in (self.pos_lbl, self.len_lbl):
+                lbl.add_css_class("time")
+                times.append(lbl)
+            info.append(times)
+
+            ctl = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=4)
+            self.prev_btn = self.button("󰒮", "ctl", lambda: self.player and self.player.previous())
+            self.play_btn = self.button("󰐊", "play", lambda: self.player and self.player.play_pause())
+            self.next_btn = self.button("󰒭", "ctl", lambda: self.player and self.player.next())
+            for b in (self.prev_btn, self.play_btn, self.next_btn):
+                ctl.append(b)
+            info.append(ctl)
+            body.append(info)
+
+            self.empty = Gtk.Label(label="Nada está sonando ahora", margin_top=18, margin_bottom=18)
+            self.empty.add_css_class("empty")
+            self.content = Gtk.Stack(vhomogeneous=False)
+            self.content.add_named(body, "body")
+            self.content.add_named(self.empty, "empty")
+            panel.append(self.content)
+
+            win.set_child(panel)
+            self.win = win
+            win.present()
+
+        def button(self, icon, cls, action):
+            b = Gtk.Button(label=icon, valign=Gtk.Align.CENTER)
+            b.add_css_class("ctl")
+            if cls != "ctl":
+                b.add_css_class(cls)
+            b.connect("clicked", lambda _b: self.safe(action))
+            return b
+
+        def safe(self, action):
+            try:
+                action()
+            except GLib.Error:
+                pass
+
+        # ---------- datos ----------
+        def refresh(self):
+            players = self.players.all
+            self.player = self.players.best(self.player)
+
+            while (c := self.chips.get_first_child()) is not None:
+                self.chips.remove(c)
+            self.chips.set_visible(len(players) > 1)
+            for p in players:
+                chip = Gtk.Button(label=nice_name(p))
+                chip.add_css_class("chip")
+                if p is self.player:
+                    chip.add_css_class("on")
+                chip.connect("clicked", lambda _b, pl=p: self.select(pl))
+                self.chips.append(chip)
+
+            p = self.player
+            if p is None:
+                self.content.set_visible_child_name("empty")
+                return False
+            self.content.set_visible_child_name("body")
+            st = status(p)
+            self.source.set_label(nice_name(p).upper() + ("" if st == Playerctl.PlaybackStatus.PLAYING else " · EN PAUSA"))
+            self.title.set_label(meta(p, "xesam:title", "Sin título"))
+            artist = meta(p, "xesam:artist") or meta(p, "xesam:album")
+            self.artist.set_label(artist)
+            self.artist.set_visible(bool(artist))
+            self.play_btn.set_label("󰏤" if st == Playerctl.PlaybackStatus.PLAYING else "󰐊")
+            self.prev_btn.set_sensitive(bool(p.props.can_go_previous))
+            self.next_btn.set_sensitive(bool(p.props.can_go_next))
+            self.load_art(meta(p, "mpris:artUrl"))
+            self.tick()
+            return False
+
+        def select(self, player):
+            self.player = player
+            self.refresh()
+
+        def tick(self):
+            p = self.player
+            if p is None or self.dragging:
+                return True
+            try:
+                length = int(meta(p, "mpris:length", "0") or 0)
+                pos = p.get_position() if length else 0
+            except (GLib.Error, ValueError):
+                length, pos = 0, 0
+            seekable = length > 0 and bool(p.props.can_seek)
+            self.scale.set_visible(length > 0)
+            self.pos_lbl.get_parent().set_visible(length > 0)
+            self.scale.set_sensitive(seekable)
+            if length:
+                self.updating = True
+                self.scale.set_range(0, length / 1e6)
+                self.scale.set_value(min(pos, length) / 1e6)
+                self.updating = False
+                self.pos_lbl.set_label(fmt(pos / 1e6))
+                self.len_lbl.set_label(fmt(length / 1e6))
+            return True
+
+        def on_seek(self, scale, _scroll, value):
+            if self.player and not self.updating:
+                self.safe(lambda: self.player.set_position(int(max(0, value) * 1e6)))
+                self.pos_lbl.set_label(fmt(value))
+            return False
+
+        # ---------- miniatura ----------
+        def load_art(self, url):
+            if url == self.art_url:
+                return
+            self.art_url = url
+            if not url:
+                self.art_stack.set_visible_child_name("none")
+                return
+            if url.startswith("file://"):
+                self.show_art(GLib.filename_from_uri(url)[0], url)
+                return
+            if url.startswith(("http://", "https://")):
+                os.makedirs(CACHE, exist_ok=True)
+                path = os.path.join(CACHE, hashlib.sha1(url.encode()).hexdigest())
+                if os.path.exists(path):
+                    self.show_art(path, url)
+                    return
+
+                def fetch():
+                    try:
+                        req = urllib.request.Request(url, headers={"User-Agent": "zen-media"})
+                        with urllib.request.urlopen(req, timeout=8) as r, open(path + ".part", "wb") as f:
+                            f.write(r.read(5_000_000))
+                        os.replace(path + ".part", path)
+                        GLib.idle_add(self.show_art, path, url)
+                    except OSError:
+                        GLib.idle_add(self.art_stack.set_visible_child_name, "none")
+                threading.Thread(target=fetch, daemon=True).start()
+                return
+            self.art_stack.set_visible_child_name("none")
+
+        def show_art(self, path, url):
+            if url != self.art_url:
+                return False       # llegó tarde: ya cambió la canción
+            try:
+                # recorte cuadrado al centro (las miniaturas de YouTube son 16:9), a doble resolución
+                pb = GdkPixbuf.Pixbuf.new_from_file(path)
+                w, h = pb.get_width(), pb.get_height()
+                side = min(w, h)
+                pb = pb.new_subpixbuf((w - side) // 2, (h - side) // 2, side, side)
+                pb = pb.scale_simple(ART * 2, ART * 2, GdkPixbuf.InterpType.BILINEAR)
+                ok, png = pb.save_to_bufferv("png", [], [])
+                self.art.set_from_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(png)))
+                self.art_stack.set_visible_child_name("art")
+            except GLib.Error:
+                self.art_stack.set_visible_child_name("none")
+            return False
+
+        # ---------- teclado ----------
+        def on_key(self, _c, key, _code, _state):
+            if key == Gdk.KEY_Escape:
+                self.app.quit()
+            elif key == Gdk.KEY_space and self.player:
+                self.safe(self.player.play_pause)
+            elif key == Gdk.KEY_Left and self.player:
+                self.safe(self.player.previous)
+            elif key == Gdk.KEY_Right and self.player:
+                self.safe(self.player.next)
+            elif key == Gdk.KEY_Tab:
+                players = self.players.all
+                if len(players) > 1:
+                    i = players.index(self.player) if self.player in players else -1
+                    self.select(players[(i + 1) % len(players)])
+            else:
+                return False
+            return True
+
+    app = Gtk.Application(application_id="pe.zen.Media")
+    state = {}
+
+    def activate(a):
+        if "win" in state:          # segundo clic en el icono: cerrar
+            a.quit()
+        else:
+            state["win"] = Window(a)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+def fmt(seconds):
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+if __name__ == "__main__":
+    try:
+        run_waybar() if WAYBAR else run_window()
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)

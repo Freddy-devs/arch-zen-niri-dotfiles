@@ -15,7 +15,7 @@
 
     "modules-left": ["custom/arch", "group/stats"],
     "modules-center": ["niri/workspaces"],
-    "modules-right": ["group/netbat", "group/controls", "custom/updates", "tray", "clock", "niri/language", "custom/power"],
+    "modules-right": ["group/bt", "group/netbat", "group/controls", "custom/updates", "tray", "clock", "niri/language", "custom/power"],
 
     // logo: abre el lanzador (igual que Super+Space)
     "custom/arch": {
@@ -75,9 +75,27 @@
     },
 
     // ---------- conexiones ----------
+    // ---------- Bluetooth: icono, batería de cada dispositivo y reproductor ----------
+    "group/bt": {
+        "orientation": "horizontal",
+        "modules": ["bluetooth", "custom/btbattery", "custom/media"]
+    },
+
+    // ---------- red y batería de la laptop ----------
     "group/netbat": {
         "orientation": "horizontal",
-        "modules": ["bluetooth", "custom/btbattery", "network", "battery"]
+        "modules": ["network", "battery"]
+    },
+
+    // reproductor: abre zen-media (mini ventana centrada) con lo que suene en Brave, Spotify, VLC…
+    "custom/media": {
+        "exec": "~/.local/bin/zen-media --waybar",
+        "return-type": "json",
+        "restart-interval": 5,
+        "on-click": "~/.local/bin/zen-media",
+        "on-click-right": "playerctl play-pause",
+        "on-scroll-up": "playerctl next",
+        "on-scroll-down": "playerctl previous"
     },
 
     "bluetooth": {
