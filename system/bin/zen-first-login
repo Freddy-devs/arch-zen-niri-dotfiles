@@ -27,7 +27,8 @@ cat <<'EOF'
 
   Sugeridas:  brave · wps · claude · herdr · php · mariadb · postgresql · podman · node
 
-  Atajos: Super+Enter terminal · Super+Space lanzador · Super+A calendario · Super+F1 todos
+  Atajos: Super+Enter terminal · Super+Space lanzador · Super+A calendario · Super+M música
+          Super+S sonido · Super+Shift+B Bluetooth · Super+F1 todos
 
 EOF
 read -rp "  ¿Abrir el menú de zen-apps ahora? [s/N] " ans
