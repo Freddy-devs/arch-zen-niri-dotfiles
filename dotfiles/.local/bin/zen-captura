@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # zen-captura — capturas con flameshot en niri, sin que flameshot pregunte la pantalla.
 #   zen-captura area       (Print)        elegir un área en cualquier pantalla + anotar
-#   zen-captura pantalla   (Shift+Print)  la pantalla actual entera, directo
-#   zen-captura recorte    (Ctrl+Print)   elegir un área solo en la pantalla actual + anotar
-# Guarda en Imágenes/Capturas y copia al portapapeles.
+#   zen-captura recorte    (Shift+Print)  elegir un área solo en la pantalla actual + anotar
+#   zen-captura pantalla   (Ctrl+Print)   la pantalla actual entera, directo
+# Todas copian al portapapeles y guardan en Imágenes/Capturas.
 #
 # En Wayland flameshot no sabe dónde está el cursor y por eso pregunta la pantalla. Aquí se le
 # pasa con -n: la pantalla enfocada en niri, traducida a la numeración de flameshot (Qt), que
@@ -70,8 +70,8 @@ screen_number() {
 }
 
 case "${1:-area}" in
-    area)     exec flameshot gui -p "$dir" ;;
+    area)     exec flameshot gui -c -p "$dir" ;;
+    recorte)  exec flameshot screen -n "$(screen_number)" -e -c -p "$dir" ;;
     pantalla) exec flameshot screen -n "$(screen_number)" -c -p "$dir" ;;
-    recorte)  exec flameshot screen -n "$(screen_number)" -e -p "$dir" ;;
     *) echo "uso: zen-captura [area|pantalla|recorte]" >&2; exit 1 ;;
 esac

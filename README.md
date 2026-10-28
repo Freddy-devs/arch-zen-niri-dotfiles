@@ -155,15 +155,15 @@ Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola
 | `Super+T` | flotante | | `Super+F` / `Super+Shift+F` | maximizar / pantalla completa |
 | `Super+O` | vista general | | `Super+,` / `Super+.` | apilar / separar en columna |
 | `Super+V` | portapapeles | | `Print` | captura: elegir área + anotar (flameshot) |
-| `Shift+Print` | captura de la pantalla actual, directo | | `Ctrl+Print` | área de la pantalla actual + anotar |
+| `Shift+Print` | área de la pantalla actual + anotar | | `Ctrl+Print` | captura de la pantalla actual, directo |
 | `Super+Alt+L` | bloquear | | `Super+Alt+Q` | salir de niri |
 | `Super+F1` | ver todos los atajos | | `Super+Tab` | escritorio anterior |
 | `Super+A` | calendario y tareas | | `Super+-` / `Super++` | columna más angosta / ancha |
 | `Super+Alt+Space` | teclado latam ⇄ inglés | | | |
 
 ## Capturas: flameshot
-`zen-captura` (atajos `Print`, `Shift+Print`, `Ctrl+Print`): elegir área + anotar · la pantalla
-actual entera, directo · un área de la pantalla actual + anotar. Las capturas van a
+`zen-captura` (atajos `Print`, `Shift+Print`, `Ctrl+Print`): elegir área + anotar · un área de la
+pantalla actual + anotar · la pantalla actual entera, directo. Las capturas van a
 `~/Imágenes/Capturas` y al portapapeles. En Wayland flameshot no sabe dónde está el cursor y
 pregunta la pantalla; `zen-captura` le pasa la pantalla enfocada de niri (calibra la numeración
 de flameshot una vez por sesión comparando tamaños, en caché en `$XDG_RUNTIME_DIR`). En Wayland flameshot captura por el portal; el de
