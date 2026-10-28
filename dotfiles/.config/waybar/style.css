@@ -67,13 +67,13 @@ tooltip label {
 #language,
 #custom-power,
 #clock {
-    background: linear-gradient(180deg, alpha(@surface, 0.85), alpha(@base, 0.78));
-    border: 1px solid alpha(@fg, 0.09);
-    border-top-color: alpha(@fg, 0.16);
-    border-radius: 7px;
+    background: linear-gradient(180deg, alpha(@base, 0.94), alpha(@mantle, 0.96));
+    border: 1px solid alpha(@line, 0.85);
+    border-top-color: alpha(@fg, 0.14);
+    border-radius: 12px;
     margin: 4px 3px;
-    padding: 0 12px;
-    box-shadow: 0 2px 5px alpha(black, 0.30);
+    padding: 0 13px;
+    box-shadow: 0 2px 6px alpha(black, 0.45), inset 0 1px 0 alpha(@fg, 0.04);
     transition: all 200ms ease;
 }
 
@@ -86,8 +86,8 @@ tooltip label {
 #tray:hover,
 #language:hover,
 #clock:hover {
-    background: linear-gradient(180deg, alpha(@surface, 0.95), alpha(@base, 0.88));
-    border-color: alpha(@fg, 0.20);
+    background: linear-gradient(180deg, alpha(@surface, 0.96), alpha(@base, 0.98));
+    border-color: alpha(@blue, 0.45);
 }
 
 /* módulos dentro de un grupo, separados con aire */
@@ -123,10 +123,10 @@ tooltip label {
 #workspaces button {
     font-size: 15px;
     padding: 0 5px;
-    margin: 0 1px;
+    margin: 3px 1px;
     min-width: 18px;
     background: transparent;
-    border-radius: 6px;
+    border-radius: 9px;
     transition: color 200ms ease, background 200ms ease;
 }
 
@@ -206,6 +206,7 @@ tooltip label {
 #custom-power:hover {
     color: @mantle;
     background: @red;
+    border-color: @red;
 }
 
 /* la hora, al extremo derecho */
@@ -214,5 +215,5 @@ tooltip label {
     font-weight: 700;
     padding: 0 14px;
     margin-right: 0;
-    border-color: alpha(@purple, 0.40);
+    border-color: alpha(@purple, 0.55);
 }
