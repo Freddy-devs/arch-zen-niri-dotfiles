@@ -231,18 +231,18 @@ layer-rule {
 }
 
 // ---------- atajos (estilo sxhkd) ----------
-// 10 escritorios fijos (existen aunque estén vacíos): 1-5 en la pantalla de la laptop y 6-10 en
-// el monitor externo. Con una sola pantalla los 10 quedan en ella. Nombres: niri msg outputs
-workspace "1" { open-on-output "eDP-1"; }
-workspace "2" { open-on-output "eDP-1"; }
-workspace "3" { open-on-output "eDP-1"; }
-workspace "4" { open-on-output "eDP-1"; }
-workspace "5" { open-on-output "eDP-1"; }
-workspace "6" { open-on-output "HDMI-A-1"; }
-workspace "7" { open-on-output "HDMI-A-1"; }
-workspace "8" { open-on-output "HDMI-A-1"; }
-workspace "9" { open-on-output "HDMI-A-1"; }
-workspace "10" { open-on-output "HDMI-A-1"; }
+// 10 escritorios fijos (existen aunque estén vacíos): 1-5 en el monitor externo (principal) y
+// 6-10 en la pantalla de la laptop. Con una sola pantalla los 10 quedan en ella. Nombres: niri msg outputs
+workspace "1" { open-on-output "HDMI-A-1"; }
+workspace "2" { open-on-output "HDMI-A-1"; }
+workspace "3" { open-on-output "HDMI-A-1"; }
+workspace "4" { open-on-output "HDMI-A-1"; }
+workspace "5" { open-on-output "HDMI-A-1"; }
+workspace "6" { open-on-output "eDP-1"; }
+workspace "7" { open-on-output "eDP-1"; }
+workspace "8" { open-on-output "eDP-1"; }
+workspace "9" { open-on-output "eDP-1"; }
+workspace "10" { open-on-output "eDP-1"; }
 
 binds {
     // lista de atajos: Super+F1 (en latam/es no hay tecla "/" sin Shift, por eso Super+Shift+/ no llega)
