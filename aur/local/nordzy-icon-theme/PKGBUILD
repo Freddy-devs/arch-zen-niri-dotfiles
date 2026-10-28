@@ -1,0 +1,19 @@
+# Iconos Nordzy de su autor original (alvatip), solo la variante Nordzy-dark (azul nórdico).
+# El paquete del AUR trae las 18 variantes de color; aquí solo se instala la que usamos.
+pkgname=nordzy-icon-theme
+pkgver=1.8.7
+pkgrel=1
+pkgdesc="Nordzy icon theme (solo la variante Nordzy-dark)"
+arch=('any')
+url="https://github.com/alvatip/Nordzy-icon"
+license=('GPL-3.0-only')
+depends=('hicolor-icon-theme')
+conflicts=("$pkgname-git")
+options=('!strip')
+source=("Nordzy-dark-$pkgver.tar.gz::$url/releases/download/$pkgver/Nordzy-dark.tar.gz")
+sha256sums=('ad752b5ce70577408431734fc8004f928a00027a8fce6dd131ae2d0c3dc82069')
+
+package() {
+    install -d "$pkgdir/usr/share/icons"
+    cp -a --no-preserve=ownership "$srcdir/Nordzy-dark" "$pkgdir/usr/share/icons/"
+}
