@@ -59,7 +59,7 @@
     },
 
     "memory": {
-        "format": "<span color='#7dcfff' size='large' rise='-1pt'></span>  {used:0.1f} GiB",
+        "format": "<span color='#7dcfff' rise='0pt'></span>  {used:0.1f} GiB",
         "interval": 3,
         "states": { "high": 85 },
         "tooltip-format": "{used:0.2f} / {total:0.2f} GiB · swap {swapUsed:0.2f} GiB",
@@ -67,7 +67,7 @@
     },
 
     "disk": {
-        "format": "<span color='#e0af68' size='large' rise='-1pt'></span>  {percentage_used}%",
+        "format": "<span color='#e0af68' size='large' rise='-1pt'>󰟜</span>  {percentage_used}%",
         "path": "/",
         "interval": 60,
         "tooltip-format": "{used} usados de {total} · libre {free}",
