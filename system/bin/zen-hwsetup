@@ -79,16 +79,21 @@ EOF
 # ---------------------------------------------------------------- batería
 setup_battery() {
     [[ -n $BAT && -w $BAT/charge_control_end_threshold ]] || { warn "Este equipo no permite limitar la carga"; return; }
-    log "Límite de carga de la batería (actual: $(cat "$BAT/charge_control_end_threshold")%)"
-    echo "  Cargar hasta 80% alarga la vida de la batería si la laptop pasa enchufada."
-    local p; p=$(ask "Porcentaje máximo (60-100)" 80)
-    [[ $p =~ ^[0-9]+$ ]] && ((p >= 60 && p <= 100)) || { warn "Valor inválido"; return; }
-    install -Dm644 /dev/stdin /etc/udev/rules.d/90-zen-battery.rules <<EOF
-# límite de carga de la batería (zen-hwsetup)
-ACTION=="add|change", SUBSYSTEM=="power_supply", KERNEL=="$(basename "$BAT")", ATTR{charge_control_end_threshold}="$p"
-EOF
-    echo "$p" > "$BAT/charge_control_end_threshold"
-    done_ "La batería cargará hasta $p%"
+    local MIN=60 MAX=90
+    [[ -r /etc/zen-charge-limit.conf ]] && . /etc/zen-charge-limit.conf
+    log "Rango de carga de la batería (actual: $MIN–$MAX%)"
+    echo "  Con el cargador siempre enchufado: carga hasta el máximo y no vuelve a cargar hasta bajar al mínimo."
+    local max min
+    max=$(ask "Porcentaje máximo (60-100)" "$MAX")
+    min=$(ask "Porcentaje mínimo para volver a cargar (20-$max)" "$MIN")
+    [[ $max =~ ^[0-9]+$ && $min =~ ^[0-9]+$ ]] && ((max >= 60 && max <= 100 && min >= 20 && min < max)) ||
+        { warn "Valores inválidos"; return; }
+    printf '# Rango de carga de la batería (zen-charge-limit.service). Cambia con: sudo zen-hwsetup\nMIN=%s\nMAX=%s\n' \
+        "$min" "$max" > /etc/zen-charge-limit.conf
+    rm -f /etc/udev/rules.d/90-zen-battery.rules      # el tope fijo de antes chocaría con el servicio
+    systemctl enable zen-charge-limit.service >/dev/null 2>&1
+    systemctl restart zen-charge-limit.service
+    done_ "La batería se mantendrá entre $min% y $max%"
 }
 
 # ---------------------------------------------------------------- huella

@@ -202,7 +202,7 @@ if [[ -n $BAT ]]; then
         ((h >= 70)) && ok "Salud de la batería: ${h}% de su capacidad original" || warn "Batería desgastada: ${h}% de su capacidad original"
     fi
     if [[ -w $BAT/charge_control_end_threshold ]]; then
-        ok "Límite de carga soportado (actual: $(cat "$BAT/charge_control_end_threshold")%) — ajústalo con zen-hwsetup"
+        ok "Límite de carga soportado: $(zen-charge-limit --status 2>/dev/null || cat "$BAT/charge_control_end_threshold") — ajústalo con zen-hwsetup"
     else
         info "Este equipo no expone límite de carga"
     fi

@@ -377,6 +377,8 @@ step_files() {
     fi
     # rendimiento: zram, sysctl de memoria/red, límites de archivos, journal acotado
     install -Dm644 "$S/perf/zram-generator.conf"        /etc/systemd/zram-generator.conf
+    install -Dm644 "$S/systemd/zen-charge-limit.service" /etc/systemd/system/zen-charge-limit.service
+    [[ -e /etc/zen-charge-limit.conf ]] || install -Dm644 "$S/perf/zen-charge-limit.conf" /etc/zen-charge-limit.conf
     install -Dm644 "$S/perf/80-zen-performance.conf"    /etc/sysctl.d/80-zen-performance.conf
     install -Dm644 "$S/perf/zen-limits.conf"            /etc/systemd/system.conf.d/zen-limits.conf
     install -Dm644 "$S/perf/zen-limits.conf"            /etc/systemd/user.conf.d/zen-limits.conf
@@ -538,6 +540,9 @@ step_services() {
     systemctl enable --force sddm >/dev/null
     enable NetworkManager bluetooth systemd-timesyncd fstrim.timer pkgfile-update.timer \
         systemd-oomd apparmor nftables systemd-resolved reflector.timer paccache.timer
+    # batería entre 60 y 90 % aunque el cargador quede enchufado (solo si el equipo lo permite)
+    compgen -G '/sys/class/power_supply/BAT*/charge_control_end_threshold' >/dev/null &&
+        enable zen-charge-limit.service
     # ddcutil (brillo del monitor externo) habla con el monitor por i2c
     echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
     # batería de audífonos Bluetooth en la barra: PipeWire la publica por la API experimental de BlueZ

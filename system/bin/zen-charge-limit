@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# zen-charge-limit — mantiene la batería entre MIN y MAX aunque el cargador quede siempre enchufado.
+#
+# Muchas laptops (ASUS, por ejemplo) solo permiten fijar el tope de carga (charge_control_end_threshold).
+# El piso se emula moviendo ese tope:
+#   carga hasta MAX → el tope baja a MIN: deja de cargar y la laptop funciona con el cargador
+#   al bajar a MIN  → el tope vuelve a MAX: carga otra vez hasta MAX
+# Si el equipo tiene charge_control_start_threshold, se usa directo y el firmware hace todo.
+#
+# Límites en /etc/zen-charge-limit.conf (MIN=60, MAX=90). Lo corre zen-charge-limit.service como root.
+# zen-charge-limit --status  muestra el estado sin cambiar nada.
+set -u
+
+MIN=60 MAX=90
+[[ -r /etc/zen-charge-limit.conf ]] && . /etc/zen-charge-limit.conf
+
+BAT=""
+for b in /sys/class/power_supply/BAT*; do
+    [[ -w $b/charge_control_end_threshold || ( ${1:-} == --status && -e $b/charge_control_end_threshold ) ]] && { BAT=$b; break; }
+done
+[[ -n $BAT ]] || { echo "Esta batería no permite limitar la carga"; exit 0; }
+END=$BAT/charge_control_end_threshold START=$BAT/charge_control_start_threshold
+
+if [[ ${1:-} == --status ]]; then
+    echo "Batería $(cat "$BAT/capacity")% · $(cat "$BAT/status") · tope actual $(cat "$END")% · rango $MIN–$MAX%"
+    exit 0
+fi
+
+# firmware con piso propio: se configura una vez y listo
+if [[ -w $START ]]; then
+    echo "$MAX" > "$END" 2>/dev/null
+    echo "$MIN" > "$START" && echo "$MAX" > "$END"
+    echo "Rango $MIN–$MAX% configurado en el firmware"
+    exec sleep infinity
+fi
+
+set_end() {
+    [[ $(cat "$END") == "$1" ]] && return
+    echo "$1" > "$END" && echo "Batería $2%: tope de carga → $1%"
+}
+
+while :; do
+    cap=$(cat "$BAT/capacity")
+    end=$(cat "$END")
+    if (( cap >= MAX )); then
+        set_end "$MIN" "$cap"          # llena: no cargar hasta bajar a MIN
+    elif (( cap <= MIN )); then
+        set_end "$MAX" "$cap"          # vacía: cargar hasta MAX
+    elif (( end != MIN )); then
+        set_end "$MAX" "$cap"          # en medio (o recién encendida con tope 100): cargar hasta MAX
+    fi
+    sleep 30
+done

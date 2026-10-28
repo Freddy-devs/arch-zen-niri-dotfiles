@@ -1,0 +1,12 @@
+[Unit]
+Description=Mantener la batería entre 60 y 90 % (zen-charge-limit)
+After=sysinit.target
+
+[Service]
+ExecStart=/usr/local/bin/zen-charge-limit
+Restart=on-failure
+RestartSec=10
+Nice=19
+
+[Install]
+WantedBy=multi-user.target
