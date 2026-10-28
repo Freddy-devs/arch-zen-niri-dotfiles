@@ -1,0 +1,390 @@
+#!/usr/bin/env python3
+"""zen-audio — panel de sonido debajo de la barra (mismo estilo que zen-bluetooth y zen-calendar).
+
+Clic en el volumen de waybar lo abre; otro clic (o Esc) lo cierra.
+Volumen y silencio de la salida y del micrófono, elegir el dispositivo de cada uno
+y el volumen de cada aplicación. Habla con PipeWire a través de pactl.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell as Layer  # noqa: E402
+
+MAX_VOL = 150   # como pavucontrol: permite subir sobre 100 %
+
+CSS = """
+window.zen-audio { background: transparent; }
+.panel {
+    background: #1a1b26; border-radius: 14px; padding: 14px;
+    color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+}
+.title { font-size: 15px; font-weight: 800; color: #f1f1f1; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #7aa2f7; margin-right: 8px; }
+.section { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
+.empty { color: #565f89; padding: 6px 2px; }
+.card {
+    background: #222330; border-radius: 10px; padding: 8px 10px; margin-bottom: 5px;
+    border-left: 3px solid #7aa2f7;
+}
+.card.muted { border-left-color: #3b4261; }
+.card.mic { border-left-color: #bb9af7; }
+.card.mic.muted { border-left-color: #3b4261; }
+.pct { font-weight: 800; color: #f1f1f1; min-width: 42px; }
+.card.muted .pct { color: #565f89; }
+button.mute {
+    background: transparent; color: #7aa2f7; border: none; box-shadow: none; border-radius: 8px;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 18px; padding: 2px 8px; min-height: 0;
+}
+.card.mic button.mute { color: #bb9af7; }
+.card.muted button.mute { color: #f7768e; }
+button.mute:hover { background: #292e42; }
+scale { padding: 0 6px; }
+scale trough { background: #292e42; border-radius: 6px; min-height: 6px; border: none; }
+scale highlight { background: #7aa2f7; border-radius: 6px; }
+.card.mic scale highlight { background: #bb9af7; }
+.card.muted scale highlight { background: #3b4261; }
+scale slider {
+    background: #f1f1f1; border-radius: 50%; min-width: 14px; min-height: 14px;
+    margin: -5px; border: none; box-shadow: none;
+}
+list { background: transparent; }
+row.dev {
+    background: transparent; border-radius: 10px; padding: 6px 8px 6px 10px; margin-bottom: 2px;
+    border-left: 3px solid transparent;
+}
+row.dev:hover { background: #292e42; }
+row.dev:focus { box-shadow: inset 0 0 0 1px #7aa2f7; outline: none; }
+row.dev.active { background: #222330; border-left-color: #7aa2f7; }
+row.dev.active.mic { border-left-color: #bb9af7; }
+.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #565f89; margin-right: 10px; }
+row.dev.active .dev-icon { color: #7aa2f7; }
+row.dev.active.mic .dev-icon { color: #bb9af7; }
+.dev-name { font-weight: 700; color: #a9b1d6; }
+row.dev.active .dev-name { color: #f1f1f1; }
+.check { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; color: #7aa2f7; }
+row.dev.mic .check { color: #bb9af7; }
+.app-icon { margin-right: 8px; }
+.app-name { font-weight: 700; color: #f1f1f1; }
+.app-sub { color: #7a83b3; font-size: 11px; font-weight: 600; }
+.card.app { border-left-color: #3b4261; }
+scrolledwindow { background: transparent; }
+"""
+
+
+def pactl(*args):
+    """Comando de pactl sin esperar (los sliders llaman muy seguido)."""
+    subprocess.Popen(["pactl", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def pactl_json(what):
+    try:
+        out = subprocess.run(["pactl", "-f", "json", "list", what], capture_output=True, text=True, timeout=3).stdout
+        return json.loads(out or "[]")
+    except (subprocess.SubprocessError, json.JSONDecodeError):
+        return []
+
+
+def pactl_get(what):
+    try:
+        return subprocess.run(["pactl", what], capture_output=True, text=True, timeout=3).stdout.strip()
+    except subprocess.SubprocessError:
+        return ""
+
+
+def volume(obj):
+    vals = [int(c["value_percent"].rstrip("%")) for c in obj.get("volume", {}).values()]
+    return round(sum(vals) / len(vals)) if vals else 0
+
+
+def sink_icon(sink):
+    name = (sink.get("name", "") + " " + sink.get("properties", {}).get("device.form_factor", "")).lower()
+    if "bluez" in name or "headset" in name or "headphone" in name:
+        return "󰋋"
+    if "hdmi" in name or "displayport" in name:
+        return "󰡁"
+    return "󰓃"
+
+
+class VolumeCard:
+    """Tarjeta con botón de silencio, slider y porcentaje. kind: 'sink', 'source' o 'sink-input'."""
+
+    def __init__(self, kind, icon_on, icon_off, extra_class=None, header=None):
+        self.kind, self.icon_on, self.icon_off = kind, icon_on, icon_off
+        self.target, self.muted, self.updating = None, False, False
+        self.touched = 0.0       # último movimiento del usuario: no pisar su arrastre
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.box.add_css_class("card")
+        if extra_class:
+            self.box.add_css_class(extra_class)
+        if header:
+            self.box.append(header)
+        row = Gtk.Box()
+        self.mute_btn = Gtk.Button(valign=Gtk.Align.CENTER, tooltip_text="Silenciar")
+        self.mute_btn.add_css_class("mute")
+        self.mute_btn.connect("clicked", self.on_mute)
+        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, MAX_VOL, 1)
+        self.scale.set_hexpand(True)
+        self.scale.set_draw_value(False)
+        self.scale.add_mark(100, Gtk.PositionType.BOTTOM, None)
+        self.scale.connect("value-changed", self.on_scale)
+        self.pct = Gtk.Label(xalign=1)
+        self.pct.add_css_class("pct")
+        row.append(self.mute_btn)
+        row.append(self.scale)
+        row.append(self.pct)
+        self.box.append(row)
+
+    def set(self, target, vol, muted):
+        self.target, self.muted = target, muted
+        self.updating = True
+        if time.monotonic() - self.touched > 0.6 and abs(self.scale.get_value() - vol) >= 1:
+            self.scale.set_value(vol)
+        self.updating = False
+        if time.monotonic() - self.touched > 0.6:
+            self.pct.set_label(f"{vol}%")
+        self.mute_btn.set_label(self.icon_off if muted else self.icon_on)
+        (self.box.add_css_class if muted else self.box.remove_css_class)("muted")
+
+    def on_scale(self, scale):
+        vol = int(scale.get_value())
+        self.pct.set_label(f"{vol}%")
+        if self.updating or self.target is None:
+            return
+        self.touched = time.monotonic()
+        pactl(f"set-{self.kind}-volume", str(self.target), f"{vol}%")
+        if self.muted and vol > 0:
+            pactl(f"set-{self.kind}-mute", str(self.target), "0")
+
+    def on_mute(self, _):
+        if self.target is not None:
+            pactl(f"set-{self.kind}-mute", str(self.target), "toggle")
+
+
+class Panel:
+    def __init__(self, app):
+        self.app = app
+        self.refresh_pending = False
+        self.layout_key = None
+        self.app_cards = {}
+        self.build_window()
+        self.refresh()
+        self.watch()
+
+    # ---------- ventana ----------
+    def build_window(self):
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        win = Gtk.ApplicationWindow(application=self.app)
+        win.add_css_class("zen-audio")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-audio")
+        Layer.set_layer(win, Layer.Layer.TOP)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 8)
+        Layer.set_margin(win, Layer.Edge.RIGHT, 12)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.close())
+        win.add_controller(keys)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.add_css_class("panel")
+        panel.set_size_request(380, -1)
+
+        head = Gtk.Box()
+        icon = Gtk.Label(label="󰕾")
+        icon.add_css_class("title-icon")
+        title = Gtk.Label(label="Sonido", xalign=0, hexpand=True)
+        title.add_css_class("title")
+        head.append(icon)
+        head.append(title)
+        panel.append(head)
+
+        panel.append(self.section("SALIDA"))
+        self.out_card = VolumeCard("sink", "󰕾", "󰝟")
+        panel.append(self.out_card.box)
+        self.sink_list = self.listbox()
+        panel.append(self.sink_list)
+
+        panel.append(self.section("MICRÓFONO"))
+        self.in_card = VolumeCard("source", "󰍬", "󰍭", "mic")
+        panel.append(self.in_card.box)
+        self.source_list = self.listbox()
+        panel.append(self.source_list)
+
+        self.apps_section = self.section("APLICACIONES")
+        panel.append(self.apps_section)
+        self.apps_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=260,
+                                      hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroller.set_child(self.apps_box)
+        panel.append(scroller)
+
+        win.set_child(panel)
+        self.win = win
+        win.present()
+
+    def section(self, text):
+        lbl = Gtk.Label(label=text, xalign=0)
+        lbl.add_css_class("section")
+        return lbl
+
+    def listbox(self):
+        lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        lb.connect("row-activated", lambda l, row: row.activate_action())
+        return lb
+
+    # ---------- PipeWire ----------
+    def watch(self):
+        """pactl subscribe avisa de cada cambio (otra app, teclas de volumen, auriculares nuevos)."""
+        self.sub = Gio.Subprocess.new(["pactl", "subscribe"], Gio.SubprocessFlags.STDOUT_PIPE)
+        self.sub_out = Gio.DataInputStream.new(self.sub.get_stdout_pipe())
+        self.sub_out.read_line_async(GLib.PRIORITY_DEFAULT, None, self.on_event)
+
+    def on_event(self, stream, res):
+        line, _ = stream.read_line_finish_utf8(res)
+        if line is None:
+            return
+        self.queue_refresh()
+        stream.read_line_async(GLib.PRIORITY_DEFAULT, None, self.on_event)
+
+    def queue_refresh(self):
+        if not self.refresh_pending:
+            self.refresh_pending = True
+            GLib.timeout_add(120, self.refresh)
+
+    def refresh(self):
+        self.refresh_pending = False
+        sinks = pactl_json("sinks")
+        sources = [s for s in pactl_json("sources") if not s.get("name", "").endswith(".monitor")]
+        inputs = pactl_json("sink-inputs")
+        def_sink, def_source = pactl_get("get-default-sink"), pactl_get("get-default-source")
+
+        sink = next((s for s in sinks if s["name"] == def_sink), sinks[0] if sinks else None)
+        source = next((s for s in sources if s["name"] == def_source), sources[0] if sources else None)
+        if sink:
+            self.out_card.set(sink["name"], volume(sink), sink.get("mute", False))
+        if source:
+            self.in_card.set(source["name"], volume(source), source.get("mute", False))
+
+        # las listas solo se rehacen si cambian los dispositivos o las apps, así no se corta un arrastre
+        key = (tuple((s["name"], s["description"]) for s in sinks), def_sink,
+               tuple((s["name"], s["description"]) for s in sources), def_source,
+               tuple(i["index"] for i in inputs))
+        if key != self.layout_key:
+            self.layout_key = key
+            self.fill_devices(self.sink_list, sinks, def_sink, "set-default-sink", False)
+            self.fill_devices(self.source_list, sources, def_source, "set-default-source", True)
+            self.fill_apps(inputs)
+        for i in inputs:
+            card = self.app_cards.get(i["index"])
+            if card:
+                card.set(i["index"], volume(i), i.get("mute", False))
+        return False
+
+    def fill_devices(self, lb, devices, default, command, mic):
+        while (child := lb.get_first_child()) is not None:
+            lb.remove(child)
+        lb.set_visible(len(devices) > 1)      # con un solo dispositivo no hay nada que elegir
+        for dev in devices:
+            active = dev["name"] == default
+            row = Gtk.ListBoxRow()
+            row.add_css_class("dev")
+            if mic:
+                row.add_css_class("mic")
+            if active:
+                row.add_css_class("active")
+            box = Gtk.Box()
+            icon = Gtk.Label(label="󰍬" if mic else sink_icon(dev))
+            icon.add_css_class("dev-icon")
+            name = Gtk.Label(label=dev.get("description") or dev["name"], xalign=0, hexpand=True, ellipsize=3)
+            name.add_css_class("dev-name")
+            box.append(icon)
+            box.append(name)
+            if active:
+                check = Gtk.Label(label="󰄬")
+                check.add_css_class("check")
+                box.append(check)
+            row.set_child(box)
+            row.activate_action = (lambda n=dev["name"]: pactl(command, n))
+            lb.append(row)
+
+    def fill_apps(self, inputs):
+        while (child := self.apps_box.get_first_child()) is not None:
+            self.apps_box.remove(child)
+        self.app_cards = {}
+        if not inputs:
+            lbl = Gtk.Label(label="Ninguna aplicación está sonando", xalign=0)
+            lbl.add_css_class("empty")
+            self.apps_box.append(lbl)
+            return
+        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        for i in inputs:
+            props = i.get("properties", {})
+            app = props.get("application.name") or props.get("application.process.binary") or "Aplicación"
+            media = props.get("media.name", "")
+            head = Gtk.Box(margin_bottom=2)
+            icon_name = props.get("application.icon_name") or props.get("application.process.binary", "").lower()
+            if not theme.has_icon(icon_name):
+                icon_name = "audio-x-generic"
+            img = Gtk.Image.new_from_icon_name(icon_name)
+            img.set_pixel_size(20)
+            img.add_css_class("app-icon")
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+            nl = Gtk.Label(label=app, xalign=0, ellipsize=3)
+            nl.add_css_class("app-name")
+            text.append(nl)
+            if media and media != app:
+                ml = Gtk.Label(label=media, xalign=0, ellipsize=3)
+                ml.add_css_class("app-sub")
+                text.append(ml)
+            head.append(img)
+            head.append(text)
+            card = VolumeCard("sink-input", "󰕾", "󰝟", "app", header=head)
+            self.app_cards[i["index"]] = card
+            self.apps_box.append(card.box)
+
+    def close(self):
+        try:
+            self.sub.force_exit()
+        except (AttributeError, GLib.Error):
+            pass
+        self.app.quit()
+        return True
+
+
+def main():
+    app = Gtk.Application(application_id="pe.zen.Audio")
+    state = {}
+
+    def activate(a):
+        if "panel" in state:          # segundo clic en el volumen: cerrar
+            state["panel"].close()
+        else:
+            state["panel"] = Panel(a)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()

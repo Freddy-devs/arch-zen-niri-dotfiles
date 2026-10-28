@@ -124,7 +124,7 @@
         "format-muted": "󰝟 Mudo",
         "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
         "scroll-step": 5,
-        "on-click": "alacritty --class zen-tui -e wiremix",
+        "on-click": "zen-audio",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
 

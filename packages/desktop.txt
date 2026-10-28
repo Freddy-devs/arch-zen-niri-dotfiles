@@ -12,7 +12,7 @@ gnome-keyring
 waybar
 # calendario de la barra (zen-calendar, Rust): GTK4 + layer-shell, sonidos de alarma
 gtk4-layer-shell
-# panel de Bluetooth de la barra (zen-bluetooth, Python): GTK4 + D-Bus de BlueZ
+# paneles de Bluetooth y sonido de la barra (zen-bluetooth, zen-audio; Python): GTK4 + D-Bus de BlueZ
 python-gobject
 python-dbus
 sound-theme-freedesktop
@@ -47,9 +47,9 @@ wireplumber
 networkmanager
 bluez
 bluez-utils
-# Bluetooth y mezclador de audio en terminal (Rust): sin applets residentes
+# Bluetooth en terminal (Rust, clic derecho en el panel); el audio lo maneja zen-audio con pactl
 bluetui
-wiremix
+libpulse
 
 # Terminal / CLI
 alacritty

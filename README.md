@@ -16,7 +16,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Nordzy-dark** (Nord) · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
-| Paneles | Bluetooth `zen-bluetooth` (panel bajo la barra, con el mouse; clic derecho abre `bluetui`), audio `wiremix`, red `nmtui` (en terminal flotante, sin applets residentes) | extra |
+| Paneles | Bluetooth `zen-bluetooth` (panel bajo la barra, con el mouse; clic derecho abre `bluetui`), sonido `zen-audio` (panel con volumen, micrófono, dispositivos y apps), red `nmtui` (en terminal flotante, sin applets residentes) | extra |
 | Opcional | `zen-apps`: Brave, WPS, Claude Code, herdr, PHP, MariaDB, PostgreSQL, Podman, Node, Go, Rust, gh, huella, GUIs | a pedido |
 | Estabilidad | btrfs + snapper + snap-pac + grub-btrfs (sin demonio: una unidad .path de systemd), sin repos testing, aviso de noticias Arch | extra |
 | Seguridad | cortafuegos nftables (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
