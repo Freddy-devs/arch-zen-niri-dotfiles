@@ -26,11 +26,12 @@ CATALOG=(
     "wps|WPS Office en español (Writer, Spreadsheets, Presentation)|~1 GB"
     "claude|Claude Code (instalador oficial, se actualiza solo)|~200 MB"
     "herdr|herdr (instalador oficial)|~30 MB"
-    "php|PHP + php-fpm + Composer (mysql, pgsql, gd, intl, sqlite…)|~60 MB"
+    "php|PHP 8.5 + php-fpm + Composer + Xdebug (mysql, pgsql, gd, intl, sqlite…)|~70 MB"
     "mariadb|MariaDB (cliente mysql) solo en localhost, apagada|~250 MB"
     "postgresql|PostgreSQL, apagado|~60 MB"
     "podman|Podman sin root + compose + buildah (alias docker)|~150 MB"
-    "node|Node.js + npm|~80 MB"
+    "node|Node.js LTS con fnm (varias versiones: fnm install 22, fnm use 22)|~90 MB"
+    "elixir|Erlang/OTP + Elixir (mix, iex) + rebar3|~250 MB"
     "go|Go|~250 MB"
     "rust|Rust (rustup: cargo, rustc)|~600 MB"
     "gh|GitHub CLI|~40 MB"
@@ -45,12 +46,27 @@ install_one() {
         claude) curl -fsSL https://claude.ai/install.sh | bash ;;
         herdr)  curl -fsSL https://herdr.dev/install.sh | sh ;;
         php)
-            pac php php-fpm php-pgsql php-gd php-intl php-sqlite composer || return
+            # intl, zip, bcmath, iconv y opcache vienen dentro del paquete php
+            pac php php-fpm php-pgsql php-gd php-sqlite php-sodium xdebug composer || return
             for ext in mysqli pdo_mysql pgsql pdo_pgsql gd intl sqlite3 pdo_sqlite iconv bcmath zip sodium; do
                 sudo sed -i "s/^;extension=$ext$/extension=$ext/" /etc/php/php.ini
             done
             tz=$(timedatectl show -p Timezone --value 2>/dev/null || echo America/Lima)
             sudo sed -i "s|^;date.timezone =.*|date.timezone = $tz|" /etc/php/php.ini
+            sudo install -Dm644 /dev/stdin /etc/php/conf.d/zz-zen-dev.ini <<'EOF2'
+; desarrollo: límites cómodos para Laravel/Composer y caché de código
+memory_limit = 512M
+upload_max_filesize = 64M
+post_max_size = 64M
+opcache.enable_cli = 1
+opcache.validate_timestamps = 1
+opcache.revalidate_freq = 0
+EOF2
+            # Xdebug instalado pero apagado (lento); se enciende al vuelo: XDEBUG_MODE=debug php …
+            sudo install -Dm644 /dev/stdin /etc/php/conf.d/xdebug.ini <<'EOF2'
+zend_extension = xdebug
+xdebug.mode = off
+EOF2
             NEXT+=("php-fpm (solo si lo usas):  sudo systemctl start php-fpm")
             ;;
         mariadb)
@@ -85,7 +101,14 @@ EOF
             grep -q "^$USER:" /etc/subuid || sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER"
             NEXT+=("Podman no necesita servicio. API compatible con Docker (solo si la pides):  systemctl --user start podman.socket")
             ;;
-        node)   pac nodejs npm ;;
+        node)
+            # fnm maneja varias versiones por usuario (en ~/.local/share/fnm); nada global con sudo
+            pac fnm || return
+            # la primera versión instalada queda como predeterminada; .zshrc ya carga fnm
+            fnm install --lts || return
+            NEXT+=("Node.js: abre una terminal nueva (o: exec zsh). Otra versión:  fnm install 22 && fnm use 22")
+            ;;
+        elixir) pac erlang elixir rebar3 ;;
         go)     pac go ;;
         rust)
             pac rustup || return

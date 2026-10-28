@@ -115,6 +115,9 @@ alias grub-update='sudo grub-mkconfig -o /boot/grub/grub.cfg'
 alias neofetch='fastfetch'
 alias htop='btop'
 
+# ---------- Node.js con fnm (zen-apps node): cambia de versión sola al entrar a un proyecto con .nvmrc
+command -v fnm >/dev/null && eval "$(fnm env --use-on-cd --version-file-strategy=recursive --shell zsh)"
+
 # ---------- banner pixel-art al abrir una terminal nueva (no en nvim, tmux, Claude Code ni subshells)
 if [[ $(ps -o comm= -p $PPID 2>/dev/null) == alacritty && -z $TMUX$NVIM$CLAUDE_CODE_SESSION_ID ]]; then
     zen-banner 2>/dev/null
