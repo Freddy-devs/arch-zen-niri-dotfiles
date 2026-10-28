@@ -120,6 +120,10 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
   NVIDIA detectada; pulseaudio/iptables en conflicto se reemplazan solos; paquetes que ya no existan
   o del AUR que fallen se avisan al final en vez de abortar todo.
 - Lo que ya tenías en tu carpeta personal queda respaldado como `archivo.~1~` (solo si cambia).
+- **Rápido**: el tema, el cursor y zen-calendar se descargan ya compilados del Release
+  [`paquetes`](https://github.com/Freddy-devs/arch-zen-niri-iso/releases/tag/paquetes)
+  (los genera GitHub Actions cada vez que cambian `aur/local/` o `apps/`, con `SHA256SUMS`).
+  Solo si falta la versión exacta del PKGBUILD se compilan en el equipo.
 - Si un paquete propio (yay, tema, calendario) no compila, el resto sigue; al volver a ejecutar
   `./install.sh` se reintenta solo eso.
   Registro completo: `/var/log/zen-postinstall.log`.

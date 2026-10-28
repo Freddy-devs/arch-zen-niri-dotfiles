@@ -18,6 +18,7 @@ LOG=/var/log/zen-postinstall.log
 MIN_FREE_GB=8
 MIN_BAT=40        # % mínimo de batería si no hay cargador
 DOWNLOAD_TRIES=3
+PREBUILT_URL=https://github.com/Freddy-devs/arch-zen-niri-iso/releases/download/paquetes
 STEP_NAMES=(clock pacman packages aur files dotfiles users boot snapper services hardware dns snapshot)
 
 c_b=$'\033[1;34m'; c_g=$'\033[1;32m'; c_r=$'\033[1;31m'; c_y=$'\033[1;33m'; c_0=$'\033[0m'
@@ -267,9 +268,15 @@ step_packages() {
 
 step_aur() {
     (( DO_AUR )) || { warn "--no-aur: sin yay, tema TokyoNight, cursor ni zen-calendar"; return 0; }
-    local -a pkgs makedeps=() failed=()
+    local -a all pkgs=() makedeps=() failed=()
     local p src conf
-    mapfile -t pkgs < <(pkglist "$ROOT/packages/custom.txt")
+    mapfile -t all < <(pkglist "$ROOT/packages/custom.txt")
+    # primero los ya compilados por GitHub Actions (Release "paquetes"); solo se compila lo que falte
+    for p in "${all[@]}"; do
+        if pacman -Qq "$p" &>/dev/null && ! redo_step aur; then ok "$p ya instalado"; continue; fi
+        if fetch_prebuilt "$p"; then ok "$p instalado (ya compilado)"; else pkgs+=("$p"); fi
+    done
+    (( ${#pkgs[@]} )) || return 0
     # herramientas de compilación solo durante el build (se quitan después si no estaban)
     for p in rust sassc; do pacman -Qq "$p" &>/dev/null || makedeps+=("$p"); done
     (( ${#makedeps[@]} )) && pac -S --needed --asdeps "${makedeps[@]}"
@@ -285,7 +292,6 @@ EOF
     chmod 644 "$conf"
 
     for p in "${pkgs[@]}"; do
-        if pacman -Qq "$p" &>/dev/null && ! redo_step aur; then ok "$p ya instalado"; continue; fi
         echo "--> $p"
         if ! build_pkg "$p" "$src" "$conf"; then failed+=("$p"); warn "No se pudo compilar $p"; fi
     done
@@ -296,6 +302,22 @@ EOF
         warn "Paquetes propios que fallaron: ${failed[*]}. Vuelve a ejecutar ./install.sh: reintenta solo esos."
     fi
     return 0
+}
+
+fetch_prebuilt() {   # $1 paquete con PKGBUILD propio: descarga la versión exacta del PKGBUILD
+    local p=$1 name file sums tmp
+    [[ -f $ROOT/aur/local/$p/PKGBUILD ]] || return 1
+    name=$(source "$ROOT/aur/local/$p/PKGBUILD" && echo "$pkgname-$pkgver-$pkgrel-${arch[0]}") || return 1
+    file="$name.pkg.tar.zst"
+    tmp=$(mktemp -d /var/tmp/zen-pkg.XXXXXX)
+    # si cambió el PKGBUILD o el código y Actions aún no publicó esa versión, no está: se compila
+    if curl -fsSL --retry "$DOWNLOAD_TRIES" --max-time 300 -o "$tmp/$file" "$PREBUILT_URL/$file" \
+        && sums=$(curl -fsSL --retry "$DOWNLOAD_TRIES" --max-time 30 "$PREBUILT_URL/SHA256SUMS") \
+        && grep -F "  $file" <<<"$sums" | (cd "$tmp" && sha256sum -c --quiet -) \
+        && pac -U --needed "$tmp/$file"; then
+        rm -rf "$tmp"; return 0
+    fi
+    rm -rf "$tmp"; return 1
 }
 
 build_pkg() {   # $1 paquete, $2 carpeta de trabajo, $3 makepkg.conf

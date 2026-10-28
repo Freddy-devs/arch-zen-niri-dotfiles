@@ -1,0 +1,62 @@
+# Compila los paquetes propios (aur/local) y los publica en el Release "paquetes";
+# install.sh los descarga ya listos y solo compila si falta la versión exacta.
+name: paquetes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "aur/local/**"
+      - "apps/**"
+      - ".github/workflows/paquetes.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paquetes
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias
+        run: |
+          pacman -Syu --noconfirm --needed rust sassc github-cli \
+            gtk4 gtk4-layer-shell pipewire sound-theme-freedesktop
+          useradd -m builder
+
+      - name: Compilar
+        run: |
+          mkdir -p /tmp/out /tmp/work
+          for dir in aur/local/*/; do
+            p=$(basename "$dir")
+            cp -r "$dir" "/tmp/work/$p"
+            [ -d "apps/$p" ] && cp -r "apps/$p" "/tmp/work/$p/src-app"
+          done
+          chown -R builder: /tmp/work /tmp/out
+          for d in /tmp/work/*/; do
+            (cd "$d" && runuser -u builder -- env PKGDEST=/tmp/out \
+              makepkg --nodeps --noconfirm --cleanbuild)
+          done
+          rm -f /tmp/out/*-debug-*
+          cd /tmp/out && sha256sum *.pkg.tar.zst > SHA256SUMS && cat SHA256SUMS
+
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ github.repository }}
+        run: |
+          gh release view paquetes -R "$R" >/dev/null 2>&1 || \
+            gh release create paquetes -R "$R" --title "Paquetes compilados" \
+              --notes "Generado por Actions desde aur/local y apps. Lo usa install.sh." --latest=false
+          # quitar versiones viejas que ya no salen del build
+          for a in $(gh release view paquetes -R "$R" --json assets -q '.assets[].name'); do
+            [ -e "/tmp/out/$a" ] || gh release delete-asset paquetes "$a" -R "$R" -y
+          done
+          gh release upload paquetes /tmp/out/*.pkg.tar.zst /tmp/out/SHA256SUMS -R "$R" --clobber
