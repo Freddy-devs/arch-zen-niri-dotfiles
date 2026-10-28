@@ -200,31 +200,19 @@ layer-rule {
     block-out-from "screencast"
 }
 
-// barra: vidrio esmerilado (desenfoca lo que hay detrás), esquinas de 8 px y sombra suave
+// barra: vidrio esmerilado (desenfoca lo que hay detrás), esquinas de 8 px, sin sombra
 layer-rule {
     match namespace="^waybar$"
     geometry-corner-radius 8
     background-effect { blur true; }
-    shadow {
-        on
-        softness 18
-        spread 1
-        offset x=0 y=4
-        color "#0006"
-    }
+    shadow { off; }
 }
 
 layer-rule {
     match namespace="^zen-bluetooth$"
     match namespace="^zen-calendar$"
     geometry-corner-radius 14
-    shadow {
-        on
-        softness 24
-        spread 2
-        offset x=0 y=6
-        color "#0008"
-    }
+    shadow { off; }
 }
 
 // ---------- atajos (estilo sxhkd) ----------
