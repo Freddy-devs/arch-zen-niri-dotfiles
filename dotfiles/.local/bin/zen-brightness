@@ -103,16 +103,26 @@ def detect():
         if line:
             screens.append(Laptop(line.split(",")[0]))
     if shutil.which("ddcutil"):
-        bus = model = None
+        # solo bloques "Display N": "Invalid display" es la pantalla de la laptop (sin DDC/CI)
+        valid = False
+        bus = model = brand = None
         for line in run("ddcutil", "detect", timeout=20).splitlines() + [""]:
             line = line.strip()
-            if m := re.search(r"/dev/i2c-(\d+)", line):
+            if line.startswith("Display "):
+                valid = True
+            elif line.startswith("Invalid display"):
+                valid = False
+            elif m := re.search(r"/dev/i2c-(\d+)", line):
                 bus = m.group(1)
             elif line.startswith("Model:"):
                 model = line.split(":", 1)[1].strip()
-            elif not line and bus:
-                screens.append(Monitor(bus, model or f"Monitor (i2c-{bus})"))
-                bus = model = None
+            elif line.startswith("Mfg id:") and " - " in line:
+                brand = line.split(" - ", 1)[1].split()[0]        # "SAM - Samsung Electric…" → Samsung
+            elif not line:
+                if valid and bus:
+                    name = " ".join(x for x in (brand or "Monitor", model) if x) or f"Monitor (i2c-{bus})"
+                    screens.append(Monitor(bus, name))
+                valid, bus, model, brand = False, None, None, None
     return screens
 
 
