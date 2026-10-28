@@ -259,7 +259,7 @@ impl App {
             let dots = hbox(0, "");
             dots.set_halign(gtk::Align::Center);
             let dot_event = label("●", "dot");
-            let dot_task = label("●", "dot task");
+            let dot_task = label("●", "dot hastask");
             dots.append(&dot_event);
             dots.append(&dot_task);
             inner.append(&num);
@@ -280,7 +280,7 @@ impl App {
         left.append(&grid);
 
         let legend = hbox(4, "legend");
-        for (css, text) in [("feriado", "feriado"), ("nolaborable", "no laborable"), ("fecha", "celebración"), ("task", "tarea")] {
+        for (css, text) in [("feriado", "feriado"), ("nolaborable", "no laborable"), ("fecha", "celebración"), ("hastask", "tarea")] {
             legend.append(&label("●", &format!("dot {css}")));
             legend.append(&label(&format!("{text}   "), ""));
         }

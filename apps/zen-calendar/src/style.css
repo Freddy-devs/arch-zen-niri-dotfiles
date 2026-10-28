@@ -44,7 +44,7 @@ button.day.today .num { color: #1a1b26; font-weight: 800; }
 .dot.feriado { color: #f7768e; }
 .dot.nolaborable { color: #ff9e64; }
 .dot.fecha { color: #bb9af7; }
-.dot.task { color: #e0af68; }
+.dot.hastask { color: #e0af68; }   /* no "task": esa clase es la tarjeta de la agenda */
 button.day.today .dot { color: #1a1b26; }
 .legend { color: #565f89; font-size: 11px; margin-top: 8px; }
 .legend .dot { font-size: 8px; }
