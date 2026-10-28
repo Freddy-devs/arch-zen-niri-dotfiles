@@ -1,0 +1,492 @@
+#!/usr/bin/env python3
+"""zen-bluetooth — panel de Bluetooth debajo de la barra (mismo estilo que zen-calendar).
+
+Clic en el ícono de Bluetooth de waybar lo abre; otro clic (o Esc) lo cierra.
+Habla directo con BlueZ por D-Bus y registra su propio agente, así que el
+emparejamiento acepta solo la confirmación del código.
+"""
+import os
+import sys
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import dbus  # noqa: E402
+import dbus.service  # noqa: E402
+from dbus.mainloop.glib import DBusGMainLoop  # noqa: E402
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell as Layer  # noqa: E402
+
+BLUEZ = "org.bluez"
+ADAPTER = "org.bluez.Adapter1"
+DEVICE = "org.bluez.Device1"
+BATTERY = "org.bluez.Battery1"
+PROPS = "org.freedesktop.DBus.Properties"
+AGENT_PATH = "/pe/zen/bluetooth/agent"
+NOISE = {"RSSI", "TxPower", "ManufacturerData", "ServiceData", "AdvertisingFlags"}
+
+ICONS = {
+    "input-mouse": "󰍽", "input-keyboard": "󰌌", "input-gaming": "󰊴",
+    "audio-headset": "󰋋", "audio-headphones": "󰋋", "audio-card": "󰓃",
+    "phone": "󰏲", "computer": "󰍹", "input-tablet": "󰓶",
+}
+
+CSS = """
+window.zen-bt { background: transparent; }
+.panel {
+    background: #1a1b26; border-radius: 14px; padding: 14px;
+    color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+}
+.title { font-size: 15px; font-weight: 800; color: #f1f1f1; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #7aa2f7; margin-right: 8px; }
+.section { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
+.empty { color: #565f89; padding: 6px 2px; }
+.status { color: #7a83b3; font-weight: 600; margin-top: 10px; }
+.status.ok { color: #9ece6a; }
+.status.err { color: #f7768e; }
+.status.code { color: #e0af68; font-size: 15px; font-weight: 800; }
+list { background: transparent; }
+row.dev {
+    background: #222330; border-radius: 10px; padding: 8px 8px 8px 10px; margin-bottom: 5px;
+    border-left: 3px solid #3b4261;
+}
+row.dev:hover { background: #292e42; }
+row.dev:focus { box-shadow: inset 0 0 0 1px #7aa2f7; outline: none; }
+row.dev.connected { border-left-color: #7aa2f7; }
+row.dev.new { border-left-color: #bb9af7; }
+.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 20px; color: #a9b1d6; margin-right: 10px; }
+row.dev.connected .dev-icon { color: #7aa2f7; }
+.dev-name { font-weight: 700; color: #f1f1f1; }
+.dev-sub { color: #7a83b3; font-size: 11px; font-weight: 600; }
+row.dev.connected .dev-sub { color: #7aa2f7; }
+button.act {
+    background: #292e42; color: #c0caf5; border-radius: 8px; border: none; box-shadow: none;
+    padding: 4px 10px; font-weight: 700; font-size: 12px; min-height: 0;
+}
+button.act:hover { background: #3b4261; color: #f1f1f1; }
+button.act.primary { background: #7aa2f7; color: #1a1b26; }
+button.act.primary:hover { background: #89b4fa; }
+button.icon {
+    background: transparent; color: #565f89; border: none; box-shadow: none; border-radius: 8px;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; padding: 4px 8px; min-height: 0;
+}
+button.icon:hover { background: #292e42; color: #f7768e; }
+button.scan {
+    background: #222330; color: #a9b1d6; border-radius: 8px; border: none; box-shadow: none;
+    font-weight: 700; font-size: 12px; padding: 2px 10px; min-height: 0;
+}
+button.scan:hover { background: #292e42; color: #f1f1f1; }
+switch { background: #292e42; border: none; }
+switch:checked { background: #7aa2f7; }
+switch slider { background: #f1f1f1; }
+scrolledwindow { background: transparent; }
+"""
+
+
+class Agent(dbus.service.Object):
+    """Agente de emparejamiento: acepta confirmaciones y muestra códigos en el panel."""
+
+    def __init__(self, bus, panel):
+        super().__init__(bus, AGENT_PATH)
+        self.panel = panel
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
+    def Release(self):
+        pass
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
+    def AuthorizeService(self, device, uuid):
+        pass
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="s")
+    def RequestPinCode(self, device):
+        return "0000"
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="u")
+    def RequestPasskey(self, device):
+        return dbus.UInt32(0)
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="ouq", out_signature="")
+    def DisplayPasskey(self, device, passkey, entered):
+        self.panel.set_status(f"Escribe {passkey:06d} en el dispositivo y presiona Enter", "code")
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
+    def DisplayPinCode(self, device, pincode):
+        self.panel.set_status(f"Escribe {pincode} en el dispositivo y presiona Enter", "code")
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="ou", out_signature="")
+    def RequestConfirmation(self, device, passkey):
+        self.panel.set_status(f"Código {passkey:06d} confirmado")
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="")
+    def RequestAuthorization(self, device):
+        pass
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
+    def Cancel(self):
+        pass
+
+
+class Panel:
+    def __init__(self, app):
+        self.app = app
+        self.bus = dbus.SystemBus()
+        self.manager = dbus.Interface(self.bus.get_object(BLUEZ, "/"), "org.freedesktop.DBus.ObjectManager")
+        self.adapter_path = None
+        self.busy = set()          # dispositivos con una operación en curso
+        self.refresh_pending = False
+        self.updating_switch = False
+
+        self.agent = Agent(self.bus, self)
+        agent_mgr = dbus.Interface(self.bus.get_object(BLUEZ, "/org/bluez"), "org.bluez.AgentManager1")
+        try:
+            agent_mgr.RegisterAgent(AGENT_PATH, "KeyboardDisplay")
+            agent_mgr.RequestDefaultAgent(AGENT_PATH)
+        except dbus.DBusException:
+            pass
+        self.agent_mgr = agent_mgr
+
+        self.bus.add_signal_receiver(self.on_props, "PropertiesChanged", PROPS, BLUEZ, path_keyword="path")
+        self.bus.add_signal_receiver(lambda *a: self.queue_refresh(), "InterfacesAdded",
+                                     "org.freedesktop.DBus.ObjectManager", BLUEZ)
+        self.bus.add_signal_receiver(lambda *a: self.queue_refresh(), "InterfacesRemoved",
+                                     "org.freedesktop.DBus.ObjectManager", BLUEZ)
+
+        self.build_window()
+        self.refresh()
+        self.start_scan()
+
+    # ---------- ventana ----------
+    def build_window(self):
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        win = Gtk.ApplicationWindow(application=self.app)
+        win.add_css_class("zen-bt")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-bluetooth")
+        Layer.set_layer(win, Layer.Layer.TOP)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 8)
+        Layer.set_margin(win, Layer.Edge.RIGHT, 12)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.close())
+        win.add_controller(keys)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.add_css_class("panel")
+        panel.set_size_request(380, -1)
+
+        head = Gtk.Box()
+        icon = Gtk.Label(label="󰂯")
+        icon.add_css_class("title-icon")
+        title = Gtk.Label(label="Bluetooth", xalign=0, hexpand=True)
+        title.add_css_class("title")
+        self.power = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.power.connect("notify::active", self.on_power)
+        head.append(icon)
+        head.append(title)
+        head.append(self.power)
+        panel.append(head)
+
+        panel.append(self.section("MIS DISPOSITIVOS"))
+        self.paired_list = self.listbox()
+        panel.append(self.paired_list)
+
+        avail_head = Gtk.Box()
+        sec = self.section("DISPONIBLES")
+        sec.set_hexpand(True)
+        self.spinner = Gtk.Spinner(valign=Gtk.Align.CENTER, margin_end=6)
+        self.scan_btn = Gtk.Button(label="Buscar", valign=Gtk.Align.CENTER)
+        self.scan_btn.add_css_class("scan")
+        self.scan_btn.connect("clicked", lambda b: self.toggle_scan())
+        avail_head.append(sec)
+        avail_head.append(self.spinner)
+        avail_head.append(self.scan_btn)
+        panel.append(avail_head)
+
+        self.avail_list = self.listbox()
+        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=300,
+                                      hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroller.set_child(self.avail_list)
+        panel.append(scroller)
+
+        self.status = Gtk.Label(xalign=0, wrap=True, max_width_chars=44)
+        self.status.add_css_class("status")
+        self.status.set_visible(False)
+        panel.append(self.status)
+
+        win.set_child(panel)
+        win.connect("close-request", lambda w: self.shutdown() or False)
+        self.win = win
+        win.present()
+
+    def section(self, text):
+        lbl = Gtk.Label(label=text, xalign=0)
+        lbl.add_css_class("section")
+        return lbl
+
+    def listbox(self):
+        lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        lb.connect("row-activated", lambda l, row: row.activate_action())
+        return lb
+
+    def set_status(self, text, kind=None):
+        for k in ("ok", "err", "code"):
+            self.status.remove_css_class(k)
+        if kind:
+            self.status.add_css_class(kind)
+        self.status.set_label(text)
+        self.status.set_visible(bool(text))
+
+    # ---------- BlueZ ----------
+    def objects(self):
+        return self.manager.GetManagedObjects()
+
+    def adapter(self, objs):
+        for path, ifaces in objs.items():
+            if ADAPTER in ifaces:
+                self.adapter_path = path
+                return ifaces[ADAPTER]
+        return None
+
+    def adapter_props(self):
+        return dbus.Interface(self.bus.get_object(BLUEZ, self.adapter_path), PROPS)
+
+    def dev_iface(self, path, iface=DEVICE):
+        return dbus.Interface(self.bus.get_object(BLUEZ, path), iface)
+
+    def on_props(self, iface, changed, invalidated, path=None):
+        if iface == ADAPTER or iface == BATTERY or (iface == DEVICE and set(changed) - NOISE):
+            self.queue_refresh()
+
+    def queue_refresh(self):
+        if not self.refresh_pending:
+            self.refresh_pending = True
+            GLib.timeout_add(200, self.refresh)
+
+    def refresh(self):
+        self.refresh_pending = False
+        objs = self.objects()
+        ad = self.adapter(objs)
+        powered = bool(ad and ad.get("Powered"))
+        discovering = bool(ad and ad.get("Discovering"))
+
+        self.updating_switch = True
+        self.power.set_active(powered)
+        self.updating_switch = False
+        self.spinner.set_spinning(discovering)
+        self.scan_btn.set_label("Detener" if discovering else "Buscar")
+        self.scan_btn.set_sensitive(powered)
+
+        paired, avail = [], []
+        for path, ifaces in objs.items():
+            dev = ifaces.get(DEVICE)
+            if not dev or not str(path).startswith(str(self.adapter_path)):
+                continue
+            bat = ifaces.get(BATTERY, {}).get("Percentage")
+            item = (path, dev, bat)
+            if dev.get("Paired"):
+                paired.append(item)
+            elif "Name" in dev:      # sin nombre = ruido de otros equipos cercanos
+                avail.append(item)
+        paired.sort(key=lambda i: (not i[1].get("Connected"), str(i[1].get("Alias", ""))))
+        avail.sort(key=lambda i: -int(i[1].get("RSSI", -200)))
+
+        self.fill(self.paired_list, paired, "Ningún dispositivo emparejado" if powered else "Bluetooth apagado")
+        self.fill(self.avail_list, avail,
+                  "Buscando… pon tu dispositivo en modo emparejamiento" if discovering
+                  else "Presiona Buscar para encontrar dispositivos" if powered else "")
+        return False
+
+    def fill(self, lb, items, empty_text):
+        while (child := lb.get_first_child()) is not None:
+            lb.remove(child)
+        if not items:
+            if empty_text:
+                lbl = Gtk.Label(label=empty_text, xalign=0, wrap=True)
+                lbl.add_css_class("empty")
+                row = Gtk.ListBoxRow(activatable=False, focusable=False)
+                row.set_child(lbl)
+                lb.append(row)
+            return
+        for path, dev, bat in items:
+            lb.append(self.device_row(path, dev, bat))
+
+    def device_row(self, path, dev, bat):
+        name = str(dev.get("Alias") or dev.get("Name") or dev.get("Address"))
+        connected, paired = bool(dev.get("Connected")), bool(dev.get("Paired"))
+        busy = path in self.busy
+
+        row = Gtk.ListBoxRow()
+        row.add_css_class("dev")
+        row.add_css_class("connected" if connected else "paired" if paired else "new")
+        box = Gtk.Box()
+        icon = Gtk.Label(label=ICONS.get(str(dev.get("Icon", "")), "󰂯"))
+        icon.add_css_class("dev-icon")
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        nl = Gtk.Label(label=name, xalign=0, ellipsize=3)
+        nl.add_css_class("dev-name")
+        sub = "Conectado" if connected else "Desconectado" if paired else "Nuevo"
+        if bat is not None:
+            sub += f" · 󰁹 {int(bat)}%"
+        sl = Gtk.Label(label=sub, xalign=0)
+        sl.add_css_class("dev-sub")
+        text.append(nl)
+        text.append(sl)
+        box.append(icon)
+        box.append(text)
+
+        if busy:
+            sp = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER, margin_end=6)
+            box.append(sp)
+            action = None
+        else:
+            if not paired:
+                label, action = "Emparejar", lambda: self.pair(path, name)
+            elif connected:
+                label, action = "Desconectar", lambda: self.disconnect(path, name)
+            else:
+                label, action = "Conectar", lambda: self.connect(path, name)
+            btn = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+            btn.add_css_class("act")
+            if not connected:
+                btn.add_css_class("primary")
+            btn.connect("clicked", lambda b: action())
+            box.append(btn)
+            if paired:
+                forget = Gtk.Button(label="󰆴", valign=Gtk.Align.CENTER, tooltip_text="Olvidar dispositivo")
+                forget.add_css_class("icon")
+                forget.connect("clicked", lambda b: self.forget(path, name))
+                box.append(forget)
+
+        row.activate_action = action or (lambda: None)
+        row.set_child(box)
+        return row
+
+    # ---------- acciones ----------
+    def call(self, path, method, name, ok_msg, err_msg, then=None, iface=DEVICE, args=()):
+        self.busy.add(path)
+        self.queue_refresh()
+
+        def done(*_):
+            if then:
+                then()
+                return
+            self.busy.discard(path)
+            self.set_status(ok_msg, "ok")
+            self.queue_refresh()
+
+        def fail(e):
+            self.busy.discard(path)
+            msg = e.get_dbus_message() or e.get_dbus_name().split(".")[-1]
+            self.set_status(f"{err_msg} ({msg})", "err")
+            self.queue_refresh()
+
+        getattr(self.dev_iface(path, iface), method)(*args, reply_handler=done, error_handler=fail, timeout=60)
+
+    def pair(self, path, name):
+        self.set_status(f"Emparejando {name}… si el dispositivo pide confirmar, confírmalo")
+
+        def trust_and_connect():
+            try:
+                self.dev_iface(path, PROPS).Set(DEVICE, "Trusted", dbus.Boolean(True))
+            except dbus.DBusException:
+                pass
+            self.set_status(f"Emparejado. Conectando {name}…")
+            self.call(path, "Connect", name, f"✔ {name} conectado",
+                      f"{name} emparejado pero no conectó")
+
+        self.call(path, "Pair", name, "", f"✘ No se pudo emparejar {name}. "
+                  "Ponlo en modo emparejamiento y vuelve a intentar", then=trust_and_connect)
+
+    def connect(self, path, name):
+        self.set_status(f"Conectando {name}…")
+        self.call(path, "Connect", name, f"✔ {name} conectado", f"✘ No se pudo conectar {name}. ¿Está prendido?")
+
+    def disconnect(self, path, name):
+        self.call(path, "Disconnect", name, f"{name} desconectado", f"✘ No se pudo desconectar {name}")
+
+    def forget(self, path, name):
+        self.call(self.adapter_path, "RemoveDevice", name, f"{name} olvidado",
+                  f"✘ No se pudo olvidar {name}", iface=ADAPTER, args=(dbus.ObjectPath(path),))
+
+    def on_power(self, sw, _):
+        if self.updating_switch or not self.adapter_path:
+            return
+        on = sw.get_active()
+        try:
+            self.adapter_props().Set(ADAPTER, "Powered", dbus.Boolean(on))
+            if on:
+                self.adapter_props().Set(ADAPTER, "Pairable", dbus.Boolean(True))
+                GLib.timeout_add(800, lambda: self.start_scan() or False)
+            self.set_status("")
+        except dbus.DBusException as e:
+            self.set_status(f"✘ {e.get_dbus_message()}", "err")
+
+    def start_scan(self):
+        if not self.adapter_path:
+            return
+        try:
+            props = self.adapter_props()
+            if props.Get(ADAPTER, "Powered") and not props.Get(ADAPTER, "Discovering"):
+                props.Set(ADAPTER, "Pairable", dbus.Boolean(True))
+                self.dev_iface(self.adapter_path, ADAPTER).StartDiscovery()
+        except dbus.DBusException:
+            pass
+
+    def toggle_scan(self):
+        try:
+            if self.adapter_props().Get(ADAPTER, "Discovering"):
+                self.dev_iface(self.adapter_path, ADAPTER).StopDiscovery()
+            else:
+                self.start_scan()
+        except dbus.DBusException:
+            pass
+
+    def shutdown(self):
+        try:
+            if self.adapter_path and self.adapter_props().Get(ADAPTER, "Discovering"):
+                self.dev_iface(self.adapter_path, ADAPTER).StopDiscovery()
+        except dbus.DBusException:
+            pass
+        try:
+            self.agent_mgr.UnregisterAgent(AGENT_PATH)
+        except dbus.DBusException:
+            pass
+
+    def close(self):
+        self.shutdown()
+        self.app.quit()
+        return True
+
+
+def main():
+    DBusGMainLoop(set_as_default=True)
+    app = Gtk.Application(application_id="pe.zen.Bluetooth")
+    state = {}
+
+    def activate(a):
+        if "panel" in state:          # segundo clic en el ícono: cerrar
+            state["panel"].close()
+        else:
+            state["panel"] = Panel(a)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()

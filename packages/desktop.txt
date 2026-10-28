@@ -11,6 +11,9 @@ gnome-keyring
 waybar
 # calendario de la barra (zen-calendar, Rust): GTK4 + layer-shell, sonidos de alarma
 gtk4-layer-shell
+# panel de Bluetooth de la barra (zen-bluetooth, Python): GTK4 + D-Bus de BlueZ
+python-gobject
+python-dbus
 sound-theme-freedesktop
 rofi
 mako

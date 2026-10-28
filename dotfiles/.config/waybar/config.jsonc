@@ -12,7 +12,7 @@
     "margin-right": 10,
     "reload_style_on_change": true,
 
-    "modules-left": ["custom/arch", "niri/workspaces", "wlr/taskbar"],
+    "modules-left": ["custom/arch", "niri/workspaces"],
     "modules-center": ["clock"],
     "modules-right": ["group/stats", "group/netbat", "group/controls", "custom/updates", "tray", "niri/language", "custom/power"],
 
@@ -105,7 +105,8 @@
         "tooltip-format-connected": "{device_enumerate}",
         "tooltip-format-enumerate-connected": "{device_alias}",
         "tooltip-format-enumerate-connected-battery": "{device_alias} · {device_battery_percentage}%",
-        "on-click": "alacritty --class zen-tui -e bluetui"
+        "on-click": "~/.local/bin/zen-bluetooth",
+        "on-click-right": "alacritty --class zen-tui -e bluetui"
     },
 
     "network": {

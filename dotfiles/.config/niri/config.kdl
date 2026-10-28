@@ -194,6 +194,7 @@ layer-rule {
 }
 
 layer-rule {
+    match namespace="^zen-bluetooth$"
     match namespace="^zen-calendar$"
     geometry-corner-radius 14
     shadow {
