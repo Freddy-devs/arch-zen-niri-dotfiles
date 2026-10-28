@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
@@ -75,6 +76,8 @@ row.dev.active .dev-icon { color: #7aa2f7; }
 row.dev.active.mic .dev-icon { color: #bb9af7; }
 .dev-name { font-weight: 700; color: #a9b1d6; }
 row.dev.active .dev-name { color: #f1f1f1; }
+.dev-sub { color: #565f89; font-size: 11px; font-weight: 600; }
+row.dev.unplugged .dev-name { color: #565f89; }
 .check { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; color: #7aa2f7; }
 row.dev.mic .check { color: #bb9af7; }
 .app-icon { margin-right: 8px; }
@@ -110,13 +113,83 @@ def volume(obj):
     return round(sum(vals) / len(vals)) if vals else 0
 
 
-def sink_icon(sink):
-    name = (sink.get("name", "") + " " + sink.get("properties", {}).get("device.form_factor", "")).lower()
-    if "bluez" in name or "headset" in name or "headphone" in name:
+def port_icon(text):
+    text = text.lower()
+    if any(w in text for w in ("headphone", "headset", "bluez", "auricular", "a2dp", "hands")):
         return "󰋋"
-    if "hdmi" in name or "displayport" in name:
+    if "hdmi" in text or "displayport" in text:
         return "󰡁"
     return "󰓃"
+
+
+def output_ports(cards, sinks):
+    """Todas las salidas físicas: cada puerto de cada tarjeta, aunque su perfil no esté activo.
+
+    PipeWire solo crea el sink del perfil activo (p. ej. altavoces/auriculares O HDMI), por eso
+    listar sinks no basta. Se ocultan los puertos que ni existen en esta máquina (HDMI 2, HDMI 3…).
+    """
+    by_card = {s.get("properties", {}).get("device.name"): s for s in sinks}
+    outs = []
+    for card in cards:
+        profiles = card.get("profiles", {})
+        sink = by_card.get(card["name"])
+        for pname, port in card.get("ports", {}).items():
+            pprofs = port.get("profiles", [])
+            if not pprofs or not all(pp.startswith("output:") or pp == "pro-audio" for pp in pprofs):
+                continue     # puerto de entrada (micrófono)
+            usable = [pp for pp in pprofs if profiles.get(pp, {}).get("available")]
+            plugged = port.get("availability") != "not available"
+            if not usable or (not plugged and not any(pname == p["name"] for p in (sink or {}).get("ports", [])
+                                                      ) and "hdmi" in pname):
+                continue
+            outs.append({
+                "card": card["name"], "port": pname, "plugged": plugged,
+                "label": port.get("description") or pname,
+                "card_label": card.get("properties", {}).get("device.description", ""),
+                "profile": pick_profile(card, usable),
+                "sink": sink["name"] if sink and any(p["name"] == pname for p in sink.get("ports", [])) else None,
+                "active_port": sink.get("active_port") if sink else None,
+            })
+    known = set(by_card)
+    for s in sinks:     # sinks sin tarjeta (virtuales, de red…)
+        if s.get("properties", {}).get("device.name") not in known or not s.get("ports"):
+            if not any(o["sink"] == s["name"] for o in outs):
+                outs.append({"card": None, "port": None, "plugged": True, "label": s["description"],
+                             "card_label": "", "profile": None, "sink": s["name"], "active_port": None})
+    return outs
+
+
+def pick_profile(card, usable):
+    """Perfil para activar un puerto: el actual si sirve; si no, uno que conserve el micrófono y en estéreo."""
+    active = card.get("active_profile", "")
+    if active in usable:
+        return active
+    inp = active.split("+", 1)[1] if "+" in active else (active if active.startswith("input:") else None)
+    return max(usable, key=lambda p: (inp is not None and p.endswith("+" + inp), "surround" not in p,
+                                      p != "pro-audio", -len(p)))
+
+
+def choose_output(out, done):
+    """Cambia el perfil de la tarjeta si hace falta, espera a que aparezca el sink y lo deja por defecto."""
+    def run():
+        card_now = next((c for c in pactl_json("cards") if c["name"] == out["card"]), None) if out["card"] else None
+        if card_now and card_now.get("active_profile") != out["profile"]:
+            subprocess.run(["pactl", "set-card-profile", out["card"], out["profile"]], capture_output=True)
+        sink = out["sink"] if not out["card"] else None
+        for _ in range(30):
+            if sink:
+                break
+            for s in pactl_json("sinks"):
+                if (s.get("properties", {}).get("device.name") == out["card"]
+                        and any(p["name"] == out["port"] for p in s.get("ports", []))):
+                    sink = s["name"]
+            time.sleep(0.1)
+        if sink:
+            if out["port"]:
+                subprocess.run(["pactl", "set-sink-port", sink, out["port"]], capture_output=True)
+            subprocess.run(["pactl", "set-default-sink", sink], capture_output=True)
+        GLib.idle_add(done)
+    threading.Thread(target=run, daemon=True).start()
 
 
 class VolumeCard:
@@ -275,6 +348,8 @@ class Panel:
     def refresh(self):
         self.refresh_pending = False
         sinks = pactl_json("sinks")
+        cards = pactl_json("cards")
+        outputs = output_ports(cards, sinks)
         sources = [s for s in pactl_json("sources") if not s.get("name", "").endswith(".monitor")]
         inputs = pactl_json("sink-inputs")
         def_sink, def_source = pactl_get("get-default-sink"), pactl_get("get-default-source")
@@ -287,12 +362,12 @@ class Panel:
             self.in_card.set(source["name"], volume(source), source.get("mute", False))
 
         # las listas solo se rehacen si cambian los dispositivos o las apps, así no se corta un arrastre
-        key = (tuple((s["name"], s["description"]) for s in sinks), def_sink,
+        key = (tuple((o["card"], o["port"], o["plugged"], o["sink"], o["active_port"]) for o in outputs), def_sink,
                tuple((s["name"], s["description"]) for s in sources), def_source,
                tuple(i["index"] for i in inputs))
         if key != self.layout_key:
             self.layout_key = key
-            self.fill_devices(self.sink_list, sinks, def_sink, "set-default-sink", False)
+            self.fill_outputs(outputs, def_sink)
             self.fill_devices(self.source_list, sources, def_source, "set-default-source", True)
             self.fill_apps(inputs)
         for i in inputs:
@@ -300,6 +375,48 @@ class Panel:
             if card:
                 card.set(i["index"], volume(i), i.get("mute", False))
         return False
+
+    def fill_outputs(self, outputs, default):
+        lb = self.sink_list
+        while (child := lb.get_first_child()) is not None:
+            lb.remove(child)
+        lb.set_visible(len(outputs) > 1)
+        multi_card = len({o["card"] for o in outputs if o["card"]}) > 1
+        for out in outputs:
+            active = out["sink"] == default and (out["port"] is None or out["port"] == out["active_port"])
+            row = Gtk.ListBoxRow()
+            row.add_css_class("dev")
+            if active:
+                row.add_css_class("active")
+            if not out["plugged"]:
+                row.add_css_class("unplugged")
+            box = Gtk.Box()
+            icon = Gtk.Label(label=port_icon(out["port"] or out["label"]))
+            icon.add_css_class("dev-icon")
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+            name = Gtk.Label(label=out["label"], xalign=0, ellipsize=3)
+            name.add_css_class("dev-name")
+            text.append(name)
+            sub = [out["card_label"]] if multi_card and out["card_label"] else []
+            if not out["plugged"]:
+                sub.append("sin conectar")
+            if sub:
+                sl = Gtk.Label(label=" · ".join(sub), xalign=0, ellipsize=3)
+                sl.add_css_class("dev-sub")
+                text.append(sl)
+            box.append(icon)
+            box.append(text)
+            if active:
+                check = Gtk.Label(label="󰄬")
+                check.add_css_class("check")
+                box.append(check)
+            row.set_child(box)
+            row.activate_action = (lambda o=out: self.select_output(o))
+            lb.append(row)
+
+    def select_output(self, out):
+        self.sink_list.set_sensitive(False)
+        choose_output(out, lambda: self.sink_list.set_sensitive(True) or self.queue_refresh())
 
     def fill_devices(self, lb, devices, default, command, mic):
         while (child := lb.get_first_child()) is not None:
