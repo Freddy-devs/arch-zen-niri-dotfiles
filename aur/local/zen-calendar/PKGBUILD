@@ -1,4 +1,4 @@
-# Calendario de la barra (Rust). El código está en apps/zen-calendar; build-local-repo.sh lo
+# Calendario de la barra (Rust). El código está en apps/zen-calendar; install.sh lo
 # copia junto a este PKGBUILD como src-app/.
 pkgname=zen-calendar
 pkgver=1.0.0

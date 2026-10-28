@@ -1,4 +1,4 @@
-# Paquetes del repo local [custom] (ISO live y sistema instalado). Solo lo mínimo:
+# Paquetes que install.sh compila (PKGBUILD propio en aur/local/ o del AUR). Solo lo mínimo:
 # Ayudante del AUR (zen-apps lo usa para Brave, WPS y otros a pedido)
 yay-bin
 # Tema obligatorio (PKGBUILD propios en aur/local, fuentes de sus autores originales):

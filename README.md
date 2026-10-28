@@ -1,8 +1,9 @@
 # arch-zen-niri
 
-ISO live + instalador de Arch Linux **mínimo** con **linux-zen**, **niri** (Wayland) y **SDDM** (tema
-Dark Pirate). Estética TokyoNight con sensación bspwm. Trae solo lo necesario para ir rápido y gastar
-pocos recursos; navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen-apps`.
+Un solo script, `install.sh`, convierte un Arch Linux recién instalado (con `archinstall`) en un
+escritorio **mínimo** con **linux-zen**, **niri** (Wayland) y **SDDM** (tema Dark Pirate). Estética
+TokyoNight con sensación bspwm. Trae solo lo necesario para ir rápido y gastar pocos recursos;
+navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen-apps`.
 
 ## Qué trae
 | Área | Elección | Origen |
@@ -25,7 +26,7 @@ pocos recursos; navegador, oficina, bases de datos y lenguajes los instala cada 
   si se olvida, los datos no se recuperan.
 - **Cortafuegos** (`/etc/nftables.conf`): entrada bloqueada por defecto, sin puertos abiertos y sin
   responder a ping. La salida es libre. Ver: `sudo nft list ruleset` · bloqueos: `journalctl -k -g zen-fw`.
-- **Sin SSH** (enmascarado también en la ISO live), sin avahi/cups. MariaDB (si la instalas con `zen-apps`) solo en localhost.
+- **Sin SSH**, sin avahi/cups. MariaDB (si la instalas con `zen-apps`) solo en localhost.
 - **Acceso remoto solo por túnel**: WireGuard (`wireguard-tools`) que inicia la laptop hacia tu
   servidor; nunca se abre un puerto de entrada.
 - **Red privada**: MAC aleatoria por red Wi-Fi, IPv6 temporal, no envía el nombre del equipo al router.
@@ -75,23 +76,7 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
 (logal.dev) → CDN oficial. Todos 100 % sincronizados según archlinux.org/mirrors/status.
 `reflector.timer` los renueva cada semana (BR, CL, US, HTTPS, ≤12 h de retraso).
 
-## Construir la ISO (desde Windows)
-1. PowerShell como admin: `wsl --install archlinux`
-2. Dentro de Arch (WSL):
-   ```sh
-   pacman -Syu
-   cd /mnt/c/Users/Freddy/iso-linux-zen/arch-linux
-   bash build.sh        # como root
-   ```
-   El trabajo pesado va a `/var/tmp/arch-zen-niri` (disco Linux; cambiar con `BUILD_DIR=...`)
-   y la ISO final se escribe en `out/` de esta carpeta, visible desde Windows.
-   > Si WSL falla al montar/crear la imagen, usa una VM con Arch y el mismo comando.
-3. Resultado: `out/arch-zen-niri-AAAA.MM.DD-x86_64.iso`
-
-Graba con Ventoy, Rufus (modo DD) o `dd`.
-
-## Instalar (recomendado): ISO oficial + archinstall + `install.sh`
-No hace falta construir ninguna ISO.
+## Instalar: ISO oficial + archinstall + `install.sh`
 
 1. Descarga la ISO oficial de <https://archlinux.org/download/> y grábala con Ventoy o Rufus (modo DD).
 2. Arranca el USB. Si usas Wi-Fi: `iwctl` → `station wlan0 connect "TuRed"` → `exit`.
@@ -118,14 +103,35 @@ No hace falta construir ninguna ISO.
    cd arch-zen-niri-iso && ./install.sh
    ```
    Instala niri, SDDM Dark Pirate, tema, dotfiles, seguridad, snapper y ajustes de hardware.
-   Pregunta solo el teclado y una confirmación. Registro: `/var/log/zen-postinstall.log`. Reinicia al final.
+   Pregunta solo el teclado y una confirmación. Reinicia al final.
 
-## Usar
-- La ISO arranca directo en niri como usuario `live` (contraseña `live`).
-- Instalar: abre una terminal (`Super+Enter`) y ejecuta `zen-install`.
-  Pide disco, usuario, contraseñas, zona horaria (por defecto America/Lima), idioma y teclado.
-  Soporta UEFI y BIOS. **Necesita internet.**
-- Primer inicio del sistema instalado: una bienvenida que sugiere `zen-apps` (no instala nada sola).
+### Qué lo hace robusto
+- **Continúa donde quedó**: cada paso se marca en `/var/lib/zen-postinstall/`. Si se corta la red o la
+  luz, vuelve a ejecutar `./install.sh` y sigue desde el paso que falló (`--status` muestra el avance).
+- **Reintenta** las descargas de pacman, del AUR y de las fuentes; espera a que vuelva internet.
+- **Comprueba antes de empezar**: que sea Arch instalado (no la ISO), usuario normal con sudo, internet,
+  espacio libre (8 GB), batería (sin cargador exige 40 %) y candados viejos de pacman.
+- **Nunca deja el equipo sin arrancar**: añade parámetros del kernel sin quitar los de archinstall
+  (cifrado incluido) y, si `grub-mkconfig` falla, restaura la configuración original.
+- **Se adapta**: GRUB o systemd-boot, btrfs o ext4 (sin btrfs omite snapper), equipo físico o VM,
+  NVIDIA detectada; pulseaudio/iptables en conflicto se reemplazan solos; paquetes que ya no existan
+  o del AUR que fallen se avisan al final en vez de abortar todo.
+- Lo que ya tenías en tu carpeta personal queda respaldado como `archivo.~1~`.
+  Registro completo: `/var/log/zen-postinstall.log`.
+
+### Opciones
+```sh
+./install.sh --help            # todas las opciones
+./install.sh -y -k latam       # sin preguntas, teclado latinoamericano
+./install.sh --status          # qué pasos ya están hechos
+./install.sh --redo            # repetir todo (p. ej. tras actualizar el repo con git pull)
+./install.sh --no-aur          # sin compilar yay, tema, iconos, cursor ni zen-calendar
+./install.sh --no-hw           # sin ajustes de hardware (zen-hwsetup --auto)
+./install.sh --no-hardening    # sin lockdown/AppArmor en los parámetros del kernel
+```
+
+## Primer inicio
+Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola).
 
 ## Atajos (Super = tecla Windows)
 | Atajo | Acción | | Atajo | Acción |
@@ -178,12 +184,13 @@ Antes de actualizar, `news` muestra las noticias de archlinux.org (también apar
 
 ## Estructura
 ```
-build.sh                  construye la ISO (releng oficial + overlay)
-aur/build-local-repo.sh   repo [custom]: AUR (brave-bin, yay-bin…), aur/local/ (temas TokyoNight, Nordzy-dark, Qogir)
-packages/                 desktop.txt (común) · install-base.txt · custom.txt (repo local: yay, tema, zen-calendar)
-profile/pacman.conf.in    pacman.conf de build
-system/                   sddm (tema Dark Pirate), wallpaper.svg → wallpaper.jpg, mirrors, hooks, reflector, scripts (zen-install…), wallpaper
-dotfiles/                 /etc/skel: niri, waybar, rofi, mako, alacritty, swaylock, gtk, zsh
+install.sh     post-instalación: todo el sistema en pasos reanudables
+packages/      install-base.txt (base) · desktop.txt (escritorio) · custom.txt (se compilan: yay, tema, zen-calendar)
+aur/local/     PKGBUILD propios: tema TokyoNight, iconos Nordzy-dark, cursor Qogir, zen-calendar
+apps/          zen-calendar (Rust)
+system/        sddm (tema Dark Pirate), seguridad, rendimiento, mirrors, hooks, reflector,
+               scripts (zen-apps, zen-hwsetup, zen-hwcheck, zen-power…), wallpaper
+dotfiles/      ~ y /etc/skel: niri, waybar, rofi, mako, alacritty, swaylock, gtk, zsh
 ```
 
 ## Notas
@@ -203,9 +210,9 @@ dotfiles/                 /etc/skel: niri, waybar, rofi, mako, alacritty, swaylo
 | Teclas Fn | ASUS ATK | `asus-nb-wmi`, `asus-wireless` |
 
 - **`zen-hwcheck`** — diagnóstico completo (Wi-Fi, Bluetooth, touchpad, audio, cámara, huella,
-  sensores, batería, GPU, firmware). Úsalo **en la ISO live antes de instalar** para comprobar
-  que todo funciona en la laptop sin tocar Windows. Guarda un informe en `~/zen-hwcheck-*.txt`.
+  sensores, batería, GPU, firmware). Úsalo tras instalar para comprobar
+  que todo funciona en la laptop. Guarda un informe en `~/zen-hwcheck-*.txt`.
 - **`zen-hwsetup`** — ajustes: thermald, perfiles de energía (botón en waybar), ahorro de Wi-Fi,
   GPU NVIDIA en reposo, límite de carga de batería y registro de huella para `sudo`.
-  El instalador ya aplica los ajustes seguros (`zen-hwsetup --auto`).
+  `install.sh` ya aplica los ajustes seguros (`zen-hwsetup --auto`).
 - En VirtualBox habilita *VMSVGA + aceleración 3D*; en QEMU usa `-vga virtio`.

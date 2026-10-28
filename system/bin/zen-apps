@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zen-apps — instala aplicaciones opcionales. La ISO trae solo lo mínimo; cada quien elige lo suyo.
+# zen-apps — instala aplicaciones opcionales. El sistema trae solo lo mínimo; cada quien elige lo suyo.
 #
 # Uso:
 #   zen-apps                 menú (Tab marca varias, Enter instala)

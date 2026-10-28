@@ -1,5 +1,4 @@
-# Resultados de build (ISO de varios GB, logs, paquetes compilados)
-out/
-*.iso
-build.log
+# Registros y paquetes compilados
+*.log
 *.pkg.tar.zst
+*.iso

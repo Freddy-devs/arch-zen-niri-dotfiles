@@ -1,4 +1,4 @@
-# Base mínima: común a la ISO live y al sistema instalado. Solo repos oficiales (core/extra).
+# Escritorio mínimo que instala install.sh. Solo repos oficiales (core/extra).
 # Todo lo demás (navegador, oficina, bases de datos, lenguajes…) lo instala el usuario con: zen-apps
 
 # Wayland / niri

@@ -1,4 +1,4 @@
-# Base del sistema instalado (pacstrap). Se suma a desktop.txt.
+# Base del sistema (install.sh la completa si archinstall no la trajo). Se suma a desktop.txt.
 base
 base-devel
 linux-zen

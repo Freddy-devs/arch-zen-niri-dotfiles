@@ -6,7 +6,7 @@
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
-# arch-chroot comparte /run de la ISO: dentro del chroot de zen-install sí se permite
+# en la ISO live no se aplica (solo en un chroot o en el sistema instalado)
 [[ -d /run/archiso ]] && ! systemd-detect-virt -q --chroot && { echo "Ejecútalo en el sistema instalado (en la ISO live usa zen-hwcheck)."; exit 1; }
 
 USR="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
@@ -19,7 +19,7 @@ confirm() { [[ $(ask "$1 (s/n)" "${2:-s}") =~ ^[sSyY] ]]; }
 
 BAT=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1 || true)
 NV=$(lspci -D -d 10de: 2>/dev/null | awk '/3D|VGA/{print $1; exit}')
-# dentro de arch-chroot (zen-install) solo se habilitan servicios, no se arrancan
+# dentro de arch-chroot solo se habilitan servicios, no se arrancan
 NOW=--now; systemd-detect-virt -q --chroot && NOW=""
 
 # ---------------------------------------------------------------- térmico y energía
