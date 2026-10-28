@@ -7,6 +7,7 @@ y el volumen de cada aplicación. Habla con PipeWire a través de pactl.
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -338,7 +339,7 @@ class Panel:
 
         win.set_child(panel)
         self.win = win
-        win.present()
+        win.realize()                    # prepara el renderizador ahora y no en el primer clic
 
     def section(self, text):
         lbl = Gtk.Label(label=text, xalign=0)
@@ -361,22 +362,29 @@ class Panel:
         line, _ = stream.read_line_finish_utf8(res)
         if line is None:
             return
-        self.queue_refresh()
+        # cada pactl que corremos abre y cierra un "client": reaccionar a eso sería un bucle sin fin
+        if " on client " not in line:
+            self.queue_refresh()
         stream.read_line_async(GLib.PRIORITY_DEFAULT, None, self.on_event)
 
     def queue_refresh(self):
-        if not self.refresh_pending:
+        if not self.refresh_pending:     # también oculto: así al abrir ya está al día
             self.refresh_pending = True
             GLib.timeout_add(120, self.refresh)
 
     def refresh(self):
+        """Consulta PipeWire en un hilo (unos 130 ms) para no congelar la ventana; luego aplica."""
+        def fetch():
+            data = (pactl_json("sinks"), pactl_json("cards"), pactl_json("sources"), pactl_json("sink-inputs"),
+                    pactl_get("get-default-sink"), pactl_get("get-default-source"))
+            GLib.idle_add(self.apply, *data)
+        threading.Thread(target=fetch, daemon=True).start()
+        return False
+
+    def apply(self, sinks, cards, sources, inputs, def_sink, def_source):
         self.refresh_pending = False
-        sinks = pactl_json("sinks")
-        cards = pactl_json("cards")
         outputs = output_ports(cards, sinks)
-        sources = [s for s in pactl_json("sources") if not s.get("name", "").endswith(".monitor")]
-        inputs = pactl_json("sink-inputs")
-        def_sink, def_source = pactl_get("get-default-sink"), pactl_get("get-default-source")
+        sources = [s for s in sources if not s.get("name", "").endswith(".monitor")]
 
         sink = next((s for s in sinks if s["name"] == def_sink), sinks[0] if sinks else None)
         source = next((s for s in sources if s["name"] == def_source), sources[0] if sources else None)
@@ -495,12 +503,18 @@ class Panel:
             self.app_cards[i["index"]] = card
             self.apps_box.append(card.box)
 
+    def toggle(self):
+        self.hide() if self.win.get_visible() else self.show()
+
+    def show(self):
+        self.win.present()               # primero se muestra (ya está al día), luego se confirma
+        self.queue_refresh()
+
+    def hide(self):
+        self.win.set_visible(False)
+
     def close(self):
-        try:
-            self.sub.force_exit()
-        except (AttributeError, GLib.Error):
-            pass
-        self.app.quit()
+        self.hide()
         return True
 
 
@@ -509,14 +523,22 @@ def main():
     state = {}
 
     def activate(a):
-        if "panel" in state:          # segundo clic en el volumen: cerrar
-            state["panel"].close()
-        else:
-            state["panel"] = Panel(a)
+        if "panel" in state:          # otra llamada a zen-audio: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Panel(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-audio.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
 
     app.connect("activate", activate)
     app.run(None)
-
 
 if __name__ == "__main__":
     main()

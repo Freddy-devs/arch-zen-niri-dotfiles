@@ -92,7 +92,7 @@
         "exec": "~/.local/bin/zen-media --waybar",
         "return-type": "json",
         "restart-interval": 5,
-        "on-click": "~/.local/bin/zen-media",
+        "on-click": "~/.local/bin/zen-toggle media",
         "on-click-right": "playerctl play-pause",
         "on-scroll-up": "playerctl next",
         "on-scroll-down": "playerctl previous"
@@ -108,7 +108,7 @@
         "tooltip-format-connected": "{device_enumerate}",
         "tooltip-format-enumerate-connected": "{device_alias}",
         "tooltip-format-enumerate-connected-battery": "{device_alias} · {device_battery_percentage}%",
-        "on-click": "~/.local/bin/zen-bluetooth",
+        "on-click": "~/.local/bin/zen-toggle bluetooth",
         "on-click-right": "alacritty --class zen-tui -e bluetui"
     },
 
@@ -118,7 +118,7 @@
         "return-type": "json",
         "escape": false,
         "restart-interval": 5,
-        "on-click": "~/.local/bin/zen-bluetooth"
+        "on-click": "~/.local/bin/zen-toggle bluetooth"
     },
 
     "network": {
@@ -157,7 +157,7 @@
         "format-muted": "󰝟 Mudo",
         "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
         "scroll-step": 5,
-        "on-click": "zen-audio",
+        "on-click": "~/.local/bin/zen-toggle audio",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
 

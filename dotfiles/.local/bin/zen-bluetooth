@@ -6,6 +6,7 @@ Habla directo con BlueZ por D-Bus y registra su propio agente, así que el
 emparejamiento acepta solo la confirmación del código.
 """
 import os
+import signal
 import sys
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
@@ -160,8 +161,6 @@ class Panel:
                                      "org.freedesktop.DBus.ObjectManager", BLUEZ)
 
         self.build_window()
-        self.refresh()
-        self.start_scan()
 
     # ---------- ventana ----------
     def build_window(self):
@@ -229,9 +228,9 @@ class Panel:
         panel.append(self.status)
 
         win.set_child(panel)
-        win.connect("close-request", lambda w: self.shutdown() or False)
+        win.connect("close-request", lambda w: self.close())
         self.win = win
-        win.present()
+        win.realize()                    # prepara el renderizador ahora y no en el primer clic
 
     def section(self, text):
         lbl = Gtk.Label(label=text, xalign=0)
@@ -273,7 +272,7 @@ class Panel:
             self.queue_refresh()
 
     def queue_refresh(self):
-        if not self.refresh_pending:
+        if self.win.get_visible() and not self.refresh_pending:
             self.refresh_pending = True
             GLib.timeout_add(200, self.refresh)
 
@@ -456,20 +455,26 @@ class Panel:
         except dbus.DBusException:
             pass
 
-    def shutdown(self):
+    def toggle(self):
+        self.hide() if self.win.get_visible() else self.show()
+
+    def show(self):
+        self.set_status("")
+        self.refresh()
+        self.win.present()
+        self.start_scan()
+
+    def hide(self):
+        # el agente sigue registrado (emparejar funciona siempre); solo se deja de buscar
         try:
             if self.adapter_path and self.adapter_props().Get(ADAPTER, "Discovering"):
                 self.dev_iface(self.adapter_path, ADAPTER).StopDiscovery()
         except dbus.DBusException:
             pass
-        try:
-            self.agent_mgr.UnregisterAgent(AGENT_PATH)
-        except dbus.DBusException:
-            pass
+        self.win.set_visible(False)
 
     def close(self):
-        self.shutdown()
-        self.app.quit()
+        self.hide()
         return True
 
 
@@ -479,14 +484,22 @@ def main():
     state = {}
 
     def activate(a):
-        if "panel" in state:          # segundo clic en el ícono: cerrar
-            state["panel"].close()
-        else:
-            state["panel"] = Panel(a)
+        if "panel" in state:          # otra llamada a zen-bluetooth: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Panel(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
 
     app.connect("activate", activate)
     app.run(None)
-
 
 if __name__ == "__main__":
     main()

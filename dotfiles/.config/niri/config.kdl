@@ -136,6 +136,10 @@ spawn-at-startup "waybar"
 // mako no se lanza: D-Bus lo arranca solo con la primera notificación
 // calendario: solo queda en memoria si hay tareas pendientes (clic en el reloj o Super+A)
 spawn-at-startup "zen-calendar" "--daemon"
+// paneles de la barra residentes y ocultos: abren al instante con zen-toggle
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-audio --daemon"
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-media --daemon"
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-bluetooth --daemon"
 spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 spawn-at-startup "wl-paste" "--watch" "cliphist" "store"
@@ -250,9 +254,9 @@ binds {
     Mod+B hotkey-overlay-title="Lanzador de apps" { spawn "rofi" "-show" "drun"; }
     Mod+A hotkey-overlay-title="Calendario y tareas" { spawn "zen-calendar"; }
     // paneles de la barra sin mouse: la misma tecla abre y cierra (Esc también cierra)
-    Mod+M hotkey-overlay-title="Reproductor de música" { spawn-sh "~/.local/bin/zen-media"; }
-    Mod+S hotkey-overlay-title="Sonido (volumen, salidas, micrófono)" { spawn-sh "~/.local/bin/zen-audio"; }
-    Mod+Shift+B hotkey-overlay-title="Bluetooth" { spawn-sh "~/.local/bin/zen-bluetooth"; }
+    Mod+M hotkey-overlay-title="Reproductor de música" { spawn-sh "~/.local/bin/zen-toggle media"; }
+    Mod+S hotkey-overlay-title="Sonido (volumen, salidas, micrófono)" { spawn-sh "~/.local/bin/zen-toggle audio"; }
+    Mod+Shift+B hotkey-overlay-title="Bluetooth" { spawn-sh "~/.local/bin/zen-toggle bluetooth"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles" { spawn "sh" "-c" "cliphist list | rofi -dmenu -display-columns 2 -theme ~/.config/rofi/clipboard.rasi | cliphist decode | wl-copy"; }
     Mod+Alt+L hotkey-overlay-title="Bloquear" { spawn "swaylock" "-f"; }

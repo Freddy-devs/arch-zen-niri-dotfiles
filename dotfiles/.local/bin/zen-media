@@ -12,6 +12,7 @@ Teclas: Espacio reproducir/pausar · ← → anterior/siguiente · Tab cambia de
 import hashlib
 import json
 import os
+import signal
 import sys
 import threading
 import urllib.request
@@ -178,9 +179,18 @@ def run_window():
             self.dragging = False
             self.updating = False
             self.build()
-            self.players = Players(lambda: GLib.idle_add(self.refresh))
+            self.players = Players(lambda: self.win.get_visible() and GLib.idle_add(self.refresh))
+            GLib.timeout_add(500, lambda: not self.win.get_visible() or self.tick())
+
+        def toggle(self):
+            self.hide() if self.win.get_visible() else self.show()
+
+        def show(self):
             self.refresh()
-            GLib.timeout_add(500, self.tick)
+            self.win.present()
+
+        def hide(self):
+            self.win.set_visible(False)
 
         def build(self):
             provider = Gtk.CssProvider()
@@ -263,7 +273,7 @@ def run_window():
 
             win.set_child(panel)
             self.win = win
-            win.present()
+            win.realize()                # prepara el renderizador ahora y no en el primer clic
 
         def button(self, icon, cls, action):
             b = Gtk.Button(label=icon, valign=Gtk.Align.CENTER)
@@ -396,7 +406,7 @@ def run_window():
         # ---------- teclado ----------
         def on_key(self, _c, key, _code, _state):
             if key == Gdk.KEY_Escape:
-                self.app.quit()
+                self.hide()
             elif key == Gdk.KEY_space and self.player:
                 self.safe(self.player.play_pause)
             elif key == Gdk.KEY_Left and self.player:
@@ -416,14 +426,22 @@ def run_window():
     state = {}
 
     def activate(a):
-        if "win" in state:          # segundo clic en el icono: cerrar
-            a.quit()
-        else:
-            state["win"] = Window(a)
+        if "panel" in state:          # otra llamada a zen-media: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Window(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-media.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
 
     app.connect("activate", activate)
     app.run(None)
-
 
 def fmt(seconds):
     seconds = int(seconds)
