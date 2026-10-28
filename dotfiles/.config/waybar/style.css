@@ -165,7 +165,7 @@ tooltip label {
 
 #workspaces button.active label,
 #workspaces button.focused label {
-    font-size: 19px;
+    font-size: 17px;
 }
 
 /* pide atención: fantasma asustado (azul) parpadeando */
