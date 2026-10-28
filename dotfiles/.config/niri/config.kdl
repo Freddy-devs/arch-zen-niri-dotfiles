@@ -55,10 +55,11 @@ layout {
     }
 
     // ventana activa: anillo con degradado azul → morado (paleta de la barra)
+    // borde fino y translúcido, a juego con el 1px de la barra
     focus-ring {
-        width 2
-        active-gradient from="#7aa2f7" to="#bb9af7" angle=45 relative-to="workspace-view"
-        inactive-color "#3b4261"
+        width 1
+        active-gradient from="#7aa2f780" to="#bb9af780" angle=45 relative-to="workspace-view"
+        inactive-color "#3b426150"
         urgent-color "#f7768e"
     }
     border {
