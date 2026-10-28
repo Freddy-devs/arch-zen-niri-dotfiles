@@ -540,6 +540,9 @@ step_services() {
     systemctl enable --force sddm >/dev/null
     enable NetworkManager bluetooth systemd-timesyncd fstrim.timer pkgfile-update.timer \
         systemd-oomd apparmor nftables systemd-resolved reflector.timer paccache.timer
+    # ufw choca con nftables: nftables.conf empieza con "flush ruleset" y borra sus reglas, así que
+    # "ufw status" mostraría un cortafuegos que no está activo. El único cortafuegos es nftables.
+    systemctl disable --now ufw >/dev/null 2>&1 || true
     # batería entre 60 y 90 % aunque el cargador quede enchufado (solo si el equipo lo permite)
     compgen -G '/sys/class/power_supply/BAT*/charge_control_end_threshold' >/dev/null &&
         enable zen-charge-limit.service

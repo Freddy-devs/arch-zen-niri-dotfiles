@@ -30,7 +30,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 - **Acceso remoto solo por túnel**: WireGuard (`wireguard-tools`) que inicia la laptop hacia tu
   servidor; nunca se abre un puerto de entrada.
 - **Red privada**: MAC aleatoria por red Wi-Fi, IPv6 temporal, no envía el nombre del equipo al router.
-- **DNS cifrado** (DNS-over-TLS a Quad9, respaldo Cloudflare) con systemd-resolved. NetworkManager no
+- **DNS cifrado obligatorio** (DNS-over-TLS a Quad9, respaldo Cloudflare) con systemd-resolved. NetworkManager no
   pasa el DNS del router (`dns=none` + `systemd-resolved=false`): ninguna consulta sale al DNS del
   proveedor. Comprobar: `resolvectl status` (la interfaz debe salir sin «DNS Servers»).
 - **Kernel endurecido** (`/etc/sysctl.d/90-zen-hardening.conf`), `sudo` con registro y 5 min de
