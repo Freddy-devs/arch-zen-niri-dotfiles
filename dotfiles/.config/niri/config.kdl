@@ -357,6 +357,11 @@ binds {
     // en latam/es "=" va con Shift (y niri usa la tecla sin Shift): agrandar con la tecla "+"
     Mod+Plus { set-column-width "+10%"; }
     Mod+Shift+Plus { set-window-height "+10%"; }
+    // Super+Ctrl+Shift+flechas: cambia el tamaño de la ventana con foco
+    Mod+Ctrl+Shift+Left  { set-column-width "-5%"; }
+    Mod+Ctrl+Shift+Right { set-column-width "+5%"; }
+    Mod+Ctrl+Shift+Up    { set-window-height "-5%"; }
+    Mod+Ctrl+Shift+Down  { set-window-height "+5%"; }
 
     // capturas con flameshot (zen-captura): copian al portapapeles y guardan en Imágenes/Capturas
     Print hotkey-overlay-title="Captura: elegir área + anotar" { spawn-sh "~/.local/bin/zen-captura area"; }
