@@ -77,7 +77,7 @@
     // ---------- conexiones ----------
     "group/netbat": {
         "orientation": "horizontal",
-        "modules": ["bluetooth", "network", "battery"]
+        "modules": ["bluetooth", "custom/btbattery", "network", "battery"]
     },
 
     "bluetooth": {
@@ -85,13 +85,22 @@
         "format-disabled": "󰂲",
         "format-off": "󰂲",
         "format-connected": "󰂱",
-        "format-connected-battery": "󰂱 {device_battery_percentage}%",
+        "format-connected-battery": "󰂱",
         "tooltip-format": "{controller_alias} · {status}",
         "tooltip-format-connected": "{device_enumerate}",
         "tooltip-format-enumerate-connected": "{device_alias}",
         "tooltip-format-enumerate-connected-battery": "{device_alias} · {device_battery_percentage}%",
         "on-click": "~/.local/bin/zen-bluetooth",
         "on-click-right": "alacritty --class zen-tui -e bluetui"
+    },
+
+    // batería de cada dispositivo Bluetooth conectado (mouse, audífonos…); se oculta si no hay ninguno
+    "custom/btbattery": {
+        "exec": "~/.local/bin/zen-bt-battery",
+        "return-type": "json",
+        "escape": false,
+        "restart-interval": 5,
+        "on-click": "~/.local/bin/zen-bluetooth"
     },
 
     "network": {

@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""zen-bt-battery — batería de cada dispositivo Bluetooth conectado, para waybar (custom/btbattery).
+
+Imprime una línea JSON por cambio: "󰍽 79%  󰋋 60%". Escucha a BlueZ por D-Bus, sin sondeo.
+Solo aparecen los dispositivos que informan su batería (mouse, teclados, audífonos compatibles).
+"""
+import json
+import sys
+
+import dbus
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+BLUEZ = "org.bluez"
+DEVICE = "org.bluez.Device1"
+BATTERY = "org.bluez.Battery1"
+
+ICONS = {
+    "input-mouse": "󰍽", "input-keyboard": "󰌌", "input-gaming": "󰊴",
+    "audio-headset": "󰋋", "audio-headphones": "󰋋", "audio-card": "󰓃",
+    "phone": "󰏲", "input-tablet": "󰓶",
+}
+BLUE, YELLOW, RED, DIM = "#7aa2f7", "#e0af68", "#f7768e", "#565f89"
+
+bus = None
+pending = False
+last = None
+
+
+def color(pct):
+    return RED if pct <= 15 else YELLOW if pct <= 30 else BLUE
+
+
+def emit():
+    global pending, last
+    pending = False
+    objs = dbus.Interface(bus.get_object(BLUEZ, "/"), "org.freedesktop.DBus.ObjectManager").GetManagedObjects()
+    devs = []
+    for ifaces in objs.values():
+        dev, bat = ifaces.get(DEVICE), ifaces.get(BATTERY)
+        if dev and bat and dev.get("Connected") and "Percentage" in bat:
+            devs.append((str(dev.get("Alias", "")), str(dev.get("Icon", "")), int(bat["Percentage"])))
+    devs.sort()
+    text = "  ".join(f"<span color='{color(p)}'>{ICONS.get(i, '󰂯')}</span> {p}%" for _, i, p in devs)
+    out = {
+        "text": text,
+        "tooltip": "\n".join(f"{n} · {p}%" for n, _, p in devs) or "Sin dispositivos con batería",
+        "class": "low" if any(p <= 15 for *_, p in devs) else ("on" if devs else "empty"),
+    }
+    line = json.dumps(out, ensure_ascii=False)
+    if line != last:
+        last = line
+        print(line, flush=True)
+    return False
+
+
+def queue(*_args, **_kw):
+    global pending
+    if not pending:
+        pending = True
+        GLib.timeout_add(300, emit)
+
+
+def main():
+    global bus
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+    bus.add_signal_receiver(queue, "PropertiesChanged", "org.freedesktop.DBus.Properties", BLUEZ)
+    bus.add_signal_receiver(queue, "InterfacesAdded", "org.freedesktop.DBus.ObjectManager", BLUEZ)
+    bus.add_signal_receiver(queue, "InterfacesRemoved", "org.freedesktop.DBus.ObjectManager", BLUEZ)
+    try:
+        emit()
+    except dbus.DBusException:
+        print(json.dumps({"text": "", "class": "empty"}), flush=True)
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)

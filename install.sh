@@ -538,6 +538,9 @@ step_services() {
     systemctl enable --force sddm >/dev/null
     enable NetworkManager bluetooth systemd-timesyncd fstrim.timer pkgfile-update.timer \
         systemd-oomd apparmor nftables systemd-resolved reflector.timer paccache.timer
+    # batería de audífonos Bluetooth en la barra: PipeWire la publica por la API experimental de BlueZ
+    [[ -f /etc/bluetooth/main.conf ]] &&
+        sed -i 's/^#\?Experimental *=.*/Experimental = true/' /etc/bluetooth/main.conf
     if [[ $ROOTFS == btrfs ]]; then
         enable snapper-timeline.timer snapper-cleanup.timer
         [[ $BOOTLOADER == grub ]] && enable zen-grub-snapshots.path

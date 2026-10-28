@@ -99,7 +99,7 @@ tooltip label {
 
 /* módulos dentro de un grupo, separados con aire */
 #cpu, #memory, #disk,
-#bluetooth, #network, #battery,
+#bluetooth, #custom-btbattery, #network, #battery,
 #pulseaudio, #backlight {
     padding: 0 6px;
 }
