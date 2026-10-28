@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# zen-captura — capturas con flameshot en niri, sin que flameshot pregunte la pantalla.
+#   zen-captura area       (Print)        elegir un área en cualquier pantalla + anotar
+#   zen-captura pantalla   (Shift+Print)  la pantalla actual entera, directo
+#   zen-captura recorte    (Ctrl+Print)   elegir un área solo en la pantalla actual + anotar
+# Guarda en Imágenes/Capturas y copia al portapapeles.
+#
+# En Wayland flameshot no sabe dónde está el cursor y por eso pregunta la pantalla. Aquí se le
+# pasa con -n: la pantalla enfocada en niri, traducida a la numeración de flameshot (Qt), que
+# no siempre sigue el mismo orden. La primera vez en cada sesión (o al cambiar los monitores) se
+# calibra capturando cada pantalla y comparando su tamaño; queda en caché.
+set -euo pipefail
+
+dir="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Capturas"
+mkdir -p "$dir"
+cache="${XDG_RUNTIME_DIR:-/tmp}/zen-captura-pantallas"
+
+# "NOMBRE ANCHOxALTO" de cada salida (en píxeles reales) y la enfocada
+outputs() {
+    niri msg -j outputs | python3 -c '
+import json, sys
+for name, o in json.load(sys.stdin).items():
+    l = o.get("logical")
+    if l:
+        print(name, "%dx%d" % (round(l["width"] * l["scale"]), round(l["height"] * l["scale"])))'
+}
+focused() { niri msg -j focused-output | python3 -c 'import json, sys; print(json.load(sys.stdin)["name"])'; }
+
+# tamaño de la pantalla N según flameshot (lee el encabezado del PNG)
+size_of() {
+    local -a b
+    local w h
+    b=($(flameshot screen -n "$1" -r 2>/dev/null | head -c 24 | od -An -tu1 -j16))
+    (( ${#b[@]} == 8 )) || return 1
+    w=$(( (b[0] << 24) + (b[1] << 16) + (b[2] << 8) + b[3] ))
+    h=$(( (b[4] << 24) + (b[5] << 16) + (b[6] << 8) + b[7] ))
+    (( w > 0 && w < 20000 && h > 0 && h < 20000 )) || return 1
+    echo "${w}x${h}"
+}
+
+# número de flameshot para la salida enfocada
+screen_number() {
+    local outs want sig i n size name
+    outs=$(outputs | sort)
+    want=$(focused)
+    sig=$(printf '%s' "$outs" | md5sum | cut -c1-12)
+    # caché: primera línea = firma de los monitores; luego "N NOMBRE"
+    if [[ ! -r $cache || $(head -1 "$cache") != "$sig" ]]; then
+        pkill -x flameshot 2>/dev/null && sleep 0.3 || true   # otra instancia abierta estropea -r
+        local map="$sig" ok=1
+        n=$(wc -l <<<"$outs")
+        for (( i = 0; i < n; i++ )); do
+            # el tamaño identifica la salida si es único; si no se pudo leer o hay dos iguales,
+            # se usa el orden de niri (y no se guarda en caché)
+            name=""
+            if size=$(size_of "$i"); then
+                name=$(awk -v s="$size" '$2 == s {print $1}' <<<"$outs")
+            fi
+            if [[ -z $name || $name == *$'\n'* ]]; then
+                name=$(sed -n "$(( i + 1 ))p" <<<"$outs" | cut -d' ' -f1)
+                ok=0
+            fi
+            map+=$'\n'"$i $name"
+        done
+        if (( ok )); then printf '%s\n' "$map" > "$cache"; else rm -f "$cache"; fi
+        awk -v o="$want" 'NR > 1 && $2 == o {print $1; f=1} END {if (!f) print 0}' <<<"$map"
+        return
+    fi
+    awk -v o="$want" 'NR > 1 && $2 == o {print $1; f=1} END {if (!f) print 0}' "$cache"
+}
+
+case "${1:-area}" in
+    area)     exec flameshot gui -p "$dir" ;;
+    pantalla) exec flameshot screen -n "$(screen_number)" -c -p "$dir" ;;
+    recorte)  exec flameshot screen -n "$(screen_number)" -e -p "$dir" ;;
+    *) echo "uso: zen-captura [area|pantalla|recorte]" >&2; exit 1 ;;
+esac

@@ -367,10 +367,10 @@ binds {
     Mod+Plus { set-column-width "+10%"; }
     Mod+Shift+Plus { set-window-height "+10%"; }
 
-    // capturas con flameshot: guarda en Imágenes/Capturas y copia al portapapeles
-    Print hotkey-overlay-title="Captura: área + anotar (flameshot)" { spawn "flameshot" "gui"; }
-    Shift+Print hotkey-overlay-title="Captura de la pantalla actual" { spawn "sh" "-c" "d=\"$(xdg-user-dir PICTURES)/Capturas\"; mkdir -p \"$d\"; flameshot screen -c -p \"$d\""; }
-    Ctrl+Print hotkey-overlay-title="Captura de todas las pantallas" { spawn "sh" "-c" "d=\"$(xdg-user-dir PICTURES)/Capturas\"; mkdir -p \"$d\"; flameshot full -c -p \"$d\""; }
+    // capturas con flameshot (zen-captura): guardan en Imágenes/Capturas, sin preguntar la pantalla
+    Print hotkey-overlay-title="Captura: elegir área + anotar" { spawn-sh "~/.local/bin/zen-captura area"; }
+    Shift+Print hotkey-overlay-title="Captura de la pantalla actual (directo)" { spawn-sh "~/.local/bin/zen-captura pantalla"; }
+    Ctrl+Print hotkey-overlay-title="Captura: área de la pantalla actual + anotar" { spawn-sh "~/.local/bin/zen-captura recorte"; }
 
     // multimedia
     XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "-l" "1.0" "@DEFAULT_AUDIO_SINK@" "5%+"; }
