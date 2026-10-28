@@ -1,7 +1,7 @@
 // Waybar — arch-zen-niri: barra de vidrio translúcido (desenfoque de niri) con borde suave y
 // esquinas de 8 px; dentro, una "isla" redondeada por grupo (TokyoNight).
 // Izquierda: logo + CPU, RAM y disco · Centro: escritorios estilo Pac-Man
-// Derecha: conexiones, controles, bandeja, energía y la hora (clic = calendario).
+// Derecha: conexiones, controles, bandeja, la hora (clic = calendario) y energía al final.
 // Sale en todas las pantallas; los escritorios son los de cada pantalla.
 {
     "layer": "top",
@@ -15,7 +15,7 @@
 
     "modules-left": ["custom/arch", "group/stats"],
     "modules-center": ["niri/workspaces"],
-    "modules-right": ["group/netbat", "group/controls", "custom/updates", "tray", "niri/language", "custom/power", "clock"],
+    "modules-right": ["group/netbat", "group/controls", "custom/updates", "tray", "niri/language", "clock", "custom/power"],
 
     // logo: abre el lanzador (igual que Super+Space)
     "custom/arch": {

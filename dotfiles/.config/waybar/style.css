@@ -219,6 +219,7 @@ tooltip label {
     color: @red;
     font-size: 14px;
     padding: 0 9px;
+    margin-right: 0;
 }
 
 #custom-power:hover {
@@ -227,11 +228,10 @@ tooltip label {
     border-color: @red;
 }
 
-/* la hora, al extremo derecho */
+/* la hora, justo antes del botón de apagado */
 #clock {
     color: @fg;
     font-weight: 700;
     padding: 0 14px;
-    margin-right: 0;
     border-color: alpha(@purple, 0.55);
 }
