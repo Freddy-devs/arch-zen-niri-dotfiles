@@ -191,7 +191,9 @@ tooltip label {
 
 #network.disconnected { color: @red; }
 
-#battery.charging                { color: @green; }
+#battery.charging,
+#battery.plugged,
+#battery.full                    { color: @green; }
 #battery.warning:not(.charging)  { color: @yellow; }
 #battery.critical:not(.charging) {
     color: @red;
