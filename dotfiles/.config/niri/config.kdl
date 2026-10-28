@@ -5,8 +5,10 @@
 
 input {
     keyboard {
+        // teclado: latam por defecto (el primero) e inglés (us); se alterna con Super+Alt+Space
+        // o con clic en el idioma de la barra
         xkb {
-            layout "latam"
+            layout "latam,us"
         }
         repeat-delay 300
         repeat-rate 40
@@ -248,6 +250,7 @@ binds {
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles" { spawn "sh" "-c" "cliphist list | rofi -dmenu -display-columns 2 -theme ~/.config/rofi/clipboard.rasi | cliphist decode | wl-copy"; }
     Mod+Alt+L hotkey-overlay-title="Bloquear" { spawn "swaylock" "-f"; }
+    Mod+Alt+Space hotkey-overlay-title="Idioma del teclado (latam / inglés)" { switch-layout "next"; }
 
     // cerrar / salir / apagar
     Mod+C hotkey-overlay-title="Cerrar ventana" repeat=false { close-window; }

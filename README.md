@@ -11,7 +11,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Kernel | `linux-zen` (+ `linux-lts` de respaldo en el sistema instalado) | extra |
 | Compositor | `niri` + `xwayland-satellite` (apps X11 automáticas) | extra |
 | Login | `sddm` con el tema propio **Dark Pirate** (QML Qt6; X11 solo en la pantalla de login) | extra |
-| Barra / menú / notif. | `waybar` (barra de vidrio translúcido con borde y esquinas redondeadas, con una isla redondeada por grupo: CPU · RAM · disco a la izquierda, escritorios Pac-Man al centro, hora a la derecha antes del botón de apagado; clic en la hora = calendario), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
+| Barra / menú / notif. | `waybar` (barra de vidrio translúcido con borde y esquinas redondeadas, con una isla redondeada por grupo: CPU · RAM · disco a la izquierda, escritorios Pac-Man al centro, hora a la derecha antes del idioma y del botón de apagado; clic en la hora = calendario), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
 | Calendario | `zen-calendar` (Rust, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
 | Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Papirus-Dark** · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
@@ -158,10 +158,12 @@ Entras por SDDM a niri y una bienvenida sugiere `zen-apps` (no instala nada sola
 | `Super+Alt+L` | bloquear | | `Super+Alt+Q` | salir de niri |
 | `Super+F1` | ver todos los atajos | | `Super+Tab` | escritorio anterior |
 | `Super+A` | calendario y tareas | | `Super+-` / `Super++` | columna más angosta / ancha |
+| `Super+Alt+Space` | teclado latam ⇄ inglés | | | |
 
 ## Barra y calendario
 La barra: CPU · RAM · disco | escritorios de cada pantalla |
-bluetooth · red + batería · volumen · brillo · actualizaciones · hora · bandeja · teclado · energía.
+bluetooth · red + batería · volumen · brillo · actualizaciones · bandeja · hora · teclado · energía.
+Teclado: latam por defecto e inglés (us) de segundo; clic en el idioma o `Super+Alt+Space` para alternar.
 Con dos pantallas sale en ambas, y cada una muestra sus escritorios.
 
 Clic en la hora (o `Super+A`) abre el calendario en la pantalla enfocada; se cierra con `Esc` o al

@@ -390,14 +390,17 @@ EOF
 step_dotfiles() {
     # Windows/editores pueden dejar CRLF si se copió el repo a mano
     find "$ROOT/dotfiles" -type f -exec grep -lI $'\r' {} + 2>/dev/null | xargs -r sed -i 's/\r$//' || true
+    # niri: el teclado elegido va primero (por defecto) y el inglés de segundo para alternar
+    local layouts="$XKB,us"
+    [[ $XKB == us ]] && layouts="us,latam"
     cp -rT "$ROOT/dotfiles" /etc/skel
-    sed -i -E "s/layout \"[a-z]+\"/layout \"$XKB\"/" /etc/skel/.config/niri/config.kdl
+    sed -i -E "s/^( *)layout \"[a-z,]+\"/\1layout \"$layouts\"/" /etc/skel/.config/niri/config.kdl
     # en la carpeta personal se copia como el usuario (sin chown de todo el home: no toca podman ni
     # nada más). Solo cambia lo distinto; lo que el usuario ya tenía queda como archivo.~1~
     local src rel dst tmp n=0
     tmp=$(mktemp -d); chmod 755 "$tmp"
     cp -rT "$ROOT/dotfiles" "$tmp"
-    sed -i -E "s/layout \"[a-z]+\"/layout \"$XKB\"/" "$tmp/.config/niri/config.kdl"
+    sed -i -E "s/^( *)layout \"[a-z,]+\"/\1layout \"$layouts\"/" "$tmp/.config/niri/config.kdl"
     while IFS= read -r -d '' src; do
         rel=${src#"$tmp/"}; dst=$HOME_USR/$rel
         cmp -s "$src" "$dst" && continue
