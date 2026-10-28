@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""zen-media — mini reproductor centrado en pantalla para lo que esté sonando.
+"""zen-media — mini reproductor abajo al centro de la pantalla para lo que esté sonando.
 
 Controla cualquier reproductor MPRIS: YouTube/música en Brave u otro navegador, Spotify,
 VLC, mpv… Muestra la miniatura, título, artista, progreso (con salto) y los controles.
@@ -192,7 +192,9 @@ def run_window():
             Layer.init_for_window(win)
             Layer.set_namespace(win, "zen-media")
             Layer.set_layer(win, Layer.Layer.OVERLAY)
-            Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)   # sin anclas = centrado
+            Layer.set_anchor(win, Layer.Edge.BOTTOM, True)    # solo abajo: queda centrado en horizontal
+            Layer.set_margin(win, Layer.Edge.BOTTOM, 24)
+            Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
 
             keys = Gtk.EventControllerKey()
             keys.connect("key-pressed", self.on_key)

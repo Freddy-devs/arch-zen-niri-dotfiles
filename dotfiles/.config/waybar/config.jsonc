@@ -87,7 +87,7 @@
         "modules": ["network", "battery"]
     },
 
-    // reproductor: abre zen-media (mini ventana centrada) con lo que suene en Brave, Spotify, VLC…
+    // reproductor: abre zen-media (mini ventana abajo al centro) con lo que suene en Brave, Spotify, VLC…
     "custom/media": {
         "exec": "~/.local/bin/zen-media --waybar",
         "return-type": "json",
