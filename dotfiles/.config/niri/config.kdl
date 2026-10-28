@@ -35,8 +35,8 @@ gestures {
 }
 
 layout {
-    // aire entre ventanas: deja ver el wallpaper y las sombras
-    gaps 10
+    // separación mínima entre ventanas
+    gaps 4
     center-focused-column "never"
     always-center-single-column
 
@@ -145,7 +145,7 @@ spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------
 window-rule {
-    geometry-corner-radius 12
+    geometry-corner-radius 4
     clip-to-geometry true
 }
 
