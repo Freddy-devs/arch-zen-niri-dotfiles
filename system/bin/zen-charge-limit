@@ -45,14 +45,19 @@ if [[ ${1:-} == --test ]]; then
     echo "1) Tope $low% (debajo de la carga actual): debe dejar de cargar…"
     echo "$low" > "$END" || { echo "✘ El firmware no acepta el tope $low%"; exit 1; }
     [[ $(cat "$END") == "$low" ]] || { echo "✘ El firmware cambió el tope a $(cat "$END")%"; exit 1; }
-    for _ in $(seq 15); do [[ $(cat "$BAT/status") == Charging ]] || break; sleep 1; done
-    st1=$(cat "$BAT/status"); echo "   estado: $st1"
+    # el firmware pasa un instante por "Discharging" antes de quedar en "Not charging": esperar
+    sleep 10
+    st1=$(cat "$BAT/status") cur1=$(cat "$BAT/current_now" 2>/dev/null || echo "?")
+    echo "   estado: $st1 · corriente: $cur1"
     echo "2) Tope 100%: debe volver a cargar…"
     echo 100 > "$END"
     for _ in $(seq 15); do [[ $(cat "$BAT/status") == Charging ]] && break; sleep 1; done
     st2=$(cat "$BAT/status"); echo "   estado: $st2"
-    if [[ $st1 != Charging && $st2 == Charging ]]; then
-        echo "✔ El firmware respeta el tope: el rango $MIN–$MAX% funcionará"
+    if [[ $st1 == Discharging ]]; then
+        echo "✘ Con el tope bajo la batería se DESCARGA con el cargador puesto: el rango haría ciclos."
+        echo "  Usa MIN igual a MAX menos 2 en /etc/zen-charge-limit.conf para solo mantener la carga."; exit 1
+    elif [[ $st1 != Charging && $st2 == Charging ]]; then
+        echo "✔ La batería queda en reposo (sin cargar ni descargar): el rango $MIN–$MAX% funcionará"
     elif ((cap >= 100)); then
         echo "• Batería llena: no se puede comprobar la carga ahora. Prueba cuando esté por debajo de 95%"
     else
