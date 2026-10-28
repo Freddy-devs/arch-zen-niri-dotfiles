@@ -1,5 +1,6 @@
-/* Waybar — TokyoNight: barra transparente con "islas" (una por grupo) translúcidas,
-   borde suave de 1 px, esquinas redondeadas y sombra leve. Escritorios estilo Pac-Man al centro. */
+/* Waybar — TokyoNight: la barra entera es de vidrio translúcido (niri desenfoca lo de atrás) con
+   borde suave y esquinas de 8 px; dentro, cada grupo es una "isla" con su fondo y bordes redondeados.
+   Escritorios estilo Pac-Man al centro. */
 @define-color base     #1a1b26;
 @define-color mantle   #16161e;
 @define-color surface  #24283b;
@@ -28,10 +29,19 @@
     border-radius: 0;
 }
 
-/* la barra en sí es transparente: solo se ven las islas */
+/* la barra: fondo translúcido, borde fino con brillo arriba y esquinas de 8 px
+   (el radio coincide con geometry-corner-radius del layer-rule de waybar en niri) */
 window#waybar {
-    background: transparent;
+    background: linear-gradient(180deg, alpha(@surface, 0.45), alpha(@base, 0.38));
+    border: 1px solid alpha(@fg, 0.10);
+    border-top-color: alpha(@fg, 0.18);
+    border-radius: 8px;
     color: @fg;
+}
+
+/* aire entre el borde de la barra y las islas */
+window#waybar > box {
+    padding: 0 4px;
 }
 
 tooltip {
@@ -57,13 +67,13 @@ tooltip label {
 #language,
 #custom-power,
 #clock {
-    background: linear-gradient(180deg, alpha(@surface, 0.80), alpha(@base, 0.72));
-    border: 1px solid alpha(@fg, 0.10);
-    border-top-color: alpha(@fg, 0.17);
-    border-radius: 8px;
-    margin: 0 4px 6px 4px;
+    background: linear-gradient(180deg, alpha(@surface, 0.85), alpha(@base, 0.78));
+    border: 1px solid alpha(@fg, 0.09);
+    border-top-color: alpha(@fg, 0.16);
+    border-radius: 7px;
+    margin: 4px 3px;
     padding: 0 12px;
-    box-shadow: 0 3px 8px alpha(black, 0.35);
+    box-shadow: 0 2px 5px alpha(black, 0.30);
     transition: all 200ms ease;
 }
 
