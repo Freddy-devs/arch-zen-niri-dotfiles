@@ -16,7 +16,7 @@
 @define-color orange   #ff9e64;
 @define-color yellow   #e0af68;
 @define-color pacman   #ffd75f;
-@define-color pellet   #ffb8ae;
+@define-color pellet   #88c0d0;
 @define-color green    #9ece6a;
 @define-color arch     #1793d1;
 /* azul oscuro nórdico: fondo de las islas */
@@ -147,9 +147,9 @@ tooltip label {
 #workspaces button:nth-child(4n+3) { color: @cyan; }
 #workspaces button:nth-child(4n+4) { color: @orange; }
 
-/* bolitas: redondas, color melocotón como en el juego */
+/* bolitas: redondas, celeste nórdico (frost) */
 #workspaces button.empty {
-    color: alpha(@pellet, 0.85);
+    color: @pellet;
 }
 
 #workspaces button.empty label {
