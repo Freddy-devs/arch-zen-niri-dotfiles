@@ -133,6 +133,8 @@ overview {
 
 // ---------- autostart ----------
 spawn-at-startup "waybar"
+// un solo proceso de Alacritty para todas las terminales (menos RAM, abre al instante)
+spawn-at-startup "alacritty" "--daemon"
 // mako no se lanza: D-Bus lo arranca solo con la primera notificación
 // calendario: solo queda en memoria si hay tareas pendientes (clic en el reloj o Super+A)
 spawn-at-startup "zen-calendar" "--daemon"
@@ -251,7 +253,7 @@ binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
 
     // apps
-    Mod+Return hotkey-overlay-title="Terminal" { spawn "alacritty"; }
+    Mod+Return hotkey-overlay-title="Terminal" { spawn-sh "~/.local/bin/zen-term"; }
     Mod+Space hotkey-overlay-title="Lanzador" { spawn "rofi" "-show" "drun"; }
     Mod+D { spawn "rofi" "-show" "drun"; }
     Mod+B hotkey-overlay-title="Lanzador de apps" { spawn "rofi" "-show" "drun"; }

@@ -56,7 +56,7 @@
         "format": "<span color='#f7768e' size='large' rise='-1pt'>󰍛</span>  {usage}%",
         "interval": 2,
         "states": { "high": 80 },
-        "on-click": "alacritty -e btop"
+        "on-click": "~/.local/bin/zen-term -e btop"
     },
 
     "memory": {
@@ -64,7 +64,7 @@
         "interval": 3,
         "states": { "high": 85 },
         "tooltip-format": "{used:0.2f} / {total:0.2f} GiB · swap {swapUsed:0.2f} GiB",
-        "on-click": "alacritty -e btop"
+        "on-click": "~/.local/bin/zen-term -e btop"
     },
 
     "disk": {
@@ -72,7 +72,7 @@
         "path": "/",
         "interval": 60,
         "tooltip-format": "{used} usados de {total} · libre {free}",
-        "on-click": "alacritty --class zen-tui -e sh -c 'df -h -x tmpfs -x devtmpfs; read -p \"Enter para cerrar\" _'"
+        "on-click": "~/.local/bin/zen-term --class zen-tui -e sh -c 'df -h -x tmpfs -x devtmpfs; read -p \"Enter para cerrar\" _'"
     },
 
     // ---------- conexiones ----------
@@ -110,7 +110,7 @@
         "tooltip-format-enumerate-connected": "{device_alias}",
         "tooltip-format-enumerate-connected-battery": "{device_alias} · {device_battery_percentage}%",
         "on-click": "~/.local/bin/zen-toggle bluetooth",
-        "on-click-right": "alacritty --class zen-tui -e bluetui"
+        "on-click-right": "~/.local/bin/zen-term --class zen-tui -e bluetui"
     },
 
     // batería de cada dispositivo Bluetooth conectado (mouse, audífonos…); se oculta si no hay ninguno
@@ -129,7 +129,7 @@
         "format-disconnected": "󰖪 Sin red",
         "tooltip-format-wifi": "{essid} ({signalStrength}%) · {ipaddr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}",
         "tooltip-format-ethernet": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}",
-        "on-click": "alacritty --class zen-tui -e nmtui"
+        "on-click": "~/.local/bin/zen-term --class zen-tui -e nmtui"
     },
 
     "battery": {
@@ -178,7 +178,7 @@
         "exec-if": "command -v checkupdates",
         "interval": 1800,
         "tooltip-format": "{} actualizaciones · clic para actualizar",
-        "on-click": "alacritty -e sh -c 'sudo pacman -Syu; read -rp \"Enter para cerrar\" _'"
+        "on-click": "~/.local/bin/zen-term -e sh -c 'sudo pacman -Syu; read -rp \"Enter para cerrar\" _'"
     },
 
     "tray": {

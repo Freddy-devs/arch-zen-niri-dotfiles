@@ -1,4 +1,7 @@
 # Alacritty — TokyoNight (misma paleta que la barra y fastfetch)
+# Corre como un solo proceso (alacritty --daemon desde niri); cada ventana nueva es
+# "alacritty msg create-window", que comparte GPU, fuentes y librerías: ~10 MB por ventana
+# en lugar de ~50 MB por proceso.
 [general]
 live_config_reload = true
 
@@ -6,7 +9,7 @@ live_config_reload = true
 TERM = "xterm-256color"
 
 [window]
-padding = { x = 18, y = 16 }
+padding = { x = 6, y = 4 }
 dynamic_padding = true
 opacity = 0.92
 decorations = "None"
@@ -14,12 +17,12 @@ title = "Terminal"
 dynamic_title = true
 
 [scrolling]
-history = 10000
+history = 5000
 multiplier = 3
 
 [font]
 size = 11.5
-offset = { x = 0, y = 2 }
+offset = { x = 0, y = 1 }
 builtin_box_drawing = true
 normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
 bold = { family = "JetBrainsMono Nerd Font", style = "Bold" }
@@ -29,6 +32,8 @@ bold_italic = { family = "JetBrainsMono Nerd Font", style = "Bold Italic" }
 [cursor]
 style = { shape = "Beam", blinking = "On" }
 blink_interval = 600
+# deja de parpadear (y de redibujar) a los 5 s sin escribir
+blink_timeout = 5
 thickness = 0.2
 unfocused_hollow = true
 

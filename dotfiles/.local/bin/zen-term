@@ -1,0 +1,5 @@
+#!/bin/sh
+# zen-term [--class X] [-T título] [-e cmd...] — abre una terminal como ventana nueva del
+# Alacritty residente (alacritty --daemon, lanzado por niri). Si no hay ninguno corriendo,
+# arranca un Alacritty normal con los mismos argumentos.
+alacritty msg create-window "$@" 2>/dev/null || exec alacritty "$@"
