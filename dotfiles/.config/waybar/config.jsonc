@@ -67,7 +67,7 @@
     },
 
     "disk": {
-        "format": "<span color='#e0af68' size='large' rise='-1pt'>󰟜</span>  {percentage_used}%",
+        "format": "<span color='#e0af68' rise='0pt'>󰟜</span>  {percentage_used}%",
         "path": "/",
         "interval": 60,
         "tooltip-format": "{used} usados de {total} · libre {free}",
