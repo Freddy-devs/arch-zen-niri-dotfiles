@@ -538,6 +538,8 @@ step_services() {
     systemctl enable --force sddm >/dev/null
     enable NetworkManager bluetooth systemd-timesyncd fstrim.timer pkgfile-update.timer \
         systemd-oomd apparmor nftables systemd-resolved reflector.timer paccache.timer
+    # ddcutil (brillo del monitor externo) habla con el monitor por i2c
+    echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
     # batería de audífonos Bluetooth en la barra: PipeWire la publica por la API experimental de BlueZ
     [[ -f /etc/bluetooth/main.conf ]] &&
         sed -i 's/^#\?Experimental *=.*/Experimental = true/' /etc/bluetooth/main.conf

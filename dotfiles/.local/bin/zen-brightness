@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""zen-brightness — panel de brillo debajo de la barra (mismo estilo que zen-audio).
+
+Un slider por pantalla: la de la laptop (brightnessctl) y los monitores externos por DDC/CI
+(ddcutil, el monitor cambia su propio brillo). Clic en el brillo de waybar o Super+I lo abre;
+otro clic, Super+I o Esc lo cierra. Queda residente: zen-toggle brightness lo muestra al instante.
+"""
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell as Layer  # noqa: E402
+
+CSS = """
+window.zen-brightness { background: transparent; }
+.panel {
+    background: #1a1b26; border-radius: 14px; padding: 14px 14px 8px;
+    color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+}
+.title { font-size: 15px; font-weight: 800; color: #f1f1f1; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #e0af68; margin-right: 8px; }
+.screen { margin-top: 12px; }
+.screen-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 15px; color: #565f89; margin-right: 8px; }
+.screen-name { font-weight: 700; color: #a9b1d6; font-size: 12px; }
+.note { color: #565f89; font-size: 11px; margin-top: 2px; }
+.vol { padding: 2px 0 2px; }
+.pct { font-size: 12px; font-weight: 700; color: #a9b1d6; min-width: 38px; }
+.sun { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; color: #e0af68; font-size: 15px; padding: 0 6px; }
+.sun.low { color: #565f89; font-size: 13px; }
+scale { padding: 0 4px; }
+scale trough { background: #292e42; border-radius: 4px; min-height: 4px; border: none; }
+scale highlight { background: #e0af68; border-radius: 4px; }
+scale:disabled highlight { background: #3b4261; }
+scale slider {
+    background: #c0caf5; border-radius: 50%; min-width: 12px; min-height: 12px;
+    margin: -4px; border: none; box-shadow: none;
+}
+scale:hover slider { background: #f1f1f1; }
+"""
+
+MIN_LAPTOP = 1     # 0 % apaga la pantalla de la laptop: no dejar llegar ahí
+
+
+def run(*cmd, timeout=6):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+# ---------- pantallas ----------
+class Laptop:
+    icon, kind = "󰌢", "laptop"
+
+    def __init__(self, device):
+        self.device, self.name = device, "Pantalla de la laptop"
+
+    def get(self):
+        # brightnessctl -m: dispositivo,clase,actual,porcentaje,máximo
+        parts = run("brightnessctl", "-m", "-d", self.device).strip().split(",")
+        return int(parts[3].rstrip("%")) if len(parts) > 3 else None
+
+    def set(self, pct):
+        run("brightnessctl", "-q", "-d", self.device, "set", f"{max(MIN_LAPTOP, pct)}%")
+
+
+class Monitor:
+    icon, kind = "󰍹", "ddc"
+
+    def __init__(self, bus, name):
+        self.bus, self.name = bus, name
+
+    def get(self):
+        # "VCP 10 C 50 100" = brillo actual 50 de máximo 100
+        out = run("ddcutil", "--bus", self.bus, "--brief", "getvcp", "10").split()
+        try:
+            return round(int(out[3]) * 100 / int(out[4]))
+        except (IndexError, ValueError, ZeroDivisionError):
+            return None
+
+    def set(self, pct):
+        run("ddcutil", "--bus", self.bus, "--noverify", "setvcp", "10", str(pct))
+
+
+def detect():
+    screens = []
+    for line in run("brightnessctl", "-l", "-m", "-c", "backlight").splitlines():
+        if line:
+            screens.append(Laptop(line.split(",")[0]))
+    if shutil.which("ddcutil"):
+        bus = model = None
+        for line in run("ddcutil", "detect", timeout=20).splitlines() + [""]:
+            line = line.strip()
+            if m := re.search(r"/dev/i2c-(\d+)", line):
+                bus = m.group(1)
+            elif line.startswith("Model:"):
+                model = line.split(":", 1)[1].strip()
+            elif not line and bus:
+                screens.append(Monitor(bus, model or f"Monitor (i2c-{bus})"))
+                bus = model = None
+    return screens
+
+
+class Row:
+    """Nombre de la pantalla + slider de brillo. Aplica con una pausa corta: DDC es lento."""
+
+    def __init__(self, screen):
+        self.screen, self.updating, self.pending, self.busy = screen, False, None, False
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.box.add_css_class("screen")
+        head = Gtk.Box()
+        icon = Gtk.Label(label=screen.icon)
+        icon.add_css_class("screen-icon")
+        name = Gtk.Label(label=screen.name, xalign=0, ellipsize=3, hexpand=True)
+        name.add_css_class("screen-name")
+        head.append(icon)
+        head.append(name)
+        self.box.append(head)
+
+        row = Gtk.Box()
+        row.add_css_class("vol")
+        low = Gtk.Label(label="󰃞")
+        low.add_css_class("sun")
+        low.add_css_class("low")
+        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.scale.set_hexpand(True)
+        self.scale.set_draw_value(False)
+        self.scale.connect("value-changed", self.on_change)
+        self.pct = Gtk.Label(xalign=1)
+        self.pct.add_css_class("pct")
+        high = Gtk.Label(label="󰃠")
+        high.add_css_class("sun")
+        for w in (low, self.scale, high, self.pct):
+            row.append(w)
+        self.box.append(row)
+
+    def load(self):
+        def work():
+            pct = self.screen.get()
+            GLib.idle_add(self.show_value, pct)
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_value(self, pct):
+        if pct is None:
+            self.scale.set_sensitive(False)
+            self.pct.set_label("—")
+            return False
+        self.scale.set_sensitive(True)
+        if self.pending is None:
+            self.updating = True
+            self.scale.set_value(pct)
+            self.updating = False
+            self.pct.set_label(f"{pct}%")
+        return False
+
+    def on_change(self, scale):
+        pct = int(scale.get_value())
+        self.pct.set_label(f"{pct}%")
+        if self.updating:
+            return
+        self.pending = pct
+        if not self.busy:
+            self.flush()
+
+    def flush(self):
+        """Un solo comando a la vez; al terminar manda el último valor pedido (sin cola de pasos)."""
+        if self.pending is None:
+            self.busy = False
+            return
+        pct, self.pending, self.busy = self.pending, None, True
+
+        def work():
+            self.screen.set(pct)
+            GLib.idle_add(self.flush)
+        threading.Thread(target=work, daemon=True).start()
+
+
+class Panel:
+    def __init__(self, app):
+        self.app = app
+        self.rows = []
+        self.build()
+        threading.Thread(target=lambda: GLib.idle_add(self.fill, detect()), daemon=True).start()
+
+    def build(self):
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        win = Gtk.ApplicationWindow(application=self.app)
+        win.add_css_class("zen-brightness")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-brightness")
+        Layer.set_layer(win, Layer.Layer.TOP)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 8)
+        Layer.set_margin(win, Layer.Edge.RIGHT, 12)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.hide())
+        win.add_controller(keys)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.add_css_class("panel")
+        panel.set_size_request(320, -1)
+        head = Gtk.Box()
+        icon = Gtk.Label(label="󰃟")
+        icon.add_css_class("title-icon")
+        title = Gtk.Label(label="Brillo", xalign=0, hexpand=True)
+        title.add_css_class("title")
+        head.append(icon)
+        head.append(title)
+        panel.append(head)
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.append(self.list)
+        self.note = Gtk.Label(xalign=0, wrap=True, max_width_chars=40)
+        self.note.add_css_class("note")
+        self.note.set_visible(False)
+        panel.append(self.note)
+
+        win.set_child(panel)
+        self.win = win
+        win.realize()                    # prepara el renderizador ahora y no en el primer clic
+
+    def fill(self, screens):
+        for s in screens:
+            row = Row(s)
+            self.rows.append(row)
+            self.list.append(row.box)
+        if not shutil.which("ddcutil"):
+            self.note.set_label("Para el brillo del monitor externo instala ddcutil (ver README).")
+            self.note.set_visible(True)
+        elif not any(s.kind == "ddc" for s in screens):
+            self.note.set_label("El monitor externo no responde por DDC/CI: actívalo en su menú (OSD).")
+            self.note.set_visible(True)
+        if self.win.get_visible():
+            for row in self.rows:
+                row.load()
+        return False
+
+    def toggle(self):
+        self.hide() if self.win.get_visible() else self.show()
+
+    def show(self):
+        self.win.present()
+        for row in self.rows:
+            row.load()
+
+    def hide(self):
+        self.win.set_visible(False)
+        return True
+
+
+def main():
+    app = Gtk.Application(application_id="pe.zen.Brightness")
+    state = {}
+
+    def activate(a):
+        if "panel" in state:          # otra llamada a zen-brightness: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Panel(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-brightness.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()

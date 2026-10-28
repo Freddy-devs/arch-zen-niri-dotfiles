@@ -163,8 +163,10 @@
 
     "backlight": {
         "format": "<span color='#e0af68'>󰖨</span> {percent}%",
+        "tooltip-format": "Brillo {percent}% · clic: brillo de cada pantalla",
+        "on-click": "~/.local/bin/zen-toggle brightness",
         "on-scroll-up": "brightnessctl set 5%+",
-        "on-scroll-down": "brightnessctl set 5%-"
+        "on-scroll-down": "brightnessctl set 5%- -n 1%"
     },
 
     "custom/updates": {

@@ -26,6 +26,8 @@ cliphist
 flameshot
 xdg-user-dirs
 brightnessctl
+# brillo del monitor externo por DDC/CI (panel zen-brightness)
+ddcutil
 playerctl
 mesa
 vulkan-intel
