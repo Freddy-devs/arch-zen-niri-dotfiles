@@ -30,60 +30,67 @@ MAX_VOL = 150   # como pavucontrol: permite subir sobre 100 %
 CSS = """
 window.zen-audio { background: transparent; }
 .panel {
-    background: #1a1b26; border-radius: 14px; padding: 14px;
+    background: #1a1b26; border-radius: 14px; padding: 14px 14px 10px;
     color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
 }
 .title { font-size: 15px; font-weight: 800; color: #f1f1f1; }
 .title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #7aa2f7; margin-right: 8px; }
-.section { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
-.empty { color: #565f89; padding: 6px 2px; }
-.card {
-    background: #222330; border-radius: 10px; padding: 8px 10px; margin-bottom: 5px;
-    border-left: 3px solid #7aa2f7;
+
+/* pestañas: control segmentado */
+.tabs { background: #16161e; border-radius: 9px; padding: 3px; margin: 12px 0 10px; }
+.tabs button {
+    background: transparent; color: #565f89; border: none; box-shadow: none; border-radius: 7px;
+    font-weight: 700; font-size: 12px; padding: 4px 0; min-height: 0;
 }
-.card.muted { border-left-color: #3b4261; }
-.card.mic { border-left-color: #bb9af7; }
-.card.mic.muted { border-left-color: #3b4261; }
-.pct { font-weight: 800; color: #f1f1f1; min-width: 42px; }
-.card.muted .pct { color: #565f89; }
+.tabs button:hover { color: #a9b1d6; }
+.tabs button:checked { background: #292e42; color: #f1f1f1; }
+.tabs button:focus, .tabs button:focus-visible { outline: none; box-shadow: none; border: none; }
+
+.section { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 12px 2px 4px; }
+.empty { color: #565f89; font-size: 12px; padding: 4px 2px; }
+
+/* fila de volumen, sin tarjeta */
+.vol { padding: 2px 0 6px; }
+.pct { font-size: 12px; font-weight: 700; color: #a9b1d6; min-width: 38px; }
+.vol.muted .pct { color: #565f89; }
 button.mute {
     background: transparent; color: #7aa2f7; border: none; box-shadow: none; border-radius: 8px;
-    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 18px; padding: 2px 8px; min-height: 0;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 16px; padding: 2px 6px; min-height: 0;
 }
-.card.mic button.mute { color: #bb9af7; }
-.card.muted button.mute { color: #f7768e; }
-button.mute:hover { background: #292e42; }
-scale { padding: 0 6px; }
-scale trough { background: #292e42; border-radius: 6px; min-height: 6px; border: none; }
-scale highlight { background: #7aa2f7; border-radius: 6px; }
-.card.mic scale highlight { background: #bb9af7; }
-.card.muted scale highlight { background: #3b4261; }
+.mic button.mute { color: #bb9af7; }
+.vol.muted button.mute { color: #f7768e; }
+button.mute:hover { background: #222330; }
+scale { padding: 0 4px; }
+scale trough { background: #292e42; border-radius: 4px; min-height: 4px; border: none; }
+scale highlight { background: #7aa2f7; border-radius: 4px; }
+.mic scale highlight { background: #bb9af7; }
+.vol.muted scale highlight { background: #3b4261; }
 scale slider {
-    background: #f1f1f1; border-radius: 50%; min-width: 14px; min-height: 14px;
-    margin: -5px; border: none; box-shadow: none;
+    background: #c0caf5; border-radius: 50%; min-width: 12px; min-height: 12px;
+    margin: -4px; border: none; box-shadow: none;
 }
+scale:hover slider { background: #f1f1f1; }
+scale marks, scale mark indicator { color: transparent; min-height: 0; }
+
+/* lista de dispositivos */
 list { background: transparent; }
-row.dev {
-    background: transparent; border-radius: 10px; padding: 6px 8px 6px 10px; margin-bottom: 2px;
-    border-left: 3px solid transparent;
-}
-row.dev:hover { background: #292e42; }
-row.dev:focus { box-shadow: inset 0 0 0 1px #7aa2f7; outline: none; }
-row.dev.active { background: #222330; border-left-color: #7aa2f7; }
-row.dev.active.mic { border-left-color: #bb9af7; }
-.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #565f89; margin-right: 10px; }
+row.dev { background: transparent; border-radius: 8px; padding: 5px 8px; margin-bottom: 1px; }
+row.dev:hover { background: #222330; }
+row.dev:focus { box-shadow: inset 0 0 0 1px #3b4261; outline: none; }
+.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 15px; color: #565f89; margin-right: 10px; min-width: 18px; }
 row.dev.active .dev-icon { color: #7aa2f7; }
-row.dev.active.mic .dev-icon { color: #bb9af7; }
-.dev-name { font-weight: 700; color: #a9b1d6; }
-row.dev.active .dev-name { color: #f1f1f1; }
-.dev-sub { color: #565f89; font-size: 11px; font-weight: 600; }
+.mic row.dev.active .dev-icon { color: #bb9af7; }
+.dev-name { font-weight: 600; color: #a9b1d6; }
+row.dev.active .dev-name { color: #f1f1f1; font-weight: 700; }
+.dev-sub { color: #565f89; font-size: 11px; }
 row.dev.unplugged .dev-name { color: #565f89; }
 .check { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; color: #7aa2f7; }
-row.dev.mic .check { color: #bb9af7; }
-.app-icon { margin-right: 8px; }
-.app-name { font-weight: 700; color: #f1f1f1; }
-.app-sub { color: #7a83b3; font-size: 11px; font-weight: 600; }
-.card.app { border-left-color: #3b4261; }
+.mic .check { color: #bb9af7; }
+
+/* aplicaciones: una línea con icono, nombre y slider */
+.app { padding: 3px 0; }
+.app-icon { margin: 0 6px 0 6px; }
+.app-name { font-weight: 600; color: #a9b1d6; font-size: 12px; min-width: 86px; }
 scrolledwindow { background: transparent; }
 """
 
@@ -195,31 +202,29 @@ def choose_output(out, done):
 class VolumeCard:
     """Tarjeta con botón de silencio, slider y porcentaje. kind: 'sink', 'source' o 'sink-input'."""
 
-    def __init__(self, kind, icon_on, icon_off, extra_class=None, header=None):
+    def __init__(self, kind, icon_on, icon_off, extra_class=None, lead=None):
         self.kind, self.icon_on, self.icon_off = kind, icon_on, icon_off
         self.target, self.muted, self.updating = None, False, False
         self.touched = 0.0       # último movimiento del usuario: no pisar su arrastre
-        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.box.add_css_class("card")
+        self.box = row = Gtk.Box()
+        self.box.add_css_class("vol")
         if extra_class:
             self.box.add_css_class(extra_class)
-        if header:
-            self.box.append(header)
-        row = Gtk.Box()
+        for w in lead or []:
+            row.append(w)
         self.mute_btn = Gtk.Button(valign=Gtk.Align.CENTER, tooltip_text="Silenciar")
         self.mute_btn.add_css_class("mute")
         self.mute_btn.connect("clicked", self.on_mute)
         self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, MAX_VOL, 1)
         self.scale.set_hexpand(True)
         self.scale.set_draw_value(False)
-        self.scale.add_mark(100, Gtk.PositionType.BOTTOM, None)
         self.scale.connect("value-changed", self.on_scale)
         self.pct = Gtk.Label(xalign=1)
         self.pct.add_css_class("pct")
-        row.append(self.mute_btn)
+        if not lead:
+            row.append(self.mute_btn)
         row.append(self.scale)
         row.append(self.pct)
-        self.box.append(row)
 
     def set(self, target, vol, muted):
         self.target, self.muted = target, muted
@@ -281,7 +286,7 @@ class Panel:
 
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         panel.add_css_class("panel")
-        panel.set_size_request(380, -1)
+        panel.set_size_request(340, -1)
 
         head = Gtk.Box()
         icon = Gtk.Label(label="󰕾")
@@ -292,25 +297,44 @@ class Panel:
         head.append(title)
         panel.append(head)
 
-        panel.append(self.section("SALIDA"))
+        stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120,
+                          vhomogeneous=False, interpolate_size=True)
+        tabs = Gtk.Box(homogeneous=True)
+        tabs.add_css_class("tabs")
+        first = None
+        for name, label in (("out", "Salida"), ("in", "Entrada")):
+            btn = Gtk.ToggleButton(label=label, group=first)
+            btn.connect("toggled", lambda b, n=name: b.get_active() and stack.set_visible_child_name(n))
+            tabs.append(btn)
+            first = first or btn
+        panel.append(tabs)
+
+        out = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.out_card = VolumeCard("sink", "󰕾", "󰝟")
-        panel.append(self.out_card.box)
+        out.append(self.out_card.box)
         self.sink_list = self.listbox()
-        panel.append(self.sink_list)
-
-        panel.append(self.section("MICRÓFONO"))
-        self.in_card = VolumeCard("source", "󰍬", "󰍭", "mic")
-        panel.append(self.in_card.box)
-        self.source_list = self.listbox()
-        panel.append(self.source_list)
-
-        self.apps_section = self.section("APLICACIONES")
-        panel.append(self.apps_section)
+        out.append(self.sink_list)
+        out.append(self.section("APLICACIONES"))
         self.apps_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=260,
+        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=200,
                                       hscrollbar_policy=Gtk.PolicyType.NEVER)
         scroller.set_child(self.apps_box)
-        panel.append(scroller)
+        self.apps_empty = Gtk.Label(label="Ninguna aplicación está sonando", xalign=0)
+        self.apps_empty.add_css_class("empty")
+        out.append(self.apps_empty)
+        out.append(scroller)
+        self.apps_scroller = scroller
+        stack.add_named(out, "out")
+
+        inp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        inp.add_css_class("mic")
+        self.in_card = VolumeCard("source", "󰍬", "󰍭", "mic")
+        inp.append(self.in_card.box)
+        self.source_list = self.listbox()
+        inp.append(self.source_list)
+        stack.add_named(inp, "in")
+        panel.append(stack)
+        first.set_active(True)
 
         win.set_child(panel)
         self.win = win
@@ -449,34 +473,25 @@ class Panel:
         while (child := self.apps_box.get_first_child()) is not None:
             self.apps_box.remove(child)
         self.app_cards = {}
+        self.apps_empty.set_visible(not inputs)
+        self.apps_scroller.set_visible(bool(inputs))   # vacío, el scroller igual reserva alto
         if not inputs:
-            lbl = Gtk.Label(label="Ninguna aplicación está sonando", xalign=0)
-            lbl.add_css_class("empty")
-            self.apps_box.append(lbl)
             return
         theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
         for i in inputs:
             props = i.get("properties", {})
             app = props.get("application.name") or props.get("application.process.binary") or "Aplicación"
             media = props.get("media.name", "")
-            head = Gtk.Box(margin_bottom=2)
             icon_name = props.get("application.icon_name") or props.get("application.process.binary", "").lower()
             if not theme.has_icon(icon_name):
                 icon_name = "audio-x-generic"
             img = Gtk.Image.new_from_icon_name(icon_name)
-            img.set_pixel_size(20)
+            img.set_pixel_size(18)
             img.add_css_class("app-icon")
-            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
-            nl = Gtk.Label(label=app, xalign=0, ellipsize=3)
+            nl = Gtk.Label(label=app, xalign=0, ellipsize=3, max_width_chars=12,
+                           tooltip_text=f"{app} · {media}" if media and media != app else app)
             nl.add_css_class("app-name")
-            text.append(nl)
-            if media and media != app:
-                ml = Gtk.Label(label=media, xalign=0, ellipsize=3)
-                ml.add_css_class("app-sub")
-                text.append(ml)
-            head.append(img)
-            head.append(text)
-            card = VolumeCard("sink-input", "󰕾", "󰝟", "app", header=head)
+            card = VolumeCard("sink-input", "󰕾", "󰝟", "app", lead=[img, nl])
             self.app_cards[i["index"]] = card
             self.apps_box.append(card.box)
 
