@@ -36,7 +36,7 @@ gestures {
 
 layout {
     // separación mínima entre ventanas
-    gaps 4
+    gaps 5
     center-focused-column "never"
     always-center-single-column
 
@@ -145,7 +145,7 @@ spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------
 window-rule {
-    geometry-corner-radius 4
+    geometry-corner-radius 8
     clip-to-geometry true
 }
 
