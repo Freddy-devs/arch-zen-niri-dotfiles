@@ -63,7 +63,6 @@ window.thunar toolbar button:disabled {
 
 window.thunar toolbar entry {
     background-color: @zen_mantle;
-    background-image: linear-gradient(to right, alpha(@zen_blue, 0.10), alpha(@zen_purple, 0.12));
     border: 1px solid alpha(@zen_blue, 0.18);
     border-radius: 10px;
     box-shadow: none;
@@ -108,7 +107,6 @@ window.thunar .sidebar treeview.view:hover {
 window.thunar .sidebar treeview.view:selected,
 window.thunar .sidebar treeview.view:selected:focus {
     background-color: @zen_surface0;
-    background-image: linear-gradient(to right, alpha(@zen_blue, 0.25), alpha(@zen_purple, 0.15));
     color: @zen_text;
 }
 

@@ -1,6 +1,7 @@
 /* rofi — lanzador de aplicaciones · TokyoNight (misma paleta que la barra)
  * Super+Space / Super+D / logo de Arch en waybar
- * Lista de dos columnas: icono, nombre y descripción; búsqueda difusa en todas las apps. */
+ * Cabecera con imagen (banner.png, generada por system/art/rofi-banner.py) y el buscador encima;
+ * lista de dos columnas: icono, nombre y descripción. Solo colores planos, sin degradados. */
 
 configuration {
     modi:                 "drun";
@@ -19,7 +20,7 @@ configuration {
 }
 
 * {
-    base:      #1a1b26f2;
+    base:      #1a1b26;
     mantle:    #16161e;
     surface0:  #24283b;
     surface1:  #3b4261;
@@ -51,17 +52,28 @@ window {
 mainbox {
     padding:  16px;
     spacing:  14px;
-    children: [ "inputbar", "message", "listview" ];
+    children: [ "header", "message", "listview" ];
 }
 
-/* ---------- buscador al centro ---------- */
+/* ---------- cabecera: imagen hacker con el buscador encima ---------- */
+header {
+    orientation:      vertical;
+    expand:           false;
+    padding:          76px 10px 10px 10px;
+    border-radius:    10px;
+    border:           1px;
+    border-color:     #7aa2f726;
+    background-image: url("~/.config/rofi/banner.png", width);
+    children:         [ "inputbar" ];
+}
+
 inputbar {
     padding:          9px 14px;
     spacing:          10px;
     border-radius:    10px;
-    border:           0;
-    background-image: linear-gradient(to right, #7aa2f726, #bb9af733);
-    background-color: @mantle;
+    border:           1px;
+    border-color:     #7aa2f740;
+    background-color: #16161ee6;
     children:         [ "textbox-search", "entry", "num-filtered-rows" ];
 }
 
@@ -127,7 +139,6 @@ element alternate.normal {
 }
 
 element selected.normal {
-    background-image: linear-gradient(to right, #7aa2f726, #bb9af71f);
     background-color: @surface0;
     border-color:     #7aa2f766;
 }
