@@ -30,7 +30,7 @@ configuration {
     purple:    #bb9af7;
     cyan:      #7dcfff;
 
-    font:             "Inter 12";
+    font:             "Inter 11";
     background-color: transparent;
     text-color:       @text;
     margin:           0;
@@ -41,24 +41,24 @@ configuration {
 window {
     location:         center;
     anchor:           center;
-    width:            860px;
+    width:            600px;
     border:           1px;
     border-color:     #7aa2f759;
-    border-radius:    22px;
+    border-radius:    14px;
     background-color: @base;
 }
 
 mainbox {
-    padding:  28px;
-    spacing:  22px;
+    padding:  16px;
+    spacing:  14px;
     children: [ "inputbar", "message", "listview" ];
 }
 
 /* ---------- buscador al centro ---------- */
 inputbar {
-    padding:          14px 20px;
-    spacing:          14px;
-    border-radius:    16px;
+    padding:          9px 14px;
+    spacing:          10px;
+    border-radius:    10px;
     border:           0;
     background-image: linear-gradient(to right, #7aa2f726, #bb9af733);
     background-color: @mantle;
@@ -68,7 +68,7 @@ inputbar {
 textbox-search {
     expand:     false;
     str:        "";
-    font:       "Symbols Nerd Font 16";
+    font:       "Symbols Nerd Font 13";
     text-color: @purple;
     vertical-align: 0.5;
 }
@@ -78,7 +78,7 @@ entry {
     placeholder-color: @overlay0;
     cursor:            text;
     vertical-align:    0.5;
-    font:              "Inter 14";
+    font:              "Inter 12";
     text-color:        @text;
 }
 
@@ -101,8 +101,8 @@ textbox {
 /* ---------- lista de apps en dos columnas ---------- */
 listview {
     columns:       2;
-    lines:         7;
-    spacing:       8px 12px;
+    lines:         6;
+    spacing:       4px 8px;
     cycle:         true;
     dynamic:       true;
     fixed-height:  false;
@@ -113,9 +113,9 @@ listview {
 
 element {
     orientation:   horizontal;
-    padding:       10px 14px;
-    spacing:       14px;
-    border-radius: 12px;
+    padding:       7px 10px;
+    spacing:       10px;
+    border-radius: 9px;
     border:        1px;
     border-color:  transparent;
     cursor:        pointer;
@@ -133,7 +133,7 @@ element selected.normal {
 }
 
 element-icon {
-    size:           36px;
+    size:           32px;
     cursor:         inherit;
     vertical-align: 0.5;
 }
