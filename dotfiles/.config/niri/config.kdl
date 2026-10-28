@@ -263,8 +263,8 @@ binds {
     Mod+I hotkey-overlay-title="Brillo de cada pantalla" { spawn-sh "~/.local/bin/zen-toggle brightness"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles: elegir y copiar" { spawn-sh "~/.local/bin/zen-clip menu"; }
-    // Ctrl+Shift+V: últimas 10 copias, flechas + Enter pega al instante (también en la terminal)
-    Ctrl+Shift+V hotkey-overlay-title="Portapapeles: elegir y pegar" { spawn-sh "~/.local/bin/zen-clip pick"; }
+    // Alt+Shift+V: últimas 10 copias, flechas + Enter pega al instante (también en la terminal)
+    Alt+Shift+V hotkey-overlay-title="Portapapeles: elegir y pegar" { spawn-sh "~/.local/bin/zen-clip pick"; }
     Mod+Alt+L hotkey-overlay-title="Bloquear" { spawn "swaylock" "-f"; }
     Mod+Alt+Space hotkey-overlay-title="Idioma del teclado (latam / inglés)" { switch-layout "next"; }
 
