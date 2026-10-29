@@ -1,8 +1,27 @@
 {
   "manifest_version": 3,
   "name": "zen-tab-sleep",
-  "description": "Duerme las pestañas que no usas hace 2 minutos (salvo WhatsApp, Teams y Outlook).",
-  "version": "1.0",
-  "permissions": ["tabs", "alarms"],
-  "background": { "service_worker": "background.js" }
+  "description": "Duerme las pestañas que no usas hace 2 minutos (salvo WhatsApp, Teams y Outlook) y hace que YouTube use VP9 por hardware en vez de AV1.",
+  "version": "1.1",
+  "permissions": [
+    "tabs",
+    "alarms"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.youtube.com/*",
+        "https://*.youtube-nocookie.com/*"
+      ],
+      "js": [
+        "no-av1.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    }
+  ]
 }

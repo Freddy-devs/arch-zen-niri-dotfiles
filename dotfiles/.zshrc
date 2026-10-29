@@ -8,6 +8,8 @@ export EDITOR=nano VISUAL=nano
 export TERMINAL=alacritty
 export BAT_THEME="base16"
 export SUDO_PROMPT="Acceso root para %u. Contraseña: "
+# Erlang/Elixir (mix, iex): sin espera activa, los hilos de la VM no queman CPU mientras esperan
+export ERL_AFLAGS="+sbwt none +sbwtdcpu none +sbwtdio none"
 
 # ---------- historial: recuerda todo lo que escribes, compartido entre terminales
 HISTFILE=~/.config/zsh/zhistory
