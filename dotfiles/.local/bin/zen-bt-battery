@@ -20,7 +20,7 @@ ICONS = {
     "audio-headset": "󰋋", "audio-headphones": "󰋋", "audio-card": "󰓃",
     "phone": "󰏲", "input-tablet": "󰓶",
 }
-BLUE, YELLOW, RED, DIM = "#7aa2f7", "#e0af68", "#f7768e", "#565f89"
+BLUE, YELLOW, RED, DIM = "#88c0d0", "#ebcb8b", "#bf616a", "#616e88"
 
 bus = None
 pending = False

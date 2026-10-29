@@ -1,4 +1,4 @@
-/* rofi — lanzador de aplicaciones · TokyoNight (misma paleta que la barra)
+/* rofi — lanzador de aplicaciones · Nord (misma paleta que la barra)
  * Super+Space / Super+D / logo de Arch en waybar
  * Cabecera con imagen (banner.png, generada por system/art/rofi-banner.py) y el buscador encima;
  * lista de dos columnas: icono, nombre y descripción. Solo colores planos, sin degradados. */
@@ -23,16 +23,16 @@ configuration {
 }
 
 * {
-    base:      #1a1b26;
-    mantle:    #16161e;
-    surface0:  #24283b;
-    surface1:  #3b4261;
-    overlay0:  #565f89;
-    text:      #c0caf5;
-    subtext:   #a9b1d6;
-    blue:      #7aa2f7;
-    purple:    #bb9af7;
-    cyan:      #7dcfff;
+    base:      #242933;
+    mantle:    #1e222a;
+    surface0:  #2e3440;
+    surface1:  #434c5e;
+    overlay0:  #616e88;
+    text:      #eceff4;
+    subtext:   #d8dee9;
+    blue:      #88c0d0;
+    purple:    #b48ead;
+    cyan:      #8fbcbb;
 
     font:             "Inter 11";
     background-color: transparent;
@@ -47,7 +47,7 @@ window {
     anchor:           center;
     width:            600px;
     border:           1px;
-    border-color:     #7aa2f759;
+    border-color:     #88c0d059;
     border-radius:    14px;
     background-color: @base;
 }
@@ -65,7 +65,7 @@ header {
     padding:          76px 10px 10px 10px;
     border-radius:    10px;
     border:           1px;
-    border-color:     #7aa2f726;
+    border-color:     #88c0d026;
     background-image: url("~/.config/rofi/banner.png", width);
     children:         [ "inputbar" ];
 }
@@ -75,8 +75,8 @@ inputbar {
     spacing:          10px;
     border-radius:    10px;
     border:           1px;
-    border-color:     #7aa2f740;
-    background-color: #16161ee6;
+    border-color:     #88c0d040;
+    background-color: #1e222ae6;
     children:         [ "textbox-search", "entry", "num-filtered-rows" ];
 }
 
@@ -143,7 +143,7 @@ element alternate.normal {
 
 element selected.normal {
     background-color: @surface0;
-    border-color:     #7aa2f766;
+    border-color:     #88c0d066;
 }
 
 element-icon {
@@ -153,7 +153,7 @@ element-icon {
 }
 
 element-text {
-    highlight:        bold #bb9af7;
+    highlight:        bold #b48ead;
     horizontal-align: 0;
     vertical-align:   0.5;
     text-color:       @subtext;

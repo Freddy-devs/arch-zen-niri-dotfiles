@@ -1,5 +1,5 @@
 // Waybar — arch-zen-niri: barra de vidrio translúcido (desenfoque de niri) con borde suave y
-// esquinas de 8 px; dentro, una "isla" redondeada por grupo (TokyoNight).
+// esquinas de 8 px; dentro, una "isla" redondeada por grupo (Nord).
 // Izquierda: logo + CPU, RAM y disco · Centro: escritorios estilo Pac-Man
 // Derecha: conexiones, controles, bandeja, la hora (clic = calendario), idioma y energía al final.
 // Sale en todas las pantallas; los escritorios son los de cada pantalla.
@@ -41,7 +41,7 @@
     // clic: abre/cierra el calendario (feriados del Perú, agenda y alarmas).
     // Sin "format-alt" ni "mode": el clic nunca cambia lo que muestra el reloj.
     "clock": {
-        "format": "<span color='#bb9af7'>󰥔</span>  {:%I:%M %p}",
+        "format": "<span color='#b48ead'>󰥔</span>  {:%I:%M %p}",
         "tooltip-format": "{:%A %d de %B de %Y}",
         "on-click": "zen-calendar"
     },
@@ -53,14 +53,14 @@
     },
 
     "cpu": {
-        "format": "<span color='#f7768e' size='large' rise='-1pt'>󰍛</span>  {usage}%",
+        "format": "<span color='#bf616a' size='large' rise='-1pt'>󰍛</span>  {usage}%",
         "interval": 2,
         "states": { "high": 80 },
         "on-click": "~/.local/bin/zen-term -e btop"
     },
 
     "memory": {
-        "format": "<span color='#7dcfff' rise='0pt'></span>  {used:0.1f} GiB",
+        "format": "<span color='#8fbcbb' rise='0pt'></span>  {used:0.1f} GiB",
         "interval": 3,
         "states": { "high": 85 },
         "tooltip-format": "{used:0.2f} / {total:0.2f} GiB · swap {swapUsed:0.2f} GiB",
@@ -68,7 +68,7 @@
     },
 
     "disk": {
-        "format": "<span color='#e0af68' rise='0pt'>󰟜</span>  {percentage_used}%",
+        "format": "<span color='#ebcb8b' rise='0pt'>󰟜</span>  {percentage_used}%",
         "path": "/",
         "interval": 60,
         "tooltip-format": "{used} usados de {total} · libre {free}",
@@ -124,8 +124,8 @@
 
     "network": {
         "interval": 3,
-        "format-wifi": "<span color='#9ece6a'>󰖩</span> {bandwidthTotalBytes}",
-        "format-ethernet": "<span color='#9ece6a'>󰈀</span> {bandwidthTotalBytes}",
+        "format-wifi": "<span color='#a3be8c'>󰖩</span> {bandwidthTotalBytes}",
+        "format-ethernet": "<span color='#a3be8c'>󰈀</span> {bandwidthTotalBytes}",
         "format-disconnected": "󰖪 Sin red",
         "tooltip-format-wifi": "{essid} ({signalStrength}%) · {ipaddr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}\nClic: redes Wi-Fi · clic derecho: avanzado (nmtui)",
         "tooltip-format-ethernet": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}\nClic: redes Wi-Fi · clic derecho: avanzado (nmtui)",
@@ -137,11 +137,11 @@
         "full-at": 99,
         "states": { "warning": 25, "critical": 10 },
         // batería horizontal (se llena de izquierda a derecha); rayo = cargando, enchufe = conectado y llena
-        "format": "<span color='#7aa2f7'>{icon}</span> {capacity}%",
-        "format-charging": "<span color='#9ece6a'>{icon} 󱐋</span> {capacity}%",
-        "format-plugged": "<span color='#9ece6a'>{icon} </span> {capacity}%",
-        "format-not-charging": "<span color='#9ece6a'>{icon} </span> {capacity}%",
-        "format-full": "<span color='#9ece6a'>{icon} </span> {capacity}%",
+        "format": "<span color='#88c0d0'>{icon}</span> {capacity}%",
+        "format-charging": "<span color='#a3be8c'>{icon} 󱐋</span> {capacity}%",
+        "format-plugged": "<span color='#a3be8c'>{icon} </span> {capacity}%",
+        "format-not-charging": "<span color='#a3be8c'>{icon} </span> {capacity}%",
+        "format-full": "<span color='#a3be8c'>{icon} </span> {capacity}%",
         "format-icons": ["", "", "", "", ""],
         "tooltip-format": "Batería · {timeTo}",
         "tooltip-format-charging": "Cargando · {timeTo}",
@@ -157,7 +157,7 @@
     },
 
     "pulseaudio": {
-        "format": "<span color='#7aa2f7'>{icon}</span> {volume}%",
+        "format": "<span color='#88c0d0'>{icon}</span> {volume}%",
         "format-muted": "󰝟 Mudo",
         "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
         "scroll-step": 5,
@@ -166,7 +166,7 @@
     },
 
     "backlight": {
-        "format": "<span color='#e0af68'>󰖨</span> {percent}%",
+        "format": "<span color='#ebcb8b'>󰖨</span> {percent}%",
         "tooltip-format": "Brillo {percent}% · clic: brillo de cada pantalla",
         "on-click": "~/.local/bin/zen-toggle brightness",
         "on-scroll-up": "brightnessctl set 5%+",
@@ -174,7 +174,7 @@
     },
 
     "custom/updates": {
-        "format": "<span color='#9ece6a'>󰚰</span> {}",
+        "format": "<span color='#a3be8c'>󰚰</span> {}",
         "exec": "command -v checkupdates >/dev/null && checkupdates 2>/dev/null | wc -l",
         "exec-if": "command -v checkupdates",
         "interval": 1800,
@@ -189,7 +189,7 @@
 
     // idioma del teclado: latam (por defecto) / inglés. Clic o Super+Alt+Space = alternar
     "niri/language": {
-        "format": "<span color='#7dcfff'>󰌌</span> {short}",
+        "format": "<span color='#8fbcbb'>󰌌</span> {short}",
         "tooltip-format": "{long} · clic o Super+Alt+Space para cambiar",
         "on-click": "niri msg action switch-layout next"
     },

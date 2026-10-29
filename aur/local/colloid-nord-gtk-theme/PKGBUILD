@@ -1,0 +1,23 @@
+# Tema GTK Colloid de su autor original (vinceliuice), variante oscura con la paleta Nord, + paleta Qt
+pkgname=colloid-nord-gtk-theme
+_commit=fe11342f37f124f1b29d44cf33e9a06053f4bba2
+pkgver=0.0.r20260822
+pkgrel=1
+pkgdesc="Colloid GTK theme (Colloid-Dark-Nord) y paleta qt6ct Nord a juego"
+arch=('any')
+url="https://github.com/vinceliuice/Colloid-gtk-theme"
+license=('GPL-3.0-only')
+makedepends=('sassc')
+optdepends=('gtk-engine-murrine: tema GTK2')
+source=("Colloid-gtk-theme-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
+        "Nord.conf")
+sha256sums=('385d29fcf256b69891b3e43e81695c938b4ec3a46628fc4efbfbed06bd4c1520'
+            'SKIP')
+
+package() {
+    install -d "$pkgdir/usr/share/themes"
+    cd "$srcdir/Colloid-gtk-theme-$_commit"
+    # rimless: sin el borde de 1px alrededor de ventanas y menús (más limpio sobre los bordes de niri)
+    bash install.sh -d "$pkgdir/usr/share/themes" -c dark -t default --tweaks nord rimless
+    install -Dm644 "$srcdir/Nord.conf" "$pkgdir/usr/share/qt6ct/colors/Nord.conf"
+}

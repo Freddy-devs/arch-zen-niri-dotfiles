@@ -1,4 +1,4 @@
-# Alacritty — TokyoNight (misma paleta que la barra y fastfetch)
+# Alacritty — Nord (misma paleta que la barra y fastfetch)
 # Corre como un solo proceso (alacritty --daemon desde niri); cada ventana nueva es
 # "alacritty msg create-window", que comparte GPU, fuentes y librerías: ~10 MB por ventana
 # en lugar de ~50 MB por proceso.
@@ -57,43 +57,43 @@ bindings = [
     { key = "Return", mods = "Shift", chars = "\u001B\r" },
 ]
 
-# ---------- TokyoNight ----------
+# ---------- Nord ----------
 [colors.primary]
-background = "#1a1b26"
-foreground = "#c0caf5"
+background = "#242933"
+foreground = "#eceff4"
 
 [colors.cursor]
-text = "#1a1b26"
-cursor = "#c0caf5"
+text = "#242933"
+cursor = "#eceff4"
 
 [colors.selection]
-text = "#c0caf5"
-background = "#33467c"
+text = "#eceff4"
+background = "#4c566a"
 
 [colors.search.matches]
-foreground = "#1a1b26"
-background = "#e0af68"
+foreground = "#242933"
+background = "#ebcb8b"
 
 [colors.search.focused_match]
-foreground = "#1a1b26"
-background = "#9ece6a"
+foreground = "#242933"
+background = "#a3be8c"
 
 [colors.normal]
-black = "#15161e"
-red = "#f7768e"
-green = "#9ece6a"
-yellow = "#e0af68"
-blue = "#7aa2f7"
-magenta = "#bb9af7"
-cyan = "#7dcfff"
-white = "#a9b1d6"
+black = "#1e222a"
+red = "#bf616a"
+green = "#a3be8c"
+yellow = "#ebcb8b"
+blue = "#88c0d0"
+magenta = "#b48ead"
+cyan = "#8fbcbb"
+white = "#d8dee9"
 
 [colors.bright]
-black = "#414868"
-red = "#f7768e"
-green = "#9ece6a"
-yellow = "#e0af68"
-blue = "#7aa2f7"
-magenta = "#bb9af7"
-cyan = "#7dcfff"
-white = "#c0caf5"
+black = "#434c5e"
+red = "#bf616a"
+green = "#a3be8c"
+yellow = "#ebcb8b"
+blue = "#88c0d0"
+magenta = "#b48ead"
+cyan = "#8fbcbb"
+white = "#eceff4"

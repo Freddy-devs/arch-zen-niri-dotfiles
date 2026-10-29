@@ -1,9 +1,9 @@
-# Cabecera del lanzador: lluvia de código + circuito + prompt de terminal, paleta TokyoNight plana.
+# Cabecera del lanzador: lluvia de código + circuito + prompt de terminal, paleta Nord plana.
 import random, sys
 from html import escape
 random.seed(7)
 W, H = 568, 130
-BG, BLUE, PURPLE, CYAN, OVER, TEXT = "#16161e", "#7aa2f7", "#bb9af7", "#7dcfff", "#565f89", "#c0caf5"
+BG, BLUE, PURPLE, CYAN, OVER, TEXT = "#1e222a", "#88c0d0", "#b48ead", "#8fbcbb", "#616e88", "#eceff4"
 o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
      f'<rect width="{W}" height="{H}" fill="{BG}"/>']
 
@@ -39,7 +39,7 @@ o.append(f'<rect x="447" y="59" width="12" height="12" rx="2" fill="{PURPLE}" op
 
 # prompt de terminal
 o.append(f'<rect x="14" y="14" width="262" height="56" rx="8" fill="{BG}" opacity=".88" stroke="{OVER}" stroke-opacity=".35"/>')
-for i, c in enumerate(["#f7768e", "#e0af68", "#9ece6a"]):
+for i, c in enumerate(["#bf616a", "#ebcb8b", "#a3be8c"]):
     o.append(f'<circle cx="{28+i*12}" cy="27" r="3.5" fill="{c}" opacity=".85"/>')
 o.append(f'<text x="26" y="54" font-family="{font}" font-size="13" font-weight="bold" xml:space="preserve">'
          f'<tspan fill="{BLUE}">freddy</tspan><tspan fill="{OVER}">@</tspan><tspan fill="{PURPLE}">arch-zen</tspan>'

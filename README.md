@@ -2,7 +2,7 @@
 
 Un solo script, `install.sh`, convierte un Arch Linux recién instalado (con `archinstall`) en un
 escritorio **mínimo** con **linux-zen**, **niri** (Wayland) y **SDDM** (tema Dark Pirate). Estética
-TokyoNight con sensación bspwm. Trae solo lo necesario para ir rápido y gastar pocos recursos;
+Nord con sensación bspwm. Trae solo lo necesario para ir rápido y gastar pocos recursos;
 navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen-apps`.
 
 ## Qué trae
@@ -13,7 +13,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Login | `sddm` con el tema propio **Dark Pirate** (QML Qt6; X11 solo en la pantalla de login) | extra |
 | Barra / menú / notif. | `waybar` (barra de vidrio translúcido con borde y esquinas redondeadas, con una isla redondeada por grupo: CPU · RAM · disco a la izquierda, escritorios Pac-Man al centro, hora a la derecha antes del idioma y del botón de apagado; clic en la hora = calendario), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
 | Calendario | `zen-calendar` (Rust, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
-| Tema | GTK **TokyoNight-Dark** (GTK2/3/4) · iconos **Nordzy-dark** (Nord) · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
+| Tema | GTK **Colloid-Dark-Nord** (GTK2/3/4) · iconos **Nordzy-dark** (Nord) · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
 | Paneles | Bluetooth `zen-bluetooth` (panel bajo la barra, con el mouse; clic derecho abre `bluetui`), sonido `zen-audio` (panel con volumen, micrófono, dispositivos y apps), brillo `zen-brightness` (laptop + monitor externo por DDC/CI con `ddcutil`; en el monitor activa DDC/CI en su menú), red `zen-network` (panel con la conexión actual y las redes Wi-Fi: buscar, conectar con contraseña en la misma fila, olvidar; Super+N; clic derecho abre `nmtui` para lo avanzado) | extra |
@@ -196,7 +196,7 @@ alta rápida de tareas/alarmas (hora `15:30`, `3pm` o vacía = todo el día) y l
   `↑`/`↓` buscan en el historial lo ya escrito; `Ctrl+R` búsqueda difusa con fzf.
 - `Tab` completa comandos, opciones y argumentos de todo lo instalado (zsh-completions);
   un comando que no existe dice qué paquete lo trae (pkgfile).
-- `z <fragmento>` salta a carpetas visitadas · `neofetch` = fastfetch con el diseño TokyoNight.
+- `z <fragmento>` salta a carpetas visitadas · `neofetch` = fastfetch con el diseño Nord.
 
 **bspwm vs niri:** niri no divide en árbol BSP; cada escritorio es una tira horizontal de columnas
 que se desplaza. `Super+R` y `Super+,` dan el equivalente práctico a las divisiones de bspwm.
@@ -212,7 +212,7 @@ Antes de actualizar, `news` muestra las noticias de archlinux.org (también apar
 ```
 install.sh     post-instalación: todo el sistema en pasos reanudables
 packages/      install-base.txt (base) · desktop.txt (escritorio) · custom.txt (se compilan: yay, tema, zen-calendar)
-aur/local/     PKGBUILD propios: tema TokyoNight, cursor Qogir, zen-calendar
+aur/local/     PKGBUILD propios: tema Nord, cursor Qogir, zen-calendar
 apps/          zen-calendar (Rust)
 system/        sddm (tema Dark Pirate), seguridad, rendimiento, mirrors, hooks, reflector,
                scripts (zen-apps, zen-hwsetup, zen-hwcheck, zen-power…), wallpaper

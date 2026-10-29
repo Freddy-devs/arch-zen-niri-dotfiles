@@ -58,9 +58,9 @@ layout {
     // borde fino y translúcido, a juego con el 1px de la barra
     focus-ring {
         width 1
-        active-gradient from="#7aa2f780" to="#bb9af780" angle=45 relative-to="workspace-view"
-        inactive-color "#3b426150"
-        urgent-color "#f7768e"
+        active-gradient from="#88c0d080" to="#b48ead80" angle=45 relative-to="workspace-view"
+        inactive-color "#434c5e50"
+        urgent-color "#bf616a"
     }
     border {
         off
@@ -73,8 +73,8 @@ layout {
         width 4
         gap 4
         corner-radius 4
-        active-gradient from="#7aa2f7" to="#bb9af7" angle=90
-        inactive-color "#3b4261"
+        active-gradient from="#88c0d0" to="#b48ead" angle=90
+        inactive-color "#434c5e"
     }
     struts {
         left 0
@@ -128,7 +128,7 @@ animations {
 
 // vista general (Super+O): fondo oscuro con la paleta de la barra
 overview {
-    backdrop-color "#16161e"
+    backdrop-color "#1e222a"
 }
 
 // ---------- autostart ----------
@@ -149,7 +149,7 @@ spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-clip watch"
 spawn-at-startup "swayidle" "-w" "timeout" "600" "swaylock -f" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "swaylock -f"
-spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme TokyoNight-Dark; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
+spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme Colloid-Dark-Nord; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
 spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------
@@ -348,6 +348,12 @@ binds {
     Mod+WheelScrollUp   cooldown-ms=150 { focus-workspace-up; }
     Mod+WheelScrollRight { focus-column-right; }
     Mod+WheelScrollLeft  { focus-column-left; }
+    // touchpad: Super + deslizar dos dedos = moverse entre ventanas (izq/der) y espacios (arriba/abajo).
+    // Sin Super, tres dedos ya lo hace solo (niri), y cuatro dedos arriba/abajo abre la vista general.
+    Mod+TouchpadScrollRight cooldown-ms=250 { focus-column-right; }
+    Mod+TouchpadScrollLeft  cooldown-ms=250 { focus-column-left; }
+    Mod+TouchpadScrollDown  cooldown-ms=350 { focus-workspace-down; }
+    Mod+TouchpadScrollUp    cooldown-ms=350 { focus-workspace-up; }
 
     // estados (super + {t,s,f})
     Mod+T { toggle-window-floating; }

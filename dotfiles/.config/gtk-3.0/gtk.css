@@ -1,15 +1,15 @@
-/* Thunar con la paleta del escritorio (TokyoNight, igual que la barra y rofi).
+/* Thunar con la paleta del escritorio (Nord, igual que la barra y rofi).
  * Solo afecta a las ventanas de Thunar; el resto de apps GTK usa el tema tal cual. */
 
-@define-color zen_base     #1a1b26;
-@define-color zen_mantle   #16161e;
-@define-color zen_surface0 #24283b;
-@define-color zen_surface1 #3b4261;
-@define-color zen_overlay0 #565f89;
-@define-color zen_text     #c0caf5;
-@define-color zen_subtext  #a9b1d6;
-@define-color zen_blue     #7aa2f7;
-@define-color zen_purple   #bb9af7;
+@define-color zen_base     #242933;
+@define-color zen_mantle   #1e222a;
+@define-color zen_surface0 #2e3440;
+@define-color zen_surface1 #434c5e;
+@define-color zen_overlay0 #616e88;
+@define-color zen_text     #eceff4;
+@define-color zen_subtext  #d8dee9;
+@define-color zen_blue     #88c0d0;
+@define-color zen_purple   #b48ead;
 
 /* ---------- fondo general ---------- */
 window.thunar,

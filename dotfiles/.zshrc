@@ -44,9 +44,9 @@ zstyle ':completion:*' squeeze-slashes true
 # sin distinguir mayúsculas y completando por partes: "s.d" → systemctl daemon-reload, "nv" → nvim
 zstyle ':completion:*' matcher-list '' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
-zstyle ':completion:*:descriptions' format '%F{#7aa2f7}── %d ──%f'
-zstyle ':completion:*:messages' format '%F{#565f89}%d%f'
-zstyle ':completion:*:warnings' format '%F{#f7768e}nada para: %d%f'
+zstyle ':completion:*:descriptions' format '%F{#88c0d0}── %d ──%f'
+zstyle ':completion:*:messages' format '%F{#616e88}%d%f'
+zstyle ':completion:*:warnings' format '%F{#bf616a}nada para: %d%f'
 zstyle ':completion:*:processes' command 'ps -u $USER -o pid,%cpu,%mem,comm'
 
 setopt autocd menu_complete list_packed auto_list complete_in_word interactive_comments
@@ -56,14 +56,14 @@ bindkey -e
 # Se arma en cada precmd (sin prompt_subst: un nombre de rama no puede ejecutar nada).
 autoload -Uz add-zsh-hook vcs_info
 zstyle ':vcs_info:*' enable git
-zstyle ':vcs_info:git:*' formats ' %B%F{#a9b1d6}git-[%F{#bb9af7}%F{#e0af68} %b%F{#a9b1d6}]-%f%%b'
-zstyle ':vcs_info:git:*' actionformats ' %B%F{#a9b1d6}git-[%F{#bb9af7}%F{#e0af68} %b %F{#f7768e}%a%F{#a9b1d6}]-%f%%b'
+zstyle ':vcs_info:git:*' formats ' %B%F{#d8dee9}git-[%F{#b48ead}%F{#ebcb8b} %b%F{#d8dee9}]-%f%%b'
+zstyle ':vcs_info:git:*' actionformats ' %B%F{#d8dee9}git-[%F{#b48ead}%F{#ebcb8b} %b %F{#bf616a}%a%F{#d8dee9}]-%f%%b'
 
 _zen_prompt() {
     vcs_info
     local here=''
     [[ $PWD == "$HOME" ]] && here=''
-    PROMPT="%B%F{#7aa2f7}%f  %F{#bb9af7}%n%f  %F{#7dcfff}${here}%f  %F{#f7768e}%~%f%b${vcs_info_msg_0_} %B%(?.%F{#9ece6a}.%F{#f7768e})%f%b "
+    PROMPT="%B%F{#88c0d0}%f  %F{#b48ead}%n%f  %F{#8fbcbb}${here}%f  %F{#bf616a}%~%f%b${vcs_info_msg_0_} %B%(?.%F{#a3be8c}.%F{#bf616a})%f%b "
 }
 add-zsh-hook precmd _zen_prompt
 
@@ -71,7 +71,7 @@ add-zsh-hook precmd _zen_prompt
 # sugerencia en gris mientras escribes: primero tu historial, si no hay, el completado (→ acepta)
 ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=40
-ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#565f89'
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#616e88'
 source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
 source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 # ↑/↓ buscan en el historial lo que ya escribiste ("git c" + ↑ = último "git c...")
@@ -89,7 +89,7 @@ bindkey '^[[1;5D' backward-word
 # Ctrl+R historial con búsqueda difusa · Ctrl+T archivos · Alt+C carpetas
 source <(fzf --zsh)
 export FZF_DEFAULT_OPTS="--height 40% --layout reverse --border rounded \
-  --color=bg+:#292e42,fg+:#c0caf5,hl:#bb9af7,hl+:#bb9af7,pointer:#f7768e,prompt:#7aa2f7,info:#565f89,border:#292e42"
+  --color=bg+:#3b4252,fg+:#eceff4,hl:#b48ead,hl+:#b48ead,pointer:#bf616a,prompt:#88c0d0,info:#616e88,border:#3b4252"
 # z <fragmento> salta a carpetas que ya visitaste · zi = elegir con fzf
 eval "$(zoxide init zsh)"
 

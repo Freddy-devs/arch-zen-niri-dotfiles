@@ -1,9 +1,9 @@
-# mako — notificaciones · TokyoNight (misma paleta que la barra)
+# mako — notificaciones · Nord (misma paleta que la barra)
 font=Inter 11
-background-color=#1a1b26f2
-text-color=#c0caf5
-border-color=#7aa2f7
-progress-color=over #3b4261
+background-color=#242933f2
+text-color=#eceff4
+border-color=#88c0d0
+progress-color=over #434c5e
 border-size=2
 border-radius=14
 padding=14,16
@@ -20,10 +20,10 @@ format=<b>%s</b>\n%b
 on-button-middle=exec makoctl menu -n "$id" rofi -dmenu -p "Acción"
 
 [urgency=low]
-border-color=#3b4261
-text-color=#a9b1d6
+border-color=#434c5e
+text-color=#d8dee9
 
 [urgency=critical]
-border-color=#f7768e
+border-color=#bf616a
 background-color=#1f1a24f2
 default-timeout=0

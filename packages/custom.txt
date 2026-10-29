@@ -2,8 +2,8 @@
 # Ayudante del AUR (zen-apps lo usa para Brave Origin, WPS y otros a pedido)
 yay-bin
 # Tema obligatorio (PKGBUILD propios en aur/local, fuentes de sus autores originales):
-# GTK TokyoNight-Dark · cursor Qogir-white-cursors · iconos Nordzy-dark (paleta Nord)
-tokyonight-gtk-theme
+# GTK Colloid-Dark-Nord · cursor Qogir-white-cursors · iconos Nordzy-dark (paleta Nord)
+colloid-nord-gtk-theme
 qogir-white-cursors
 nordzy-icon-theme
 # Apps propias en Rust (apps/)

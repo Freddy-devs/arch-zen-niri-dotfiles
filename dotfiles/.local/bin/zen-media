@@ -135,40 +135,40 @@ def run_window():
     CSS = """
     window.zen-media { background: transparent; }
     .panel {
-        background: #1a1b26; border-radius: 14px; padding: 14px;
-        border: 1px solid alpha(#7aa2f7, 0.18);
-        color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+        background: #242933; border-radius: 14px; padding: 14px;
+        border: 1px solid alpha(#88c0d0, 0.18);
+        color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
     }
-    .art { border-radius: 10px; background: #222330; }
-    .art-empty { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 34px; color: #3b4261; }
-    .title { font-size: 14px; font-weight: 800; color: #f1f1f1; }
-    .artist { color: #a9b1d6; font-weight: 600; font-size: 12px; }
-    .source { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
-    .time { color: #565f89; font-size: 10px; font-weight: 600; font-feature-settings: "tnum"; }
+    .art { border-radius: 10px; background: #2e3440; }
+    .art-empty { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 34px; color: #434c5e; }
+    .title { font-size: 14px; font-weight: 800; color: #eceff4; }
+    .artist { color: #d8dee9; font-weight: 600; font-size: 12px; }
+    .source { color: #616e88; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
+    .time { color: #616e88; font-size: 10px; font-weight: 600; font-feature-settings: "tnum"; }
     scale { padding: 0; margin: 2px 0 0; }
-    scale trough { background: #292e42; border-radius: 3px; min-height: 3px; border: none; }
-    scale highlight { background: #7aa2f7; border-radius: 3px; }
-    scale slider { background: #c0caf5; border-radius: 50%; min-width: 10px; min-height: 10px;
+    scale trough { background: #3b4252; border-radius: 3px; min-height: 3px; border: none; }
+    scale highlight { background: #88c0d0; border-radius: 3px; }
+    scale slider { background: #eceff4; border-radius: 50%; min-width: 10px; min-height: 10px;
                    margin: -4px; border: none; box-shadow: none; }
-    scale:hover slider { background: #f1f1f1; }
+    scale:hover slider { background: #eceff4; }
     button.ctl {
-        background: transparent; color: #a9b1d6; border: none; box-shadow: none; border-radius: 50%;
+        background: transparent; color: #d8dee9; border: none; box-shadow: none; border-radius: 50%;
         font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px;
         min-width: 34px; min-height: 34px; padding: 0;
     }
-    button.ctl:hover { background: #222330; color: #f1f1f1; }
-    button.ctl:disabled { color: #3b4261; }
-    button.play { background: #7aa2f7; color: #1a1b26; font-size: 18px; min-width: 40px; min-height: 40px; }
-    button.play:hover { background: #89b4fa; color: #1a1b26; }
+    button.ctl:hover { background: #2e3440; color: #eceff4; }
+    button.ctl:disabled { color: #434c5e; }
+    button.play { background: #88c0d0; color: #242933; font-size: 18px; min-width: 40px; min-height: 40px; }
+    button.play:hover { background: #81a1c1; color: #242933; }
     button:focus, button:focus-visible { outline: none; }
     .chips { margin-bottom: 10px; }
     button.chip {
-        background: #16161e; color: #565f89; border: none; box-shadow: none; border-radius: 7px;
+        background: #1e222a; color: #616e88; border: none; box-shadow: none; border-radius: 7px;
         font-size: 11px; font-weight: 700; padding: 2px 10px; min-height: 0;
     }
-    button.chip:hover { color: #a9b1d6; }
-    button.chip.on { background: #292e42; color: #f1f1f1; }
-    .empty { color: #565f89; font-weight: 600; }
+    button.chip:hover { color: #d8dee9; }
+    button.chip.on { background: #3b4252; color: #eceff4; }
+    .empty { color: #616e88; font-weight: 600; }
     """
 
     class Window:

@@ -37,59 +37,59 @@ TYPE_NAMES = {"802-3-ethernet": "Cable", "802-11-wireless": "Wi-Fi", "wireguard"
 CSS = """
 window.zen-net { background: transparent; }
 .panel {
-    background: #1a1b26; border-radius: 14px; padding: 14px;
-    color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+    background: #242933; border-radius: 14px; padding: 14px;
+    color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
 }
-.title { font-size: 15px; font-weight: 800; color: #f1f1f1; }
-.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #7aa2f7; margin-right: 8px; }
-.section { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
-.empty { color: #565f89; padding: 6px 2px; }
-.status { color: #7a83b3; font-weight: 600; margin-top: 10px; }
-.status.ok { color: #9ece6a; }
-.status.err { color: #f7768e; }
+.title { font-size: 15px; font-weight: 800; color: #eceff4; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #88c0d0; margin-right: 8px; }
+.section { color: #616e88; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
+.empty { color: #616e88; padding: 6px 2px; }
+.status { color: #7b88a1; font-weight: 600; margin-top: 10px; }
+.status.ok { color: #a3be8c; }
+.status.err { color: #bf616a; }
 list { background: transparent; }
 row.dev {
-    background: #222330; border-radius: 10px; padding: 8px 8px 8px 10px; margin-bottom: 5px;
-    border-left: 3px solid #3b4261;
+    background: #2e3440; border-radius: 10px; padding: 8px 8px 8px 10px; margin-bottom: 5px;
+    border-left: 3px solid #434c5e;
 }
-row.dev:hover { background: #292e42; }
-row.dev:focus { box-shadow: inset 0 0 0 1px #7aa2f7; outline: none; }
-row.dev.connected { border-left-color: #9ece6a; }
-row.dev.saved { border-left-color: #7aa2f7; }
-row.dev.asking { background: #292e42; border-left-color: #bb9af7; }
-.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 20px; color: #a9b1d6; margin-right: 10px; min-width: 22px; }
-row.dev.connected .dev-icon { color: #9ece6a; }
-row.dev.saved .dev-icon { color: #7aa2f7; }
-.dev-name { font-weight: 700; color: #f1f1f1; }
-.dev-sub { color: #7a83b3; font-size: 11px; font-weight: 600; }
-row.dev.connected .dev-sub { color: #9ece6a; }
-.lock { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 11px; color: #565f89; margin-left: 5px; }
+row.dev:hover { background: #3b4252; }
+row.dev:focus { box-shadow: inset 0 0 0 1px #88c0d0; outline: none; }
+row.dev.connected { border-left-color: #a3be8c; }
+row.dev.saved { border-left-color: #88c0d0; }
+row.dev.asking { background: #3b4252; border-left-color: #b48ead; }
+.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 20px; color: #d8dee9; margin-right: 10px; min-width: 22px; }
+row.dev.connected .dev-icon { color: #a3be8c; }
+row.dev.saved .dev-icon { color: #88c0d0; }
+.dev-name { font-weight: 700; color: #eceff4; }
+.dev-sub { color: #7b88a1; font-size: 11px; font-weight: 600; }
+row.dev.connected .dev-sub { color: #a3be8c; }
+.lock { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 11px; color: #616e88; margin-left: 5px; }
 entry.pass {
-    background: #1a1b26; color: #f1f1f1; border-radius: 8px; border: 1px solid #3b4261;
+    background: #242933; color: #eceff4; border-radius: 8px; border: 1px solid #434c5e;
     box-shadow: none; padding: 2px 8px; min-height: 28px; margin: 8px 6px 2px 0;
 }
-entry.pass:focus-within { border-color: #7aa2f7; }
+entry.pass:focus-within { border-color: #88c0d0; }
 button.act {
-    background: #292e42; color: #c0caf5; border-radius: 8px; border: none; box-shadow: none;
+    background: #3b4252; color: #eceff4; border-radius: 8px; border: none; box-shadow: none;
     padding: 4px 10px; font-weight: 700; font-size: 12px; min-height: 0;
 }
-button.act:hover { background: #3b4261; color: #f1f1f1; }
-button.act.primary { background: #7aa2f7; color: #1a1b26; }
-button.act.primary:hover { background: #89b4fa; }
+button.act:hover { background: #434c5e; color: #eceff4; }
+button.act.primary { background: #88c0d0; color: #242933; }
+button.act.primary:hover { background: #81a1c1; }
 button.pass-ok { margin: 8px 0 2px 0; }
 button.icon {
-    background: transparent; color: #565f89; border: none; box-shadow: none; border-radius: 8px;
+    background: transparent; color: #616e88; border: none; box-shadow: none; border-radius: 8px;
     font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; padding: 4px 8px; min-height: 0;
 }
-button.icon:hover { background: #292e42; color: #f7768e; }
+button.icon:hover { background: #3b4252; color: #bf616a; }
 button.scan {
-    background: #222330; color: #a9b1d6; border-radius: 8px; border: none; box-shadow: none;
+    background: #2e3440; color: #d8dee9; border-radius: 8px; border: none; box-shadow: none;
     font-weight: 700; font-size: 12px; padding: 2px 10px; min-height: 0;
 }
-button.scan:hover { background: #292e42; color: #f1f1f1; }
-switch { background: #292e42; border: none; }
-switch:checked { background: #7aa2f7; }
-switch slider { background: #f1f1f1; }
+button.scan:hover { background: #3b4252; color: #eceff4; }
+switch { background: #3b4252; border: none; }
+switch:checked { background: #88c0d0; }
+switch slider { background: #eceff4; }
 scrolledwindow { background: transparent; }
 """
 

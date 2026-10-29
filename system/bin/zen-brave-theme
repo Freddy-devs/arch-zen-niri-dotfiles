@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Personaliza Brave Origin (brave-origin-bin) para que combine con el escritorio:
-#   - toma los colores del tema GTK del sistema (TokyoNight-Dark) y sigue su modo oscuro
+#   - toma los colores del tema GTK del sistema (Colloid-Dark-Nord) y sigue su modo oscuro
 #   - pestañas verticales a la izquierda, colapsadas (solo iconos, no se abren al pasar el
 #     cursor; se despliegan con el botón de arriba), sin barra de título
 #   - al abrir, continúa donde lo dejaste (ventanas y pestañas)

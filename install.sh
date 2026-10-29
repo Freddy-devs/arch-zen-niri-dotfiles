@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install.sh — convierte un Arch recién instalado (archinstall o a mano) en arch-zen-niri:
-#   niri (Wayland) + SDDM Dark Pirate + tema TokyoNight + dotfiles, seguridad "caja fuerte",
+#   niri (Wayland) + SDDM Dark Pirate + tema Nord + dotfiles, seguridad "caja fuerte",
 #   snapper + grub-btrfs, ajustes de hardware y rendimiento.
 #
 #   git clone https://github.com/Freddy-devs/arch-zen-niri-iso.git
@@ -169,7 +169,7 @@ clear 2>/dev/null || true
 cat <<EOF
   ┌──────────────────────────────────────────────┐
   │   arch-zen-niri · post-instalación v$VERSION      │
-  │   niri · SDDM · TokyoNight · caja fuerte     │
+  │   niri · SDDM · Nord · caja fuerte           │
   └──────────────────────────────────────────────┘
   Usuario:    $USR
   Cargador:   $BOOTLOADER
@@ -273,7 +273,7 @@ step_packages() {
 }
 
 step_aur() {
-    (( DO_AUR )) || { warn "--no-aur: sin yay, tema TokyoNight, cursor ni zen-calendar"; return 0; }
+    (( DO_AUR )) || { warn "--no-aur: sin yay, tema Nord, cursor ni zen-calendar"; return 0; }
     local -a all pkgs=() makedeps=() failed=()
     local p src conf
     mapfile -t all < <(pkglist "$ROOT/packages/custom.txt")
@@ -590,7 +590,7 @@ step_snapshot() {
 run clock    "Reloj sincronizado"
 run pacman   "pacman: descargas paralelas, color, multilib, mirrors, llavero"
 run packages "Paquetes del sistema y escritorio"
-run aur      "Paquetes propios: yay, tema TokyoNight, cursor Qogir, zen-calendar"
+run aur      "Paquetes propios: yay, tema Nord, cursor Qogir, zen-calendar"
 run files    "Configuración del sistema (SDDM, seguridad, rendimiento)"
 run dotfiles "Dotfiles (niri, waybar, rofi, alacritty, zsh…)"
 run users    "Shell zsh, sudo y bloqueo por contraseñas fallidas"
