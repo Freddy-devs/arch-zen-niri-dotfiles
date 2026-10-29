@@ -20,8 +20,9 @@ configuration {
     scroll-method:        0;
     hover-select:         true;
     kb-cancel:            "Escape,Super+space";
-    /* cada app se abre con zen-run, que elige la gráfica: Intel o NVIDIA (~/.config/zen-gpu/reglas) */
-    run-command:          "zen-run {cmd}";
+    /* cada app se abre con zen-run, que elige la gráfica: Intel o NVIDIA (~/.config/zen-gpu/reglas).
+       Ruta completa vía sh: el PATH de la sesión de niri no siempre trae ~/.local/bin */
+    run-command:          "sh -c 'exec \"$HOME/.local/bin/zen-run\" \"$@\"' zen-run {cmd}";
 }
 
 * {
