@@ -2,7 +2,7 @@
 # zen-traspaso — túnel WireGuard para que otro PC de la red local le pase archivos a esta laptop.
 #
 # Respeta la "caja fuerte" del cortafuegos: no queda nada abierto ni habilitado al arrancar.
-#   sudo zen-traspaso preparar        llaves de esta laptop + ~/traspaso-otro-pc.sh para el otro PC
+#   sudo zen-traspaso preparar        llaves de esta laptop + ~/Descargas/traspaso-otro-pc.sh para el otro PC
 #   sudo zen-traspaso par WG_PUB 'SSH_PUB'   registra las llaves PÚBLICAS que imprimió el otro PC
 #   sudo zen-traspaso encender        túnel + SSH solo dentro del túnel + 2 reglas de cortafuegos
 #   sudo zen-traspaso apagar          quita todo lo anterior
@@ -45,7 +45,11 @@ preparar() {
     ssh-keygen -A >/dev/null                         # llaves de host de sshd si faltan
     local pub ip; pub=$(wg pubkey < "$KEY"); ip=$(lan_ip)
     [[ -n $ip ]] || die "Sin red: conéctate a la red local primero"
-    local out=$CASA/traspaso-otro-pc.sh
+    # en Descargas del usuario, a mano para copiarlo al USB o mandarlo por chat
+    local desc; desc=$(sudo -u "$USUARIO" xdg-user-dir DOWNLOAD 2>/dev/null)
+    [[ -n $desc && $desc != "$CASA" ]] || desc=$CASA/Descargas
+    install -d -o "$USUARIO" -g "$(id -gn "$USUARIO")" "$desc"
+    local out=$desc/traspaso-otro-pc.sh
     # solo lleva datos públicos (llave pública e IP): se puede mandar por cualquier medio
     cat > "$out" <<EOF
 #!/usr/bin/env bash
