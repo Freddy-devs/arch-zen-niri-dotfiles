@@ -21,6 +21,9 @@ import time
 from datetime import date, datetime, timedelta
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+# dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
+os.environ.setdefault("GSK_RENDERER", "cairo")
+
 LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
 if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
     os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
