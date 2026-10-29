@@ -16,7 +16,7 @@
 
     "modules-left": ["custom/arch", "group/stats", "group/storage"],
     "modules-center": ["niri/workspaces"],
-    "modules-right": ["group/bt", "group/netbat", "group/controls", "tray", "clock", "custom/updates", "niri/language", "custom/power"],
+    "modules-right": ["group/bt", "group/netbat", "group/controls", "tray", "clock", "battery", "niri/language", "custom/power"],
 
     // logo: abre el lanzador (igual que Super+Space)
     "custom/arch": {
@@ -99,7 +99,7 @@
     // ---------- red y batería de la laptop ----------
     "group/netbat": {
         "orientation": "horizontal",
-        "modules": ["network", "battery"]
+        "modules": ["network", "custom/updates"]
     },
 
     // reproductor: abre zen-media (mini ventana abajo al centro) con lo que suene en Brave, Spotify, VLC…
@@ -188,7 +188,7 @@
     },
 
     "custom/updates": {
-        "format": "<span color='#b9c244'>󰚰</span> {}",
+        "format": "<span color='#b9c244'>󰏔</span> {}",
         "exec": "command -v checkupdates >/dev/null && checkupdates 2>/dev/null | wc -l",
         "exec-if": "command -v checkupdates",
         "interval": 1800,
