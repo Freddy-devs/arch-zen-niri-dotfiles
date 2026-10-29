@@ -3,8 +3,8 @@
 #   niri (Wayland) + SDDM Dark Pirate + tema Nord + dotfiles, seguridad "caja fuerte",
 #   snapper + grub-btrfs, ajustes de hardware y rendimiento.
 #
-#   git clone https://github.com/Freddy-devs/arch-zen-niri-iso.git
-#   cd arch-zen-niri-iso && ./install.sh
+#   git clone https://github.com/Freddy-devs/arch-zen-niri-dotfiles.git
+#   cd arch-zen-niri-dotfiles && ./install.sh
 #
 # Robusto: cada paso queda registrado; si algo falla (corte de red, de luz…), vuelve a ejecutarlo y
 # continúa desde el paso que falló. Se puede repetir sin romper nada. Ver ./install.sh --help
@@ -18,7 +18,7 @@ LOG=/var/log/zen-postinstall.log
 MIN_FREE_GB=8
 MIN_BAT=40        # % mínimo de batería si no hay cargador
 DOWNLOAD_TRIES=3
-PREBUILT_URL=https://github.com/Freddy-devs/arch-zen-niri-iso/releases/download/paquetes
+PREBUILT_URL=https://github.com/Freddy-devs/arch-zen-niri-dotfiles/releases/download/paquetes
 STEP_NAMES=(clock pacman packages aur files dotfiles users boot snapper services hardware dns snapshot)
 
 c_b=$'\033[1;34m'; c_g=$'\033[1;32m'; c_r=$'\033[1;31m'; c_y=$'\033[1;33m'; c_0=$'\033[0m'

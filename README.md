@@ -102,8 +102,8 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
 4. Entra con tu usuario (pantalla de texto), conéctate (`nmtui`) y ejecuta:
    ```bash
    sudo pacman -S --needed git
-   git clone https://github.com/Freddy-devs/arch-zen-niri-iso.git
-   cd arch-zen-niri-iso && ./install.sh
+   git clone https://github.com/Freddy-devs/arch-zen-niri-dotfiles.git
+   cd arch-zen-niri-dotfiles && ./install.sh
    ```
    Instala niri, SDDM Dark Pirate, tema, dotfiles, seguridad, snapper y ajustes de hardware.
    Pregunta solo el teclado y una confirmación. Reinicia al final.
@@ -121,7 +121,7 @@ MySQL no está en los repos oficiales de Arch; **MariaDB** es el reemplazo ofici
   o del AUR que fallen se avisan al final en vez de abortar todo.
 - Lo que ya tenías en tu carpeta personal queda respaldado como `archivo.~1~` (solo si cambia).
 - **Rápido**: el tema, el cursor y zen-calendar se descargan ya compilados del Release
-  [`paquetes`](https://github.com/Freddy-devs/arch-zen-niri-iso/releases/tag/paquetes)
+  [`paquetes`](https://github.com/Freddy-devs/arch-zen-niri-dotfiles/releases/tag/paquetes)
   (los genera GitHub Actions cada vez que cambian `aur/local/` o `apps/`, con `SHA256SUMS`).
   Solo si falta la versión exacta del PKGBUILD se compilan en el equipo.
 - Si un paquete propio (yay, tema, calendario) no compila, el resto sigue; al volver a ejecutar
