@@ -40,19 +40,19 @@
     border-radius: 0;
 }
 
-/* la barra: fondo sólido Tokyo Night, borde fino con brillo arriba y esquinas de 8 px
-   (el radio coincide con geometry-corner-radius del layer-rule de waybar en niri) */
+/* la barra: la ventana queda transparente y el fondo, el borde y las esquinas van en la caja de
+   adentro (GTK3 pinta el fondo de la ventana como rectángulo: asomaban esquinas negras).
+   El radio coincide con geometry-corner-radius del layer-rule de waybar en niri. */
 window#waybar {
-    background: @barbg;
-    border: 1px solid alpha(@frost, 0.14);
-    border-top-color: @frost;
-    border-radius: 8px;
+    background: transparent;
     color: @fg;
 }
 
-/* aire entre el borde de la barra y las islas */
 window#waybar > box {
-    padding: 0 6px;
+    background: @barbg;
+    border: 1px solid alpha(@line, 0.9);
+    border-radius: 8px;
+    padding: 0 6px;   /* aire entre el borde de la barra y las islas */
 }
 
 tooltip {
