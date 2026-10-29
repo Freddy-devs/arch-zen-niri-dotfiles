@@ -12,7 +12,7 @@ gnome-keyring
 waybar
 # calendario de la barra (zen-calendar, Rust): GTK4 + layer-shell, sonidos de alarma
 gtk4-layer-shell
-# paneles de Bluetooth y sonido de la barra (zen-bluetooth, zen-audio; Python): GTK4 + D-Bus de BlueZ
+# paneles de Bluetooth, sonido y red de la barra (zen-bluetooth, zen-audio, zen-network; Python): GTK4 + D-Bus de BlueZ + libnm
 python-gobject
 python-dbus
 sound-theme-freedesktop

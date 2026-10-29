@@ -127,9 +127,10 @@
         "format-wifi": "<span color='#9ece6a'>󰖩</span> {bandwidthTotalBytes}",
         "format-ethernet": "<span color='#9ece6a'>󰈀</span> {bandwidthTotalBytes}",
         "format-disconnected": "󰖪 Sin red",
-        "tooltip-format-wifi": "{essid} ({signalStrength}%) · {ipaddr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}",
-        "tooltip-format-ethernet": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}",
-        "on-click": "~/.local/bin/zen-term --class zen-tui -e nmtui"
+        "tooltip-format-wifi": "{essid} ({signalStrength}%) · {ipaddr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}\nClic: redes Wi-Fi · clic derecho: avanzado (nmtui)",
+        "tooltip-format-ethernet": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}\nClic: redes Wi-Fi · clic derecho: avanzado (nmtui)",
+        "on-click": "~/.local/bin/zen-toggle network",
+        "on-click-right": "~/.local/bin/zen-term --class zen-tui -e nmtui"
     },
 
     "battery": {

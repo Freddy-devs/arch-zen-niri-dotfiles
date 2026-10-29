@@ -142,6 +142,7 @@ spawn-at-startup "zen-calendar" "--daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-audio --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-media --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-bluetooth --daemon"
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-network --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-brightness --daemon"
 spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
@@ -218,6 +219,7 @@ layer-rule {
 
 layer-rule {
     match namespace="^zen-bluetooth$"
+    match namespace="^zen-network$"
     match namespace="^zen-audio$"
     match namespace="^zen-media$"
     match namespace="^zen-brightness$"
@@ -262,6 +264,7 @@ binds {
     Mod+M hotkey-overlay-title="Reproductor de música" { spawn-sh "~/.local/bin/zen-toggle media"; }
     Mod+S hotkey-overlay-title="Sonido (volumen, salidas, micrófono)" { spawn-sh "~/.local/bin/zen-toggle audio"; }
     Mod+Shift+B hotkey-overlay-title="Bluetooth" { spawn-sh "~/.local/bin/zen-toggle bluetooth"; }
+    Mod+N hotkey-overlay-title="Red y Wi-Fi" { spawn-sh "~/.local/bin/zen-toggle network"; }
     Mod+I hotkey-overlay-title="Brillo de cada pantalla" { spawn-sh "~/.local/bin/zen-toggle brightness"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles: elegir y copiar" { spawn-sh "~/.local/bin/zen-clip menu"; }

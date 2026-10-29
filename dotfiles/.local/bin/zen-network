@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+"""zen-network — panel de red debajo de la barra (mismo estilo que zen-bluetooth).
+
+Clic en el ícono de red de waybar lo abre; otro clic (o Esc) lo cierra.
+Habla directo con NetworkManager por libnm: muestra la conexión actual, busca redes
+Wi-Fi y conecta (la contraseña se escribe en la misma fila). Lo avanzado (red oculta,
+802.1X, IP fija) sigue en nmtui con clic derecho en la barra.
+"""
+import os
+import signal
+import sys
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+gi.require_version("NM", "1.0")
+from gi.repository import Gdk, GLib, Gtk, NM, Gtk4LayerShell as Layer  # noqa: E402
+
+ApFlags = getattr(NM, "80211ApFlags")
+Sec = getattr(NM, "80211ApSecurityFlags")
+ACState = NM.ActiveConnectionState
+# fallas de activación que significan "contraseña incorrecta"
+BAD_PASSWORD = {NM.ActiveConnectionStateReason.NO_SECRETS, NM.ActiveConnectionStateReason.LOGIN_FAILED}
+
+SIGNAL_ICONS = ["󰤯", "󰤟", "󰤢", "󰤥", "󰤨"]
+TYPE_ICONS = {"802-3-ethernet": "󰈀", "802-11-wireless": "󰖩", "wireguard": "󰒃", "vpn": "󰒃"}
+TYPE_NAMES = {"802-3-ethernet": "Cable", "802-11-wireless": "Wi-Fi", "wireguard": "WireGuard", "vpn": "VPN"}
+
+CSS = """
+window.zen-net { background: transparent; }
+.panel {
+    background: #1a1b26; border-radius: 14px; padding: 14px;
+    color: #c0caf5; font-family: Inter, sans-serif; font-size: 13px;
+}
+.title { font-size: 15px; font-weight: 800; color: #f1f1f1; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #7aa2f7; margin-right: 8px; }
+.section { color: #565f89; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
+.empty { color: #565f89; padding: 6px 2px; }
+.status { color: #7a83b3; font-weight: 600; margin-top: 10px; }
+.status.ok { color: #9ece6a; }
+.status.err { color: #f7768e; }
+list { background: transparent; }
+row.dev {
+    background: #222330; border-radius: 10px; padding: 8px 8px 8px 10px; margin-bottom: 5px;
+    border-left: 3px solid #3b4261;
+}
+row.dev:hover { background: #292e42; }
+row.dev:focus { box-shadow: inset 0 0 0 1px #7aa2f7; outline: none; }
+row.dev.connected { border-left-color: #9ece6a; }
+row.dev.saved { border-left-color: #7aa2f7; }
+row.dev.asking { background: #292e42; border-left-color: #bb9af7; }
+.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 20px; color: #a9b1d6; margin-right: 10px; min-width: 22px; }
+row.dev.connected .dev-icon { color: #9ece6a; }
+row.dev.saved .dev-icon { color: #7aa2f7; }
+.dev-name { font-weight: 700; color: #f1f1f1; }
+.dev-sub { color: #7a83b3; font-size: 11px; font-weight: 600; }
+row.dev.connected .dev-sub { color: #9ece6a; }
+.lock { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 11px; color: #565f89; margin-left: 5px; }
+entry.pass {
+    background: #1a1b26; color: #f1f1f1; border-radius: 8px; border: 1px solid #3b4261;
+    box-shadow: none; padding: 2px 8px; min-height: 28px; margin: 8px 6px 2px 0;
+}
+entry.pass:focus-within { border-color: #7aa2f7; }
+button.act {
+    background: #292e42; color: #c0caf5; border-radius: 8px; border: none; box-shadow: none;
+    padding: 4px 10px; font-weight: 700; font-size: 12px; min-height: 0;
+}
+button.act:hover { background: #3b4261; color: #f1f1f1; }
+button.act.primary { background: #7aa2f7; color: #1a1b26; }
+button.act.primary:hover { background: #89b4fa; }
+button.pass-ok { margin: 8px 0 2px 0; }
+button.icon {
+    background: transparent; color: #565f89; border: none; box-shadow: none; border-radius: 8px;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; padding: 4px 8px; min-height: 0;
+}
+button.icon:hover { background: #292e42; color: #f7768e; }
+button.scan {
+    background: #222330; color: #a9b1d6; border-radius: 8px; border: none; box-shadow: none;
+    font-weight: 700; font-size: 12px; padding: 2px 10px; min-height: 0;
+}
+button.scan:hover { background: #292e42; color: #f1f1f1; }
+switch { background: #292e42; border: none; }
+switch:checked { background: #7aa2f7; }
+switch slider { background: #f1f1f1; }
+scrolledwindow { background: transparent; }
+"""
+
+
+def ap_ssid(ap):
+    ssid = ap.get_ssid()
+    return NM.utils_ssid_to_utf8(ssid.get_data()) if ssid else ""
+
+
+def conn_ssid(conn):
+    s = conn.get_setting_wireless()
+    ssid = s.get_ssid() if s else None
+    return NM.utils_ssid_to_utf8(ssid.get_data()) if ssid else ""
+
+
+def security(ap):
+    """(etiqueta, key-mgmt a usar o None si es abierta, soportada en el panel)"""
+    wpa, rsn = ap.get_wpa_flags(), ap.get_rsn_flags()
+    both = wpa | rsn
+    if both & Sec.KEY_MGMT_802_1X:
+        return "Empresarial", None, False
+    if rsn & Sec.KEY_MGMT_OWE:
+        return "Abierta cifrada", None, True
+    if both & Sec.KEY_MGMT_PSK:
+        return ("WPA2" if rsn else "WPA"), "wpa-psk", True
+    if rsn & Sec.KEY_MGMT_SAE:
+        return "WPA3", "sae", True
+    if ap.get_flags() & ApFlags.PRIVACY:
+        return "WEP", None, False
+    return "Abierta", None, True
+
+
+class Panel:
+    def __init__(self, app):
+        self.app = app
+        self.client = NM.Client.new(None)
+        self.wifi = next((d for d in self.client.get_devices() if isinstance(d, NM.DeviceWifi)), None)
+        self.busy = set()          # SSID con una conexión en curso
+        self.asking = None         # SSID que muestra el campo de contraseña
+        self.refresh_pending = False
+        self.updating_switch = False
+        self.scanning = False
+
+        c = self.client
+        for sig in ("notify::wireless-enabled", "notify::active-connections",
+                    "connection-added", "connection-removed"):
+            c.connect(sig, lambda *a: self.queue_refresh())
+        if self.wifi:
+            for sig in ("access-point-added", "access-point-removed", "notify::active-access-point"):
+                self.wifi.connect(sig, lambda *a: self.queue_refresh())
+            self.wifi.connect("notify::last-scan", lambda *a: self.scan_done())
+
+        self.build_window()
+
+    # ---------- ventana ----------
+    def build_window(self):
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        win = Gtk.ApplicationWindow(application=self.app)
+        win.add_css_class("zen-net")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-network")
+        Layer.set_layer(win, Layer.Layer.TOP)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 8)
+        Layer.set_margin(win, Layer.Edge.RIGHT, 12)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.close())
+        win.add_controller(keys)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.add_css_class("panel")
+        panel.set_size_request(380, -1)
+
+        head = Gtk.Box()
+        icon = Gtk.Label(label="󰖩")
+        icon.add_css_class("title-icon")
+        title = Gtk.Label(label="Red", xalign=0, hexpand=True)
+        title.add_css_class("title")
+        self.power = Gtk.Switch(valign=Gtk.Align.CENTER, tooltip_text="Wi-Fi encendido / apagado")
+        self.power.connect("notify::active", self.on_power)
+        self.power.set_visible(self.wifi is not None)
+        head.append(icon)
+        head.append(title)
+        head.append(self.power)
+        panel.append(head)
+
+        panel.append(self.section("CONECTADO"))
+        self.active_list = self.listbox()
+        panel.append(self.active_list)
+
+        avail_head = Gtk.Box()
+        sec = self.section("REDES WI-FI")
+        sec.set_hexpand(True)
+        self.spinner = Gtk.Spinner(valign=Gtk.Align.CENTER, margin_end=6)
+        self.scan_btn = Gtk.Button(label="Buscar", valign=Gtk.Align.CENTER)
+        self.scan_btn.add_css_class("scan")
+        self.scan_btn.connect("clicked", lambda b: self.scan())
+        avail_head.append(sec)
+        avail_head.append(self.spinner)
+        avail_head.append(self.scan_btn)
+        avail_head.set_visible(self.wifi is not None)
+        panel.append(avail_head)
+
+        self.avail_list = self.listbox()
+        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=340,
+                                      hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroller.set_child(self.avail_list)
+        scroller.set_visible(self.wifi is not None)
+        panel.append(scroller)
+
+        self.status = Gtk.Label(xalign=0, wrap=True, max_width_chars=44)
+        self.status.add_css_class("status")
+        self.status.set_visible(False)
+        panel.append(self.status)
+
+        win.set_child(panel)
+        win.connect("close-request", lambda w: self.close())
+        self.win = win
+        win.realize()                    # prepara el renderizador ahora y no en el primer clic
+
+    def section(self, text):
+        lbl = Gtk.Label(label=text, xalign=0)
+        lbl.add_css_class("section")
+        return lbl
+
+    def listbox(self):
+        lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        lb.connect("row-activated", lambda l, row: row.activate_action())
+        return lb
+
+    def set_status(self, text, kind=None):
+        for k in ("ok", "err"):
+            self.status.remove_css_class(k)
+        if kind:
+            self.status.add_css_class(kind)
+        self.status.set_label(text)
+        self.status.set_visible(bool(text))
+
+    def clear(self, lb):
+        while (child := lb.get_first_child()) is not None:
+            lb.remove(child)
+
+    def empty(self, lb, text):
+        lbl = Gtk.Label(label=text, xalign=0, wrap=True)
+        lbl.add_css_class("empty")
+        row = Gtk.ListBoxRow(activatable=False, focusable=False)
+        row.set_child(lbl)
+        lb.append(row)
+
+    # ---------- NetworkManager ----------
+    def queue_refresh(self):
+        if self.win.get_visible() and not self.refresh_pending:
+            self.refresh_pending = True
+            GLib.timeout_add(200, self.refresh)
+
+    def saved_wifi(self):
+        return {conn_ssid(c): c for c in self.client.get_connections()
+                if c.get_connection_type() == "802-11-wireless"}
+
+    def refresh(self):
+        self.refresh_pending = False
+        wifi_on = self.client.wireless_get_enabled()
+        self.updating_switch = True
+        self.power.set_active(wifi_on)
+        self.updating_switch = False
+
+        # conexiones activas: cable, Wi-Fi, VPN/WireGuard (no las internas como lo o puentes)
+        self.clear(self.active_list)
+        active_ssid = None
+        actives = [ac for ac in self.client.get_active_connections()
+                   if ac.get_connection_type() in TYPE_ICONS]
+        for ac in actives:
+            self.active_list.append(self.active_row(ac))
+            if ac.get_connection_type() == "802-11-wireless" and ac.get_connection():
+                active_ssid = conn_ssid(ac.get_connection())
+        if not actives:
+            self.empty(self.active_list, "Sin conexión")
+
+        if not self.wifi:
+            return False
+        self.spinner.set_spinning(self.scanning)
+        self.scan_btn.set_label("Buscando…" if self.scanning else "Buscar")
+        self.scan_btn.set_sensitive(wifi_on and not self.scanning)
+
+        self.clear(self.avail_list)
+        if not wifi_on:
+            self.empty(self.avail_list, "Wi-Fi apagado")
+            return False
+
+        # una fila por red (el punto de acceso con mejor señal), sin redes ocultas ni la conectada
+        best = {}
+        for ap in self.wifi.get_access_points():
+            ssid = ap_ssid(ap)
+            if ssid and ssid != active_ssid and (ssid not in best or ap.get_strength() > best[ssid].get_strength()):
+                best[ssid] = ap
+        saved = self.saved_wifi()
+        aps = sorted(best.values(), key=lambda a: (ap_ssid(a) not in saved, -a.get_strength()))
+        for ap in aps:
+            self.avail_list.append(self.ap_row(ap, saved.get(ap_ssid(ap))))
+        if not aps:
+            self.empty(self.avail_list, "Buscando redes…" if self.scanning else "No se encontraron redes")
+        return False
+
+    def active_row(self, ac):
+        ctype = ac.get_connection_type()
+        dev = (ac.get_devices() or [None])[0]
+        row = Gtk.ListBoxRow()
+        row.add_css_class("dev")
+        row.add_css_class("connected")
+        box = Gtk.Box()
+
+        icon_text = TYPE_ICONS[ctype]
+        sub = [TYPE_NAMES[ctype]]
+        if ctype == "802-11-wireless" and isinstance(dev, NM.DeviceWifi) and dev.get_active_access_point():
+            strength = dev.get_active_access_point().get_strength()
+            icon_text = SIGNAL_ICONS[min(4, strength // 20)]
+            sub.append(f"{strength}%")
+        state = ac.get_state()
+        if state == ACState.ACTIVATING:
+            sub.append("conectando…")
+        else:
+            ip4 = ac.get_ip4_config()
+            addrs = ip4.get_addresses() if ip4 else []
+            if addrs:
+                sub.append(addrs[0].get_address())
+
+        icon = Gtk.Label(label=icon_text)
+        icon.add_css_class("dev-icon")
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        nl = Gtk.Label(label=ac.get_id(), xalign=0, ellipsize=3)
+        nl.add_css_class("dev-name")
+        sl = Gtk.Label(label=" · ".join(sub), xalign=0)
+        sl.add_css_class("dev-sub")
+        text.append(nl)
+        text.append(sl)
+        box.append(icon)
+        box.append(text)
+
+        btn = Gtk.Button(label="Desconectar", valign=Gtk.Align.CENTER)
+        btn.add_css_class("act")
+        btn.connect("clicked", lambda b: self.disconnect(ac))
+        box.append(btn)
+        row.activate_action = lambda: None
+        row.set_child(box)
+        return row
+
+    def ap_row(self, ap, saved_conn):
+        ssid = ap_ssid(ap)
+        strength = ap.get_strength()
+        label, key_mgmt, supported = security(ap)
+        busy, asking = ssid in self.busy, ssid == self.asking
+
+        row = Gtk.ListBoxRow()
+        row.add_css_class("dev")
+        if saved_conn:
+            row.add_css_class("saved")
+        if asking:
+            row.add_css_class("asking")
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box = Gtk.Box()
+
+        icon = Gtk.Label(label=SIGNAL_ICONS[min(4, strength // 20)])
+        icon.add_css_class("dev-icon")
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        name_box = Gtk.Box()
+        nl = Gtk.Label(label=ssid, xalign=0, ellipsize=3)
+        nl.add_css_class("dev-name")
+        name_box.append(nl)
+        if key_mgmt or label in ("Empresarial", "WEP"):
+            lock = Gtk.Label(label="󰌾")
+            lock.add_css_class("lock")
+            name_box.append(lock)
+        sub = " · ".join(filter(None, ["Guardada" if saved_conn else None, label, f"{strength}%",
+                                       "5 GHz" if ap.get_frequency() > 4900 else None]))
+        sl = Gtk.Label(label=sub, xalign=0)
+        sl.add_css_class("dev-sub")
+        text.append(name_box)
+        text.append(sl)
+        box.append(icon)
+        box.append(text)
+
+        if busy:
+            box.append(Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER, margin_end=6))
+            action = None
+        elif not supported:
+            action = lambda: self.set_status(  # noqa: E731
+                f"«{ssid}» es una red {label.lower()}: configúrala con clic derecho en el ícono de red (nmtui)")
+            btn = Gtk.Button(label="Avanzado", valign=Gtk.Align.CENTER)
+            btn.add_css_class("act")
+            btn.connect("clicked", lambda b: action())
+            box.append(btn)
+        else:
+            if saved_conn or not key_mgmt:
+                action = lambda: self.connect_ap(ap, saved_conn)  # noqa: E731
+            else:
+                action = lambda: self.ask_password(ssid)  # noqa: E731
+            if not asking:
+                btn = Gtk.Button(label="Conectar", valign=Gtk.Align.CENTER)
+                btn.add_css_class("act")
+                btn.add_css_class("primary")
+                btn.connect("clicked", lambda b: action())
+                box.append(btn)
+            if saved_conn:
+                forget = Gtk.Button(label="󰆴", valign=Gtk.Align.CENTER, tooltip_text="Olvidar red")
+                forget.add_css_class("icon")
+                forget.connect("clicked", lambda b: self.forget(saved_conn, ssid))
+                box.append(forget)
+        outer.append(box)
+
+        if asking and not busy:
+            line = Gtk.Box()
+            entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True, placeholder_text="Contraseña")
+            entry.add_css_class("pass")
+            ok = Gtk.Button(label="Conectar")
+            ok.add_css_class("act")
+            ok.add_css_class("primary")
+            ok.add_css_class("pass-ok")
+            go = lambda *a: self.connect_new(ap, key_mgmt, entry.get_text())  # noqa: E731
+            entry.connect("activate", go)
+            ok.connect("clicked", go)
+            line.append(entry)
+            line.append(ok)
+            outer.append(line)
+            GLib.idle_add(entry.grab_focus)
+
+        row.activate_action = action or (lambda: None)
+        row.set_child(outer)
+        return row
+
+    # ---------- acciones ----------
+    def ask_password(self, ssid):
+        self.asking = None if self.asking == ssid else ssid
+        self.set_status("")
+        self.refresh()
+
+    def watch(self, ac, ssid, new_conn=None):
+        """Sigue la activación hasta que conecta o falla; si una red nueva falla, no la deja guardada."""
+        def on_state(ac, state, reason, watching=True):
+            if state == ACState.ACTIVATED:
+                self.busy.discard(ssid)
+                self.set_status(f"✔ Conectado a {ssid}", "ok")
+            elif state == ACState.DEACTIVATED:
+                self.busy.discard(ssid)
+                if reason in BAD_PASSWORD:
+                    self.set_status(f"✘ Contraseña incorrecta para {ssid}", "err")
+                    self.asking = ssid
+                else:
+                    self.set_status(f"✘ No se pudo conectar a {ssid}", "err")
+                if new_conn:
+                    new_conn.delete_async(None, None)
+            else:
+                return
+            if watching:
+                ac.disconnect_by_func(on_state)
+            self.queue_refresh()
+
+        if ac.get_state() == ACState.ACTIVATED:
+            on_state(ac, ac.get_state(), 0, watching=False)
+        else:
+            ac.connect("state-changed", on_state)
+
+    def fail(self, ssid, e):
+        self.busy.discard(ssid)
+        self.set_status(f"✘ No se pudo conectar a {ssid} ({e.message})", "err")
+        self.queue_refresh()
+
+    def connect_ap(self, ap, saved_conn):
+        ssid = ap_ssid(ap)
+        self.busy.add(ssid)
+        self.asking = None
+        self.set_status(f"Conectando a {ssid}…")
+        self.refresh()
+
+        def done(client, res):
+            try:
+                if saved_conn:
+                    self.watch(client.activate_connection_finish(res), ssid)
+                else:
+                    ac = client.add_and_activate_connection_finish(res)
+                    self.watch(ac, ssid, ac.get_connection())
+            except GLib.Error as e:
+                self.fail(ssid, e)
+
+        if saved_conn:
+            self.client.activate_connection_async(saved_conn, self.wifi, ap.get_path(), None, done)
+        else:
+            self.client.add_and_activate_connection_async(None, self.wifi, ap.get_path(), None, done)
+
+    def connect_new(self, ap, key_mgmt, password):
+        ssid = ap_ssid(ap)
+        if len(password) < 8:
+            self.set_status("La contraseña Wi-Fi tiene al menos 8 caracteres", "err")
+            return
+        conn = NM.SimpleConnection.new()
+        sec = NM.SettingWirelessSecurity.new()
+        sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, key_mgmt)
+        sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK, password)
+        conn.add_setting(sec)
+        self.busy.add(ssid)
+        self.asking = None
+        self.set_status(f"Conectando a {ssid}…")
+        self.refresh()
+
+        def done(client, res):
+            try:
+                ac = client.add_and_activate_connection_finish(res)
+                self.watch(ac, ssid, ac.get_connection())
+            except GLib.Error as e:
+                self.fail(ssid, e)
+
+        self.client.add_and_activate_connection_async(conn, self.wifi, ap.get_path(), None, done)
+
+    def disconnect(self, ac):
+        name = ac.get_id()
+
+        def done(client, res):
+            try:
+                client.deactivate_connection_finish(res)
+                self.set_status(f"{name} desconectado")
+            except GLib.Error as e:
+                self.set_status(f"✘ No se pudo desconectar {name} ({e.message})", "err")
+            self.queue_refresh()
+
+        self.client.deactivate_connection_async(ac, None, done)
+
+    def forget(self, conn, ssid):
+        def done(c, res):
+            try:
+                c.delete_finish(res)
+                self.set_status(f"{ssid} olvidada")
+            except GLib.Error as e:
+                self.set_status(f"✘ No se pudo olvidar {ssid} ({e.message})", "err")
+            self.queue_refresh()
+
+        conn.delete_async(None, done)
+
+    def on_power(self, sw, _):
+        if self.updating_switch:
+            return
+        on = sw.get_active()
+        self.client.dbus_set_property(NM.DBUS_PATH, NM.DBUS_INTERFACE, "WirelessEnabled",
+                                      GLib.Variant("b", on), -1, None, None)
+        self.set_status("")
+        if on:
+            GLib.timeout_add(1500, lambda: self.scan() or False)
+
+    def scan(self):
+        if not self.wifi or not self.client.wireless_get_enabled():
+            return
+
+        def done(dev, res):
+            try:
+                dev.request_scan_finish(res)
+            except GLib.Error:          # NM rechaza escaneos muy seguidos: basta lo último que encontró
+                self.scan_done()
+
+        self.scanning = True
+        self.wifi.request_scan_async(None, done)
+        GLib.timeout_add_seconds(15, lambda: self.scanning and self.scan_done() or False)
+        self.queue_refresh()
+
+    def scan_done(self):
+        self.scanning = False
+        self.queue_refresh()
+
+    def toggle(self):
+        self.hide() if self.win.get_visible() else self.show()
+
+    def show(self):
+        self.set_status("")
+        self.asking = None
+        self.refresh()
+        self.win.present()
+        self.scan()
+
+    def hide(self):
+        self.win.set_visible(False)
+
+    def close(self):
+        self.hide()
+        return True
+
+
+def main():
+    app = Gtk.Application(application_id="pe.zen.Network")
+    state = {}
+
+    def activate(a):
+        if "panel" in state:          # otra llamada a zen-network: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Panel(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-network.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()
