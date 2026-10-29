@@ -1,5 +1,5 @@
 #!/bin/sh
-# zen-toggle audio|media|bluetooth|network|brightness — abre/cierra un panel de la barra al instante.
+# zen-toggle audio|media|bluetooth|network|brightness|ram|tuneles — abre/cierra un panel de la barra al instante.
 # Los paneles quedan residentes (niri los lanza con --daemon); aquí solo se les manda SIGUSR1.
 # Si el panel no está corriendo (se cerró o falló), lo arranca y se muestra.
 pid=$(cat "${XDG_RUNTIME_DIR:-/tmp}/zen-$1.pid" 2>/dev/null)

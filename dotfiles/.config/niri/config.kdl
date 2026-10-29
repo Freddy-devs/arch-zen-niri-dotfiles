@@ -146,6 +146,7 @@ spawn-at-startup "sh" "-c" "~/.local/bin/zen-bluetooth --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-network --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-brightness --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-ram --daemon"
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-tuneles --daemon"
 spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
@@ -226,6 +227,7 @@ layer-rule {
     match namespace="^zen-media$"
     match namespace="^zen-brightness$"
     match namespace="^zen-ram$"
+    match namespace="^zen-tuneles$"
     match namespace="^zen-calendar$"
     geometry-corner-radius 14
     // sombra muy suave y difusa para los popups
@@ -268,6 +270,7 @@ binds {
     Mod+S hotkey-overlay-title="Sonido (volumen, salidas, micrófono)" { spawn-sh "~/.local/bin/zen-toggle audio"; }
     Mod+Shift+B hotkey-overlay-title="Bluetooth" { spawn-sh "~/.local/bin/zen-toggle bluetooth"; }
     Mod+N hotkey-overlay-title="Red y Wi-Fi" { spawn-sh "~/.local/bin/zen-toggle network"; }
+    Mod+Shift+N hotkey-overlay-title="Túneles con otros PCs" { spawn-sh "~/.local/bin/zen-toggle tuneles"; }
     Mod+I hotkey-overlay-title="Brillo de cada pantalla" { spawn-sh "~/.local/bin/zen-toggle brightness"; }
     Mod+Shift+M hotkey-overlay-title="Memoria RAM (apps que más usan)" { spawn-sh "~/.local/bin/zen-toggle ram"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }

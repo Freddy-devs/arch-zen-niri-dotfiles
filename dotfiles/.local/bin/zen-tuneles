@@ -1,0 +1,528 @@
+#!/usr/bin/env python3
+"""zen-tuneles — panel de túneles con otros PCs debajo de la barra (mismo estilo que zen-network).
+
+Lista los PCs registrados con zen-traspaso y los conecta o apaga con un interruptor; conectado,
+abre una terminal SSH dentro del túnel o copia usuario@IP para rsync/scp. «Copiar mi código»
+deja en el portapapeles el código público de este PC para pegarlo en el otro, y abajo se pega
+el código del otro para agregarlo. Para que dos PCs se vean, los dos encienden su interruptor.
+Lo que necesita root va por pkexec (pide la contraseña una vez y la recuerda unos minutos).
+
+Clic en el ícono de túneles de waybar o Super+Shift+N lo abre; otro clic o Esc lo cierra.
+Queda residente: zen-toggle tuneles lo muestra al instante.
+  zen-tuneles --waybar   salida para waybar (custom/tuneles): cuántos PCs están conectados
+"""
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import threading
+
+ETC = "/etc/zen-traspaso"
+RUN = "/run/zen-traspaso/activos"
+HELPER = "/usr/local/bin/zen-traspaso"
+REFRESH = 3            # segundos entre pings con el panel abierto
+
+
+def active_pcs():
+    try:
+        return sorted(os.listdir(RUN))
+    except OSError:
+        return []
+
+
+# la barra pregunta cada pocos segundos: se responde antes de cargar GTK
+if "--waybar" in sys.argv:
+    on = active_pcs()
+    if on:
+        print(json.dumps({"text": f"\U000f0483 {len(on)}", "class": "on",
+                          "tooltip": "Túnel abierto con: " + ", ".join(on) + "\nClic: túneles con otros PCs"}))
+    else:
+        print(json.dumps({"text": "\U000f0483", "class": "off", "tooltip": "Túneles con otros PCs (apagados)\nClic: abrir"}))
+    sys.exit(0)
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+# dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
+os.environ.setdefault("GSK_RENDERER", "cairo")
+
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Gtk4LayerShell as Layer  # noqa: E402
+
+CSS = """
+window.zen-tuneles { background: transparent; }
+.panel {
+    background: #242933; border-radius: 14px; padding: 14px;
+    color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
+}
+.title { font-size: 15px; font-weight: 800; color: #eceff4; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #a3be8c; margin-right: 8px; }
+.count { color: #7b88a1; font-weight: 700; }
+.count.on { color: #a3be8c; }
+.section { color: #616e88; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin: 14px 0 6px; }
+.empty { color: #616e88; padding: 6px 2px; }
+.me { background: #2e3440; border-radius: 10px; padding: 8px 8px 8px 10px; border-left: 3px solid #88c0d0; }
+.pc {
+    background: #2e3440; border-radius: 10px; padding: 8px 8px 8px 10px; margin-bottom: 5px;
+    border-left: 3px solid #434c5e;
+}
+.pc:hover { background: #3b4252; }
+.pc.waiting { border-left-color: #ebcb8b; }
+.pc.connected { border-left-color: #a3be8c; }
+.dev-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 20px; color: #d8dee9; margin-right: 10px; min-width: 22px; }
+.me .dev-icon { color: #88c0d0; }
+.pc.waiting .dev-icon { color: #ebcb8b; }
+.pc.connected .dev-icon { color: #a3be8c; }
+.dev-name { font-weight: 700; color: #eceff4; }
+.dev-sub { color: #7b88a1; font-size: 11px; font-weight: 600; }
+.pc.waiting .dev-sub { color: #ebcb8b; }
+.pc.connected .dev-sub { color: #a3be8c; }
+entry.code {
+    background: #2e3440; color: #eceff4; border-radius: 8px; border: 1px solid #434c5e;
+    box-shadow: none; padding: 2px 8px; min-height: 30px;
+}
+entry.code:focus-within { border-color: #88c0d0; }
+button.act {
+    background: #3b4252; color: #eceff4; border-radius: 8px; border: none; box-shadow: none;
+    padding: 4px 10px; font-weight: 700; font-size: 12px; min-height: 0;
+}
+button.act:hover { background: #434c5e; color: #eceff4; }
+button.act.primary { background: #88c0d0; color: #242933; }
+button.act.primary:hover { background: #81a1c1; }
+button.act.danger { background: #bf616a; color: #eceff4; }
+button.icon {
+    background: transparent; color: #7b88a1; border: none; box-shadow: none; border-radius: 8px;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 15px; padding: 4px 8px; min-height: 0;
+}
+button.icon:hover { background: #434c5e; color: #eceff4; }
+button.icon.del:hover { color: #bf616a; }
+button.icon.confirm { background: #bf616a; color: #eceff4; font-family: Inter, sans-serif; font-size: 11px; font-weight: 700; }
+switch { background: #3b4252; border: none; margin-left: 4px; }
+switch:checked { background: #a3be8c; }
+switch slider { background: #eceff4; }
+.status { color: #7b88a1; font-weight: 600; margin-top: 10px; }
+.status.ok { color: #a3be8c; }
+.status.err { color: #bf616a; }
+"""
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+NAME_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def pcs():
+    """nombre → {usuario, ip, tunel, …} de /etc/zen-traspaso/pcs (datos públicos)."""
+    out = {}
+    try:
+        names = sorted(os.listdir(os.path.join(ETC, "pcs")))
+    except OSError:
+        return out
+    for name in names:
+        if not NAME_OK.match(name):
+            continue
+        info = dict(line.split("=", 1) for line in read(os.path.join(ETC, "pcs", name)).splitlines() if "=" in line)
+        out[name] = info
+    return out
+
+
+def ping(ip):
+    """ms de ida y vuelta por el túnel o None si no contesta."""
+    try:
+        r = subprocess.run(["ping", "-c1", "-W1", "-n", ip], capture_output=True, text=True, timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"time=([\d.]+)", r.stdout)
+    return float(m.group(1)) if r.returncode == 0 and m else None
+
+
+class PcRow:
+    def __init__(self, panel, name):
+        self.panel, self.name, self.info = panel, name, {}
+        self.confirm = 0
+        self.syncing = False
+        self.box = Gtk.Box()
+        self.box.add_css_class("pc")
+        icon = Gtk.Label(label="\U000f0379")   # nf-md-monitor
+        icon.add_css_class("dev-icon")
+        self.box.append(icon)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        title = Gtk.Label(label=name, xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        title.add_css_class("dev-name")
+        self.sub = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=34)
+        self.sub.add_css_class("dev-sub")
+        text.append(title)
+        text.append(self.sub)
+        self.box.append(text)
+
+        self.term = self.icon_button("\U000f018d", "Abrir una terminal SSH en este PC", self.open_ssh)   # nf-md-console
+        self.copy = self.icon_button("\U000f018f", "Copiar usuario@IP (para rsync o scp)", self.copy_addr)  # nf-md-content_copy
+        self.delete = self.icon_button("\U000f0a7a", "Quitar este PC de la lista", self.on_delete)          # nf-md-trash_can_outline
+        self.delete.add_css_class("del")
+        self.switch = Gtk.Switch(valign=Gtk.Align.CENTER, tooltip_text="Conectar o apagar el túnel con este PC")
+        self.switch.connect("state-set", self.on_switch)
+        self.box.append(self.switch)
+
+    def icon_button(self, glyph, tip, cb):
+        b = Gtk.Button(label=glyph, tooltip_text=tip, valign=Gtk.Align.CENTER)
+        b.add_css_class("icon")
+        b.connect("clicked", cb)
+        self.box.append(b)
+        return b
+
+    def addr(self):
+        return f"{self.info.get('usuario', '')}@{self.info.get('tunel', '')}"
+
+    def update(self, info, active, ms):
+        self.info = info
+        for c in ("waiting", "connected"):
+            self.box.remove_css_class(c)
+        if not active:
+            self.sub.set_label(f"Apagado · {info.get('tunel', '?')}")
+        elif ms is None:
+            self.box.add_css_class("waiting")
+            self.sub.set_label(f"Esperando a que {self.name} encienda su lado…")
+        else:
+            self.box.add_css_class("connected")
+            self.sub.set_label(f"Conectado · {self.addr()} · {ms:.0f} ms")
+        self.term.set_visible(active and ms is not None)
+        self.copy.set_visible(active)
+        self.syncing = True               # mover el interruptor sin volver a llamar a zen-traspaso
+        self.switch.set_active(active)
+        self.switch.set_state(active)
+        self.syncing = False
+
+    def on_switch(self, _sw, state):
+        if self.syncing:
+            return False
+        self.panel.helper(["conectar" if state else "desconectar", self.name],
+                          f"Conectando con {self.name}…" if state else f"Apagando el túnel con {self.name}…")
+        return True                       # el estado real llega con el próximo refresh
+
+    def open_ssh(self, _btn):
+        self.panel.hide()
+        subprocess.Popen([os.path.expanduser("~/.local/bin/zen-term"), "-T", f"SSH · {self.name}",
+                          "-e", "ssh", "-o", "StrictHostKeyChecking=accept-new", self.addr()],
+                         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def copy_addr(self, _btn):
+        self.panel.copy_text(self.addr(), f"Copiado {self.addr()} · rsync -avP carpeta/ {self.addr()}:~/Recibido/")
+
+    def on_delete(self, _btn):
+        if self.confirm:
+            GLib.source_remove(self.confirm)
+            self.reset_delete()
+            self.panel.helper(["quitar", self.name], f"Quitando {self.name}…")
+            return
+        self.delete.set_label("¿Quitar?")
+        self.delete.add_css_class("confirm")
+        self.confirm = GLib.timeout_add_seconds(3, self.reset_delete)
+
+    def reset_delete(self):
+        self.confirm = 0
+        self.delete.set_label("\U000f0a7a")
+        self.delete.remove_css_class("confirm")
+        return False
+
+
+class Panel:
+    def __init__(self, app):
+        self.app = app
+        self.rows = {}
+        self.order = []
+        self.timer = 0
+        self.busy = False
+        self.running = False
+        self.ready = False
+        self.build()
+
+    def build(self):
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        win = Gtk.ApplicationWindow(application=self.app)
+        win.add_css_class("zen-tuneles")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-tuneles")
+        Layer.set_layer(win, Layer.Layer.TOP)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 8)
+        Layer.set_margin(win, Layer.Edge.RIGHT, 12)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.hide())
+        win.add_controller(keys)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.add_css_class("panel")
+        panel.set_size_request(400, -1)
+        head = Gtk.Box()
+        icon = Gtk.Label(label="\U000f0483")   # nf-md-shield_key (mismo ícono que la barra)
+        icon.add_css_class("title-icon")
+        title = Gtk.Label(label="Túneles", xalign=0, hexpand=True)
+        title.add_css_class("title")
+        self.count = Gtk.Label()
+        self.count.add_css_class("count")
+        head.append(icon)
+        head.append(title)
+        head.append(self.count)
+        panel.append(head)
+
+        panel.append(self.section("ESTE PC"))
+        me = Gtk.Box()
+        me.add_css_class("me")
+        me_icon = Gtk.Label(label="\U000f0322")   # nf-md-laptop
+        me_icon.add_css_class("dev-icon")
+        me.append(me_icon)
+        me_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        me_name = Gtk.Label(label=os.uname().nodename, xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        me_name.add_css_class("dev-name")
+        self.me_sub = Gtk.Label(xalign=0)
+        self.me_sub.add_css_class("dev-sub")
+        me_text.append(me_name)
+        me_text.append(self.me_sub)
+        me.append(me_text)
+        self.me_btn = Gtk.Button(valign=Gtk.Align.CENTER)
+        self.me_btn.add_css_class("act")
+        self.me_btn.add_css_class("primary")
+        self.me_btn.connect("clicked", self.on_me)
+        me.append(self.me_btn)
+        panel.append(me)
+
+        panel.append(self.section("OTROS PCS"))
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.empty = Gtk.Label(label="Todavía no hay PCs. Pega abajo el código del otro PC.", xalign=0, wrap=True)
+        self.empty.add_css_class("empty")
+        panel.append(self.empty)
+        panel.append(self.list)
+
+        panel.append(self.section("AGREGAR PC"))
+        add = Gtk.Box(spacing=6)
+        self.entry = Gtk.Entry(hexpand=True, placeholder_text="Pega el código del otro PC (zt1:…)")
+        self.entry.add_css_class("code")
+        self.entry.connect("activate", self.on_add)
+        add_btn = Gtk.Button(label="Agregar")
+        add_btn.add_css_class("act")
+        add_btn.connect("clicked", self.on_add)
+        add.append(self.entry)
+        add.append(add_btn)
+        panel.append(add)
+
+        foot = Gtk.Box()
+        self.status = Gtk.Label(xalign=0, hexpand=True, wrap=True, max_width_chars=44)
+        self.status.add_css_class("status")
+        self.off_all = Gtk.Button(label="Apagar todo", valign=Gtk.Align.END,
+                                  tooltip_text="Cierra todos los túneles, el SSH y las reglas del cortafuegos")
+        self.off_all.add_css_class("act")
+        self.off_all.add_css_class("danger")
+        self.off_all.set_margin_top(10)
+        self.off_all.connect("clicked", lambda _b: self.helper(["apagar"], "Apagando todos los túneles…"))
+        foot.append(self.status)
+        foot.append(self.off_all)
+        panel.append(foot)
+
+        win.set_child(panel)
+        self.win = win
+        win.realize()                    # prepara el renderizador ahora y no en el primer clic
+
+    @staticmethod
+    def section(text):
+        lbl = Gtk.Label(label=text, xalign=0)
+        lbl.add_css_class("section")
+        return lbl
+
+    # ---------- mostrar / ocultar
+
+    @staticmethod
+    def focused_monitor():
+        try:
+            out = subprocess.run(["niri", "msg", "-j", "focused-output"], capture_output=True, timeout=2).stdout
+            name = json.loads(out).get("name")
+        except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+            return None
+        monitors = Gdk.Display.get_default().get_monitors()
+        for i in range(monitors.get_n_items()):
+            if monitors.get_item(i).get_connector() == name:
+                return monitors.get_item(i)
+        return None
+
+    def toggle(self):
+        self.hide() if self.win.get_visible() else self.show()
+
+    def show(self):
+        mon = self.focused_monitor()
+        if mon is not None:
+            Layer.set_monitor(self.win, mon)
+        self.say("")
+        self.win.present()
+        self.refresh()
+        if not self.timer:
+            self.timer = GLib.timeout_add_seconds(REFRESH, self.refresh)
+
+    def hide(self):
+        self.win.set_visible(False)
+        if self.timer:
+            GLib.source_remove(self.timer)
+            self.timer = 0
+        return True
+
+    # ---------- datos
+
+    def refresh(self):
+        if not self.busy:                 # los pings van en un hilo: la UI no se traba
+            self.busy = True
+            threading.Thread(target=self.collect, daemon=True).start()
+        return True
+
+    def collect(self):
+        known, on = pcs(), set(active_pcs())
+        ms = {name: ping(info["tunel"]) for name, info in known.items() if name in on and info.get("tunel")}
+        GLib.idle_add(self.apply, read(os.path.join(ETC, "yo.ip")), known, on, ms)
+
+    def apply(self, me_ip, known, on, ms):
+        self.busy = False
+        self.ready = bool(me_ip)
+        self.me_sub.set_label(f"IP del túnel {me_ip}" if me_ip else "Sin preparar: crea las llaves de este PC")
+        self.me_btn.set_label("Copiar mi código" if me_ip else "Preparar")
+        self.me_btn.set_tooltip_text("Código público de este PC para pegarlo en el otro" if me_ip
+                                     else "Crea la llave WireGuard de este PC (pide tu contraseña)")
+        n = len(on & set(known))
+        self.count.set_label(f"{n} conectado{'s' if n != 1 else ''}" if n else "apagados")
+        (self.count.add_css_class if n else self.count.remove_css_class)("on")
+        self.off_all.set_visible(bool(on))
+
+        names = list(known)
+        for name in names:
+            if name not in self.rows:
+                self.rows[name] = PcRow(self, name)
+            self.rows[name].update(known[name], name in on, ms.get(name))
+        if names != self.order:           # reordenar sin recrear filas: no parpadea ni pierde el hover
+            child = self.list.get_first_child()
+            while child is not None:
+                nxt = child.get_next_sibling()
+                self.list.remove(child)
+                child = nxt
+            for name in names:
+                self.list.append(self.rows[name].box)
+            self.order = names
+        for name in [n for n in self.rows if n not in known]:
+            del self.rows[name]
+        self.empty.set_visible(not names)
+        return False
+
+    # ---------- acciones
+
+    def helper(self, args, doing):
+        """zen-traspaso con pkexec; el mensaje final (o el error) queda abajo del panel."""
+        if self.running:
+            self.say("Espera: hay otra operación en curso", error=True)
+            return
+        try:
+            proc = Gio.Subprocess.new(["pkexec", HELPER] + args,
+                                      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE)
+        except GLib.Error:
+            self.say("No se pudo pedir permiso (pkexec)", error=True)
+            return
+        self.running = True
+        self.say(doing)
+
+        def done(p, res):
+            self.running = False
+            try:
+                _ok, out, err = p.communicate_utf8_finish(res)
+            except GLib.Error:
+                out, err = "", ""
+            code = p.get_exit_status()
+            lines = [ANSI.sub("", l).lstrip("✔✘! ").strip() for l in ((err or "") + "\n" + (out or "")).splitlines()]
+            lines = [l for l in lines if l]
+            if code == 0:
+                self.say(lines[-1] if lines else "Listo", ok=True)
+            elif code in (126, 127):
+                self.say("Cancelado: no se dio el permiso", error=True)
+            else:
+                self.say(lines[0] if lines else "Algo falló", error=True)
+            self.refresh()
+
+        proc.communicate_utf8_async(None, None, done)
+
+    def on_me(self, _btn):
+        if not self.ready:
+            self.helper(["preparar"], "Preparando este PC…")
+            return
+        try:
+            r = subprocess.run([HELPER, "codigo"], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            self.say("No se pudo leer el código de este PC", error=True)
+            return
+        code = r.stdout.strip()
+        if r.returncode != 0 or not code.startswith("zt1:"):
+            self.say(ANSI.sub("", r.stderr).lstrip("✘ ").strip() or "No se pudo leer el código", error=True)
+            return
+        self.copy_text(code, "Código copiado: pégalo en «Agregar PC» del otro PC (solo tiene datos públicos)")
+
+    def on_add(self, _w):
+        code = "".join(self.entry.get_text().split())   # al pegar desde un chat a veces entran saltos de línea
+        if not code.startswith("zt1:"):
+            self.say("Eso no es un código de PC (empieza con zt1:)", error=True)
+            return
+        self.entry.set_text("")
+        self.helper(["agregar", code], "Agregando el PC…")
+
+    def copy_text(self, text, msg):
+        try:
+            subprocess.run(["wl-copy", text], timeout=3, check=True)
+        except (OSError, subprocess.SubprocessError):
+            self.say("No se pudo copiar (falta wl-copy)", error=True)
+            return
+        self.say(msg, ok=True)
+
+    def say(self, text, ok=False, error=False):
+        self.status.set_label(text)
+        self.status.set_visible(bool(text))
+        for c, on in (("ok", ok), ("err", error)):
+            (self.status.add_css_class if on else self.status.remove_css_class)(c)
+
+
+def main():
+    app = Gtk.Application(application_id="pe.zen.Tuneles")
+    state = {}
+
+    def activate(a):
+        if "panel" in state:          # otra llamada a zen-tuneles: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Panel(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-tuneles.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()
