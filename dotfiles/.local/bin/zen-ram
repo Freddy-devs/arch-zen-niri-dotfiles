@@ -146,15 +146,33 @@ def mem_of(pid):
     return int(statm[1]) * (os.sysconf("SC_PAGE_SIZE") // 1024) if len(statm) > 1 else 0
 
 
+def tmpfs_used():
+    """kB ocupados en tmpfs (/tmp y compañía): son archivos, pero viven en la RAM."""
+    used = 0
+    for line in read("/proc/mounts").decode().splitlines():
+        f = line.split()
+        if len(f) > 2 and f[2] == "tmpfs":
+            try:
+                s = os.statvfs(f[1])
+                used += (s.f_blocks - s.f_bfree) * s.f_frsize // 1024
+            except OSError:
+                pass
+    return used
+
+
 def snapshot():
-    """Memoria del sistema + apps del usuario (procesos agrupados por app, de mayor a menor)."""
+    """Memoria del sistema (con el desglose de lo usado) + apps del usuario agrupadas, de mayor a menor."""
     uid, me = os.getuid(), os.getpid()
-    apps = {}
+    page_kb = os.sysconf("SC_PAGE_SIZE") // 1024
+    apps, others = {}, 0
     for d in os.listdir("/proc"):
         if not d.isdigit() or int(d) == me:
             continue
         try:
             if os.stat(f"/proc/{d}").st_uid != uid:
+                # root y servicios: solo su RSS (smaps no es legible sin permisos)
+                statm = read(f"/proc/{d}/statm").split()
+                others += int(statm[1]) * page_kb if len(statm) > 1 else 0
                 continue
             exe = os.path.basename(os.readlink(f"/proc/{d}/exe")).removesuffix(" (deleted)")
         except OSError:
@@ -163,7 +181,12 @@ def snapshot():
         a = apps.setdefault(name, {"kb": 0, "pids": []})
         a["kb"] += mem_of(d)
         a["pids"].append(int(d))
-    return meminfo(), sorted(apps.items(), key=lambda kv: -kv[1]["kb"])
+    mem = meminfo()
+    mem["mine"] = sum(a["kb"] for a in apps.values())
+    mem["others"] = others
+    mem["tmpfs"] = tmpfs_used()
+    mem["kernel"] = max(0, mem["used"] - mem["mine"] - mem["others"] - mem["tmpfs"])
+    return mem, sorted(apps.items(), key=lambda kv: -kv[1]["kb"])
 
 
 def desktop_index():
@@ -340,21 +363,26 @@ class Panel:
         self.main_bar.add_css_class("main")
         panel.append(self.main_bar)
 
-        stats = Gtk.Box(spacing=4)
+        # de dónde sale lo usado (fila 1) y lo que no cuenta como usado (fila 2)
         self.stat = {}
-        for key, name, tip in (("apps", "Apps", "Memoria en uso por programas"),
-                               ("cache", "Caché", "Archivos recientes guardados en RAM: se libera sola cuando hace falta"),
-                               ("avail", "Disponible", "Lo que todavía pueden usar las apps"),
-                               ("swap", "Swap", "Memoria movida a zram/disco")):
-            lbl = Gtk.Label(label=name, tooltip_text=tip)
-            lbl.add_css_class("stats")
-            val = Gtk.Label(tooltip_text=tip)
-            val.add_css_class("stats-val")
-            val.set_margin_end(8)
-            stats.append(lbl)
-            stats.append(val)
-            self.stat[key] = val
-        panel.append(stats)
+        for row in ((("mine", "Tus apps", "Todas tus apps sumadas (las de la lista de abajo)"),
+                     ("others", "Sistema", "Servicios de root: Xorg, NetworkManager, sddm…"),
+                     ("tmpfs", "/tmp", "Archivos temporales: en Linux /tmp vive en la RAM"),
+                     ("kernel", "Kernel", "Kernel, drivers y buffers de la gráfica")),
+                    (("cache", "Caché", "Archivos recientes guardados en RAM: se libera sola cuando hace falta"),
+                     ("avail", "Disponible", "Lo que todavía pueden usar las apps"),
+                     ("swap", "Swap", "Memoria movida a zram/disco"))):
+            stats = Gtk.Box(spacing=4)
+            for key, name, tip in row:
+                lbl = Gtk.Label(label=name, tooltip_text=tip)
+                lbl.add_css_class("stats")
+                val = Gtk.Label(tooltip_text=tip)
+                val.add_css_class("stats-val")
+                val.set_margin_end(8)
+                stats.append(lbl)
+                stats.append(val)
+                self.stat[key] = val
+            panel.append(stats)
 
         section = Gtk.Label(label="LO QUE MÁS USA", xalign=0)
         section.add_css_class("section")
@@ -446,7 +474,8 @@ class Panel:
             self.main_bar.add_css_class("crit")
         elif frac >= 0.75:
             self.main_bar.add_css_class("warn")
-        self.stat["apps"].set_label(kb(mem["used"]))
+        for key in ("mine", "others", "tmpfs", "kernel"):
+            self.stat[key].set_label(kb(mem[key]))
         self.stat["cache"].set_label(kb(mem["cache"]))
         self.stat["avail"].set_label(kb(mem["avail"]))
         self.stat["swap"].set_label(f"{kb(mem['swap_used'])}" if mem["swap_total"] else "—")
