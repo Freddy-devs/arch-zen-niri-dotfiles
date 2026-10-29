@@ -6,5 +6,5 @@ yay-bin
 colloid-nord-gtk-theme
 qogir-white-cursors
 nordzy-icon-theme
-# Apps propias en Rust (apps/)
+# Apps propias (apps/, Python: se empaquetan sin compilar)
 zen-calendar

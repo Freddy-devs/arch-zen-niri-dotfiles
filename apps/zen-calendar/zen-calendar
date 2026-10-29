@@ -1,0 +1,854 @@
+#!/usr/bin/env python3
+"""zen-calendar — calendario de la barra: reloj, mes con feriados del Perú, agenda y alarmas.
+
+Una sola instancia (GtkApplication):
+  zen-calendar --daemon          se lanza al iniciar niri; vigila las alarmas sin mostrar nada
+
+Solo queda en memoria mientras haya tareas pendientes: sin pendientes, sale al cerrar el panel
+(y "--daemon" termina al instante).
+  zen-calendar                   abre/cierra el panel en la pantalla enfocada (clic en el reloj)
+  zen-calendar --day AAAA-MM-DD  abre el panel en ese día
+
+Avisos de una tarea con hora H (sin hora = 09:00): 30, 10 y 5 min antes una vez; desde H se repite
+cada 5 min hasta marcarla hecha. Clic en el aviso: abre el día · clic central: hecha / posponer.
+"""
+import ctypes
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import date, datetime, timedelta
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Gtk4LayerShell as Layer  # noqa: E402
+
+import feriados  # noqa: E402
+import tareas  # noqa: E402
+from tareas import ALLDAY, REMIND_EVERY, SNOOZE_MIN  # noqa: E402
+
+APP_ID = "pe.zen.Calendar"
+CHECK_EVERY = 30
+SOUND_ALARM = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+SOUND_PRE = "/usr/share/sounds/freedesktop/stereo/message.oga"
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre",
+          "octubre", "noviembre", "diciembre")
+DAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+DAYS_SHORT = ("lu", "ma", "mi", "ju", "vi", "sá", "do")
+KINDS = ("feriado", "nolaborable", "fecha")   # orden de prioridad para pintar el día
+
+
+def capitalize(s):
+    return s[:1].upper() + s[1:]
+
+
+def long_date(d):
+    return f"{DAYS[d.weekday()]} {d.day} de {MONTHS[d.month - 1]}"
+
+
+def hour12(h):
+    return 12 if h % 12 == 0 else h % 12
+
+
+def fmt_time(hhmm):
+    h, _, m = hhmm.partition(":")
+    try:
+        h = int(h)
+    except ValueError:
+        h = 0
+    return f"{hour12(h)}:{m or '0'} {'pm' if h >= 12 else 'am'}"
+
+
+def relative_days(d, today):
+    n = (d - today).days
+    if n == 0:
+        return "hoy"
+    if n == 1:
+        return "mañana"
+    if n == -1:
+        return "ayer"
+    return f"en {n} días" if n > 0 else f"hace {-n} días"
+
+
+def label(text, css=""):
+    lbl = Gtk.Label(label=text, xalign=0.0)
+    for c in css.split():
+        lbl.add_css_class(c)
+    return lbl
+
+
+def hbox(spacing, css=""):
+    b = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=spacing)
+    for c in css.split():
+        b.add_css_class(c)
+    return b
+
+
+def vbox(css=""):
+    b = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    for c in css.split():
+        b.add_css_class(c)
+    return b
+
+
+def clear(box):
+    while (child := box.get_first_child()) is not None:
+        box.remove(child)
+
+
+def now_min():
+    return datetime.now().replace(second=0, microsecond=0)
+
+
+def stamp(dt):
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def play(sound):
+    if os.path.exists(sound):
+        try:
+            Gio.Subprocess.new(["pw-play", sound],
+                               Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+        except GLib.Error:
+            pass
+
+
+class DayCell:
+    def __init__(self, button, num, dot_event, dot_task, day):
+        self.button, self.num, self.dot_event, self.dot_task, self.day = button, num, dot_event, dot_task, day
+
+
+class App:
+    def __init__(self):
+        self.app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.store = tareas.Store()
+        self.cal = feriados.Calendar()
+        config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+        self.extra_path = os.path.join(config, "zen-calendar", "feriados.json")
+        self.win = None
+        self.today = date.today()
+        self.view = self.today.replace(day=1)
+        self.selected = self.today
+        self.was_active = False
+        self.held = False
+        self.notif = None
+        self.notif_by_task = {}
+        self.task_by_notif = {}
+        self.time_val = ""   # "HH:MM" del selector o "" = todo el día
+        self.pick_hour = 0   # 0–23
+        self.app.connect("startup", self.on_startup)
+        self.app.connect("command-line", self.on_command_line)
+
+    def visible(self):
+        return self.win is not None and self.win.get_visible()
+
+    # ---------- ventana
+
+    def build(self):
+        win = Gtk.ApplicationWindow(application=self.app, title="Calendario")
+        win.add_css_class("zen-cal")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-calendar")
+        Layer.set_layer(win, Layer.Layer.OVERLAY)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 4)
+        Layer.set_margin(win, Layer.Edge.RIGHT, 4)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+        self.win = win
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self.on_key)
+        win.add_controller(keys)
+        # se cierra al hacer clic fuera (pierde el foco), igual que un menú
+        win.connect("notify::is-active", self.on_active)
+        win.connect("close-request", lambda _w: (self.hide(), True)[1])
+
+        # ---- columna izquierda: reloj + mes
+        left = vbox("col-left")
+        hero = hbox(0)
+        self.time = label("", "hero-time")
+        self.ampm = label("", "hero-ampm")
+        self.ampm.set_valign(Gtk.Align.END)
+        hero.append(self.time)
+        hero.append(self.ampm)
+        left.append(hero)
+        self.date = label("", "hero-date")
+        left.append(self.date)
+
+        head = hbox(4)
+        self.month = label("", "month-title")
+        self.year = label("", "month-year")
+        self.year.set_hexpand(True)
+        head.append(self.month)
+        head.append(self.year)
+        # los iconos van como escapes: pegados como carácter se pierden con facilidad al editar
+        for text, css, step, tip in (("\U000f0141", "nav", -1, "Mes anterior"),
+                                     ("Hoy", "nav today", 0, "Volver a hoy"),
+                                     ("\U000f0142", "nav", 1, "Mes siguiente")):
+            b = Gtk.Button(label=text, tooltip_text=tip)
+            for c in css.split():
+                b.add_css_class(c)
+            b.connect("clicked", lambda _b, s=step: self.nav(s))
+            head.append(b)
+        left.append(head)
+
+        grid = Gtk.Grid(column_homogeneous=True)
+        for i, name in enumerate(DAYS_SHORT):
+            lbl = label(name, "weekday sunday" if i == 6 else "weekday")
+            lbl.set_xalign(0.5)
+            grid.attach(lbl, i, 0, 1, 1)
+        self.cells = []
+        for n in range(42):
+            button = Gtk.Button()
+            button.add_css_class("day")
+            inner = vbox()
+            inner.set_valign(Gtk.Align.CENTER)
+            num = label("", "num")
+            num.set_xalign(0.5)
+            dots = hbox(0)
+            dots.set_halign(Gtk.Align.CENTER)
+            dot_event = label("●", "dot")
+            dot_task = label("●", "dot hastask")
+            dots.append(dot_event)
+            dots.append(dot_task)
+            inner.append(num)
+            inner.append(dots)
+            button.set_child(inner)
+            button.connect("clicked", lambda _b, i=n: self.pick(i))
+            grid.attach(button, n % 7, n // 7 + 1, 1, 1)
+            self.cells.append(DayCell(button, num, dot_event, dot_task, self.today))
+        scroll = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
+        scroll.connect("scroll", lambda _c, _dx, dy: (self.nav(1 if dy > 0 else -1), True)[1])
+        grid.add_controller(scroll)
+        left.append(grid)
+
+        legend = hbox(4, "legend")
+        for css, text in (("feriado", "feriado"), ("nolaborable", "no laborable"), ("fecha", "celebración"),
+                          ("hastask", "tarea")):
+            legend.append(label("●", f"dot {css}"))
+            legend.append(label(f"{text}   "))
+        left.append(legend)
+
+        # ---- columna derecha: día elegido, agenda, alta rápida, próximos feriados
+        right = vbox("col-right")
+        right.set_size_request(300, -1)
+        self.day_title = label("", "day-title")
+        self.day_sub = label("", "day-sub")
+        right.append(self.day_title)
+        right.append(self.day_sub)
+        self.events = vbox()
+        right.append(self.events)
+        right.append(label("AGENDA", "section"))
+        self.tasks = vbox()
+        right.append(Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                                        max_content_height=230, child=self.tasks))
+
+        add = hbox(6, "add-row")
+        self.entry_title = Gtk.Entry(placeholder_text="Nueva tarea o alarma…", hexpand=True)
+        # la hora no se escribe: un botón abre el selector bajo la fila (hora + am/pm → minutos)
+        self.time_btn = Gtk.Button(label="hora", tooltip_text="Elige la hora y luego los minutos · sin hora = "
+                                                              "todo el día (aviso 9:00 am)")
+        self.time_btn.add_css_class("time-btn")
+        self.time_btn.add_css_class("empty")
+        add_btn = Gtk.Button(label="Agregar")
+        add_btn.add_css_class("add")
+        self.entry_title.connect("activate", lambda _e: self.add_task())
+        # al escribir, el panel retiene el teclado: con focus-follows-mouse de niri, sacar el
+        # ratón del panel le quitaba el foco y lo cerraba a media tarea (Esc o el reloj lo cierran)
+        self.entry_title.connect("changed", self.on_typing)
+        add_btn.connect("clicked", lambda _b: self.add_task())
+        add.append(self.entry_title)
+        add.append(self.time_btn)
+        add.append(add_btn)
+        right.append(add)
+        right.append(self.time_picker())
+        right.append(label("PRÓXIMOS FERIADOS", "section"))
+        self.upcoming = vbox()
+        right.append(self.upcoming)
+
+        panel = hbox(0, "panel")
+        panel.append(left)
+        panel.append(right)
+        win.set_child(panel)
+
+    def on_key(self, _ctrl, keyval, _code, _state):
+        if keyval == Gdk.KEY_Escape:
+            self.hide()
+            return True
+        return False
+
+    def on_active(self, win, _pspec):
+        if win.is_active():
+            self.was_active = True
+        elif self.was_active and win.get_visible():
+            self.hide()
+
+    def on_typing(self, entry):
+        if entry.get_text():
+            Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.EXCLUSIVE)
+
+    @staticmethod
+    def focused_monitor():
+        try:
+            out = subprocess.run(["niri", "msg", "-j", "focused-output"], capture_output=True, timeout=2).stdout
+            name = json.loads(out).get("name")
+        except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+            return None
+        monitors = Gdk.Display.get_default().get_monitors()
+        for i in range(monitors.get_n_items()):
+            m = monitors.get_item(i)
+            if m.get_connector() == name:
+                return m
+        return None
+
+    def set_time(self, hhmm):
+        """Pone la hora elegida ("HH:MM" o "" = todo el día) en el botón «hora» y en su valor."""
+        self.time_val = hhmm
+        if hhmm:
+            self.time_btn.set_label(fmt_time(hhmm))
+            self.time_btn.remove_css_class("empty")
+        else:
+            self.time_btn.set_label("hora")
+            self.time_btn.add_css_class("empty")
+
+    def time_picker(self):
+        """Selector de hora dentro del panel (no un popover: le quitaría el foco y lo cerraría).
+        Clic en «hora» → hora 1–12 con am/pm a la derecha → minutos de 5 en 5."""
+        stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_LEFT_RIGHT, transition_duration=150,
+                          vhomogeneous=False, interpolate_size=True)
+        picker = Gtk.Revealer(child=stack, reveal_child=False)
+        self.picker, self.picker_stack = picker, stack
+
+        # paso 1: hora 1–12 y, a la derecha, am / pm
+        hours = vbox("picker")
+        head = hbox(6)
+        title = label("ELIGE LA HORA", "pick-head")
+        title.set_hexpand(True)
+        none = Gtk.Button(label="Sin hora")
+        none.add_css_class("pick-link")
+        head.append(title)
+        head.append(none)
+        hours.append(head)
+        body = hbox(8)
+        grid = Gtk.Grid(column_homogeneous=True, row_spacing=3, column_spacing=3, hexpand=True)
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        am = Gtk.ToggleButton(label="am")
+        pm = Gtk.ToggleButton(label="pm")
+        pm.set_group(am)
+        for b in (am, pm):
+            b.add_css_class("pick")
+            b.add_css_class("ampm")
+            side.append(b)
+        body.append(grid)
+        body.append(side)
+        hours.append(body)
+
+        # paso 2: minutos
+        mins = vbox("picker")
+        head = hbox(6)
+        back = Gtk.Button()
+        back.add_css_class("pick-link")
+        mtitle = label("MINUTOS", "pick-head")
+        mtitle.set_hexpand(True)
+        head.append(back)
+        head.append(mtitle)
+        mins.append(head)
+        mgrid = Gtk.Grid(column_homogeneous=True, row_spacing=3, column_spacing=3)
+        mins.append(mgrid)
+
+        stack.add_named(hours, "hours")
+        stack.add_named(mins, "mins")
+
+        def on_hour(_b, h):
+            is_pm = pm.get_active()
+            self.pick_hour = h % 12 + (12 if is_pm else 0)
+            self.set_time(f"{self.pick_hour:02}:00")
+            back.set_label(f"‹ {h} {'pm' if is_pm else 'am'}")
+            stack.set_visible_child_name("mins")
+
+        def on_minute(_b, m):
+            self.set_time(f"{self.pick_hour:02}:{m:02}")
+            picker.set_reveal_child(False)
+            self.entry_title.grab_focus()
+
+        for h in range(1, 13):
+            b = Gtk.Button(label=str(h))
+            b.add_css_class("pick")
+            b.connect("clicked", on_hour, h)
+            grid.attach(b, (h - 1) % 6, (h - 1) // 6, 1, 1)
+        for i, m in enumerate(range(0, 60, 5)):
+            b = Gtk.Button(label=f":{m:02}")
+            b.add_css_class("pick")
+            b.connect("clicked", on_minute, m)
+            mgrid.attach(b, i % 6, i // 6, 1, 1)
+
+        back.connect("clicked", lambda _b: stack.set_visible_child_name("hours"))
+
+        def on_none(_b):
+            self.set_time("")
+            picker.set_reveal_child(False)
+            self.entry_title.grab_focus()
+
+        none.connect("clicked", on_none)
+
+        # abrir / cerrar con el botón «hora»: siempre empieza por la hora, con am/pm de la hora
+        # elegida o, si no hay, de la hora actual; mientras está abierto el panel retiene el teclado
+        def on_time_btn(_b):
+            if picker.get_reveal_child():
+                picker.set_reveal_child(False)
+                return
+            try:
+                h = int(self.time_val.split(":")[0])
+            except ValueError:
+                h = datetime.now().hour
+            (pm if h >= 12 else am).set_active(True)
+            stack.set_visible_child_name("hours")
+            picker.set_reveal_child(True)
+            Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.EXCLUSIVE)
+
+        self.time_btn.connect("clicked", on_time_btn)
+        return picker
+
+    def close_picker(self):
+        self.picker.set_reveal_child(False)
+        self.picker_stack.set_visible_child_name("hours")
+
+    def show(self, day=None):
+        if self.win is None:
+            self.build()
+        self.today = date.today()
+        self.selected = day or self.today
+        self.view = self.selected.replace(day=1)
+        try:
+            Layer.set_monitor(self.win, self.focused_monitor())
+        except TypeError:
+            pass
+        self.was_active = False
+        Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.ON_DEMAND)
+        self.close_picker()
+        self.entry_title.set_text("")
+        self.set_time("")
+        self.refresh()
+        self.win.present()
+        self.entry_title.grab_focus()   # listo para escribir (si no, el foco caía en el ✓ de la primera tarea)
+        self.tick()   # después de present: tick no pinta con la ventana oculta (el reloj salía vacío 1 s)
+
+    def hide(self):
+        if self.win is not None:
+            self.win.set_visible(False)
+        self.residency()
+
+    def residency(self):
+        """Residente solo con tareas pendientes (hay alarmas que vigilar); si no, sale con el panel cerrado."""
+        if any(not t.get("done") for t in self.store.load()):
+            if not self.held:
+                self.app.hold()
+                self.held = True
+        else:
+            if self.held:
+                self.app.release()
+                self.held = False
+            if not self.visible():
+                self.app.quit()
+
+    def toggle(self):
+        if self.visible():
+            self.hide()
+        else:
+            self.show()
+
+    # ---------- datos -> widgets
+
+    def refresh(self):
+        if self.win is None:
+            return
+        self.today = today = date.today()
+        tasks = self.store.load()
+        self.cal.extra = feriados.load_extra(self.extra_path)
+        view, selected = self.view, self.selected
+
+        self.month.set_text(capitalize(MONTHS[view.month - 1]))
+        self.year.set_text(str(view.year))
+        start = view - timedelta(days=view.weekday())
+        for n, cell in enumerate(self.cells):
+            d = start + timedelta(days=n)
+            cell.day = d
+            cell.num.set_text(str(d.day))
+            evs = self.cal.on(d)
+            kind = next((k for k in KINDS if any(e == k for _, e in evs)), None)
+            classes = ["day"]
+            if d.month != view.month:
+                classes.append("outside")
+            if d.weekday() == 5:
+                classes.append("weekend")
+            elif d.weekday() == 6:
+                classes.append("sunday")
+            if kind in ("feriado", "nolaborable"):
+                classes.append(kind)
+            if d == selected:
+                classes.append("selected")
+            if d == today:
+                classes.append("today")
+            cell.button.set_css_classes(classes)
+            cell.dot_event.set_css_classes(["dot", kind or "fecha"])
+            cell.dot_event.set_visible(kind is not None)
+            iso = d.isoformat()
+            cell.dot_task.set_visible(any(not t.get("done") and t.get("date") == iso for t in tasks))
+            cell.button.set_tooltip_text("\n".join(name for name, _ in evs) or None)
+        self.refresh_day(tasks)
+        self.refresh_upcoming()
+
+    def refresh_day(self, tasks):
+        d, today = self.selected, self.today
+        self.day_title.set_text(capitalize(long_date(d)))
+        rel = relative_days(d, today)
+        self.day_sub.set_text(f"{capitalize(rel)} · {d.year}" if rel in ("hoy", "mañana", "ayer")
+                              else f"{d.year} · {rel}")
+
+        clear(self.events)
+        for name, kind in self.cal.on(d):
+            ev = vbox(f"event {kind}")
+            ev.append(label(feriados.TITLE[kind], "kind"))
+            n = label(name, "name")
+            n.set_wrap(True)
+            ev.append(n)
+            self.events.append(ev)
+
+        clear(self.tasks)
+        iso = d.isoformat()
+        rows = [t for t in tasks if t.get("date") == iso]
+        if d == today:
+            # lo vencido de días anteriores también se ve hoy
+            rows += [t for t in tasks if not t.get("done") and t.get("date") and t["date"] < iso]
+        rows.sort(key=lambda t: (bool(t.get("done")), t.get("date") or "", t.get("time") or ALLDAY))
+        if not rows:
+            self.tasks.append(label("Sin tareas · escribe una abajo", "empty"))
+        now = datetime.now()
+        for t in rows:
+            self.tasks.append(self.task_row(t, now))
+
+    def task_row(self, t, now):
+        due = tareas.due(t)
+        if t.get("done"):
+            state = "done"
+        elif due and due <= now:
+            state = "overdue"
+        elif due and due.date() == self.today:
+            state = "today"
+        else:
+            state = "later"
+        row = hbox(6, f"task {state}")
+        info = vbox()
+        info.set_hexpand(True)
+        info.set_valign(Gtk.Align.CENTER)
+        title = label(t.get("title") or "", "t-title")
+        title.set_ellipsize(Pango.EllipsizeMode.END)
+        title.set_max_width_chars(28)
+        info.append(title)
+        when = fmt_time(t["time"]) if t.get("time") else "todo el día"
+        d = tareas.day(t)
+        if t.get("date") != self.selected.isoformat() and d:
+            when = f"{long_date(d)} · {when}"
+        snooze = tareas.str_field(t, "snooze_until")
+        if t.get("done"):
+            meta = f"hecha · {when}"
+        elif state == "overdue":
+            meta = f"vencida · {when}"
+        elif snooze:
+            meta = f"{when} · pospuesta hasta {snooze[-5:]}"
+        else:
+            meta = when
+        info.append(label(meta, "t-meta"))
+        row.append(info)
+
+        tid = t.get("id")
+        buttons = [("\U000f054c", "undo", "Volver a pendiente", self.undone) if t.get("done")
+                   else ("\U000f012c", "ok", "Marcar hecha", self.done),
+                   ("\U000f01b4", "del", "Eliminar", self.delete)]
+        for icon, css, tip, f in buttons:
+            b = Gtk.Button(label=icon, tooltip_text=tip, valign=Gtk.Align.CENTER)
+            b.add_css_class("t-btn")
+            b.add_css_class(css)
+            b.connect("clicked", lambda _b, f=f: f(tid))
+            row.append(b)
+        return row
+
+    def refresh_upcoming(self):
+        clear(self.upcoming)
+        for d, name, kind in self.cal.upcoming(self.today, 4):
+            row = hbox(8, "upcoming-row")
+            row.append(label(f"{d.day:02} {MONTHS[d.month - 1][:3]}", f"up-date {kind}"))
+            n = label(name, "up-name")
+            n.set_hexpand(True)
+            n.set_ellipsize(Pango.EllipsizeMode.END)
+            n.set_max_width_chars(24)
+            row.append(n)
+            w = label(relative_days(d, self.today), "up-when")
+            w.set_xalign(1.0)
+            row.append(w)
+            self.upcoming.append(row)
+
+    def tick(self):
+        if not self.visible():
+            return True
+        now = datetime.now()
+        self.time.set_text(f"{hour12(now.hour)}:{now.minute:02}")
+        self.ampm.set_text("pm" if now.hour >= 12 else "am")
+        self.date.set_text(f"{capitalize(long_date(now.date()))} de {now.year}")
+        if now.date() != self.today:
+            self.refresh()
+        return True
+
+    # ---------- acciones
+
+    def nav(self, step):
+        if step == 0:
+            self.selected = date.today()
+            self.view = self.selected.replace(day=1)
+        else:
+            m = self.view.month - 1 + step
+            self.view = date(self.view.year + m // 12, m % 12 + 1, 1)
+        self.refresh()
+
+    def pick(self, n):
+        d = self.cells[n].day
+        self.selected = d
+        if (d.year, d.month) != (self.view.year, self.view.month):
+            self.view = d.replace(day=1)
+        self.refresh()
+        self.entry_title.grab_focus()
+
+    def add_task(self):
+        title = self.entry_title.get_text().strip()
+        if not title:
+            self.entry_title.grab_focus()
+            return
+        task = {"title": title, "date": self.selected.isoformat(), "time": self.time_val, "done": False,
+                "created": stamp(now_min())}
+
+        def add(data):
+            ids = [i for i in (tareas._int(t.get("id")) for t in data) if i is not None]
+            data.append({"id": max(ids, default=0) + 1, **task})
+
+        self.store.update(add)
+        self.entry_title.set_text("")
+        self.set_time("")
+        self.close_picker()
+        self.entry_title.grab_focus()
+        self.refresh()
+        self.check_alarms()
+        self.residency()
+
+    def edit(self, tid, f):
+        def apply(data):
+            for t in data:
+                if t.get("id") == tid:
+                    f(t)
+
+        self.store.update(apply)
+        if self.visible():
+            self.refresh()
+        self.residency()
+
+    def done(self, tid):
+        at = stamp(now_min())
+
+        def f(t):
+            t["done"] = True
+            t["done_at"] = at
+            t.pop("snooze_until", None)
+
+        self.edit(tid, f)
+        self.close_notification(tid)
+
+    def undone(self, tid):
+        def f(t):
+            t["done"] = False
+            for k in ("done_at", "last_alert", "pre_done", "snooze_until"):
+                t.pop(k, None)
+
+        self.edit(tid, f)
+
+    def delete(self, tid):
+        self.store.update(lambda data: data.__setitem__(slice(None), [t for t in data if t.get("id") != tid]))
+        self.close_notification(tid)
+        self.refresh()
+        self.residency()
+
+    def snooze(self, tid):
+        until = stamp(now_min() + timedelta(minutes=SNOOZE_MIN))
+
+        def f(t):
+            t["snooze_until"] = until
+            t.pop("last_alert", None)
+
+        self.edit(tid, f)
+        self.close_notification(tid)
+
+    # ---------- alarmas
+
+    def check_alarms(self):
+        now, epoch = now_min(), int(time.time())
+        # lectura sin lock primero: solo se escribe si de verdad hay algo que avisar
+        if not any(tareas.due_alert(t, now, epoch) for t in self.store.load()):
+            return
+
+        def mark(data):
+            fire = []
+            for t in data:
+                a = tareas.due_alert(t, now, epoch)
+                if a is None:
+                    continue
+                kind, first, hit = a
+                if kind == "pre":
+                    t["pre_done"] = sorted(set(tareas.pre_done(t)) | set(hit))
+                    fire.append((dict(t), first))
+                else:
+                    t["last_alert"] = epoch
+                    fire.append((dict(t), None))
+            return fire
+
+        fire = self.store.update(mark)
+        for t, pre in fire:
+            self.alert(t, pre, now)
+        if fire and self.visible():
+            self.refresh()
+
+    def alert(self, t, pre, now):
+        due = tareas.due(t)
+        if due is None:
+            return
+        hour = fmt_time(t["time"]) if t.get("time") else "todo el día"
+        when = f"{long_date(due.date())} · {hour}"
+        title = GLib.markup_escape_text(t.get("title") or "")
+        if pre is not None:
+            summary = f"En {max(1, int((due - now).total_seconds() // 60))} min"
+            body = f"<b>{title}</b>\n{when}"
+            actions = ["default", "Abrir calendario", "done", "Marcar hecha"]
+            sound = SOUND_PRE
+        else:
+            ago = int((now - due).total_seconds() // 60)
+            ago = ("ahora" if ago < 1 else f"hace {ago} min" if ago < 60 else f"hace {ago // 60} h" if ago < 1440
+                   else f"hace {ago // 1440} d")
+            summary = "Tarea pendiente"
+            body = (f"<b>{title}</b>\n{when} · {ago}\n"
+                    f"<small>se repite cada {REMIND_EVERY // 60} min hasta marcarla</small>")
+            actions = ["default", "Abrir calendario", "done", "Marcar hecha", "snooze", f"Posponer {SNOOZE_MIN} min"]
+            sound = SOUND_ALARM
+        self.notify(t.get("id"), summary, body, actions)
+        play(sound)
+
+    def setup_notifications(self):
+        try:
+            self.notif = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION, Gio.DBusProxyFlags.NONE, None, "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications", "org.freedesktop.Notifications", None)
+        except GLib.Error:
+            return
+        self.notif.connect("g-signal", self.on_notif_signal)
+
+    def notify(self, tid, summary, body, actions):
+        if self.notif is None:
+            return
+        hints = {"urgency": GLib.Variant("y", 2), "category": GLib.Variant("s", "x-zen.alarm")}
+        params = GLib.Variant("(susssasa{sv}i)", ("Calendario", self.notif_by_task.get(tid, 0), "x-office-calendar",
+                                                  summary, body, actions, hints, 0))
+        try:
+            nid = self.notif.call_sync("Notify", params, Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
+        except GLib.Error:
+            return
+        self.notif_by_task[tid] = nid
+        self.task_by_notif[nid] = tid
+
+    def close_notification(self, tid):
+        nid = self.notif_by_task.pop(tid, None)
+        if nid is None:
+            return
+        self.task_by_notif.pop(nid, None)
+        if self.notif is not None:
+            try:
+                self.notif.call_sync("CloseNotification", GLib.Variant("(u)", (nid,)), Gio.DBusCallFlags.NONE,
+                                     2000, None)
+            except GLib.Error:
+                pass
+
+    def on_notif_signal(self, _proxy, _sender, signal, params):
+        vals = params.unpack()
+        nid = vals[0] if vals else 0
+        tid = self.task_by_notif.get(nid)
+        if tid is None:
+            return
+        if signal == "NotificationClosed":
+            self.task_by_notif.pop(nid, None)
+            self.notif_by_task.pop(tid, None)
+        elif signal == "ActionInvoked":
+            action = vals[1]
+            if action == "done":
+                self.done(tid)
+            elif action == "snooze":
+                self.snooze(tid)
+            elif action == "default":
+                task = next((t for t in self.store.load() if t.get("id") == tid), None)
+                self.show(tareas.day(task) if task else None)
+
+    # ---------- arranque
+
+    def on_startup(self, _app):
+        provider = Gtk.CssProvider()
+        provider.load_from_path(os.path.join(HERE, "style.css"))
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.setup_notifications()
+
+        def every_check():
+            self.check_alarms()
+            # las tareas pueden marcarse hechas desde otro lado (script Tasks)
+            self.residency()
+            return True
+
+        GLib.timeout_add_seconds(CHECK_EVERY, every_check)
+        GLib.timeout_add_seconds(1, self.tick)
+        GLib.idle_add(lambda: (self.check_alarms(), False)[1])
+
+    def on_command_line(self, _app, cmd):
+        args = cmd.get_arguments()[1:]
+        if "--daemon" in args:
+            self.residency()
+            return 0
+        day = None
+        if "--day" in args and args.index("--day") + 1 < len(args):
+            try:
+                day = date.fromisoformat(args[args.index("--day") + 1])
+            except ValueError:
+                pass
+        if day:
+            self.show(day)
+        else:
+            self.toggle()
+        return 0
+
+
+def main():
+    # el proceso se llama zen-calendar (no python3): pgrep -x / killall lo encuentran
+    try:
+        ctypes.CDLL(None).prctl(15, b"zen-calendar", 0, 0, 0)
+    except (OSError, AttributeError):
+        pass
+    return App().app.run(sys.argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

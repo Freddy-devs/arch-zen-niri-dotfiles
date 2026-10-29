@@ -284,7 +284,7 @@ step_aur() {
     done
     (( ${#pkgs[@]} )) || return 0
     # herramientas de compilación solo durante el build (se quitan después si no estaban)
-    for p in rust sassc; do pacman -Qq "$p" &>/dev/null || makedeps+=("$p"); done
+    for p in sassc; do pacman -Qq "$p" &>/dev/null || makedeps+=("$p"); done
     (( ${#makedeps[@]} )) && pac -S --needed --asdeps "${makedeps[@]}"
 
     src=$(mktemp -d /var/tmp/zen-aur.XXXXXX)
@@ -331,7 +331,7 @@ build_pkg() {   # $1 paquete, $2 carpeta de trabajo, $3 makepkg.conf
     rm -rf "$dir"
     if [[ -f $ROOT/aur/local/$p/PKGBUILD ]]; then
         cp -r "$ROOT/aur/local/$p" "$dir"
-        # apps propias (Rust): el código va junto al PKGBUILD
+        # apps propias: el código va junto al PKGBUILD
         [[ -d $ROOT/apps/$p ]] && cp -r "$ROOT/apps/$p" "$dir/src-app"
         chown -R "$USR:" "$dir"
     else

@@ -12,7 +12,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Compositor | `niri` + `xwayland-satellite` (apps X11 automáticas) | extra |
 | Login | `sddm` con el tema propio **Dark Pirate** (QML Qt6; X11 solo en la pantalla de login) | extra |
 | Barra / menú / notif. | `waybar` (barra de vidrio translúcido con borde y esquinas redondeadas, con una isla redondeada por grupo: CPU · RAM · disco a la izquierda, escritorios Pac-Man al centro, hora a la derecha antes del idioma y del botón de apagado; clic en la hora = calendario), `rofi` (lanzador, energía, portapapeles), `mako` (por D-Bus, a pedido), `swaylock`, `swayidle` | extra |
-| Calendario | `zen-calendar` (Rust, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
+| Calendario | `zen-calendar` (Python, apps/zen-calendar): feriados del Perú, agenda y alarmas (GTK4 + `gtk4-layer-shell`) | repo local |
 | Tema | GTK **Colloid-Dark-Nord** (GTK2/3/4) · iconos **Nordzy-dark** (Nord) · cursor **Qogir-white-cursors** · Qt (qt6ct, Fusion) con la misma paleta | fuentes de sus autores → repo local |
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
@@ -47,7 +47,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 ## Rendimiento
 - **Nada corre en segundo plano sin motivo.** Residentes: niri, waybar, swaybg, swayidle, el agente
   polkit y el historial del portapapeles. mako arranca por D-Bus con la primera notificación; el
-  calendario (Rust, ~15 MB) solo queda en memoria si hay tareas pendientes; Bluetooth, audio y red se
+  calendario (Python) solo queda en memoria si hay tareas pendientes; Bluetooth, audio y red se
   abren en terminal y se cierran al salir. Los servicios que instala `zen-apps` quedan apagados.
 - SDDM solo durante el login; grub-btrfs sin demonio (systemd vigila `/.snapshots`).
 - **zram** (zstd, hasta la mitad de la RAM / 8 GB) en vez de zswap; `systemd-oomd` evita que el
@@ -215,7 +215,7 @@ el paquete), y en `pacman` cada noticia sale una sola vez (`/var/lib/arch-news/s
 install.sh     post-instalación: todo el sistema en pasos reanudables
 packages/      install-base.txt (base) · desktop.txt (escritorio) · custom.txt (se compilan: yay, tema, zen-calendar)
 aur/local/     PKGBUILD propios: tema Nord, cursor Qogir, zen-calendar
-apps/          zen-calendar (Rust)
+apps/          zen-calendar (Python)
 system/        sddm (tema Dark Pirate), seguridad, rendimiento, mirrors, hooks, reflector,
                scripts (zen-apps, zen-hwsetup, zen-hwcheck, zen-power…), wallpaper
 dotfiles/      ~ y /etc/skel: niri, waybar, rofi, mako, alacritty, swaylock, gtk, zsh

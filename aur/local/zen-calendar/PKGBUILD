@@ -1,27 +1,22 @@
-# Calendario de la barra (Rust). El código está en apps/zen-calendar; install.sh lo
-# copia junto a este PKGBUILD como src-app/.
+# Calendario de la barra (Python + GTK4, sin compilar). El código está en apps/zen-calendar;
+# install.sh lo copia junto a este PKGBUILD como src-app/.
 pkgname=zen-calendar
-pkgver=1.0.0
-pkgrel=4
-pkgdesc="Calendario de la barra: feriados del Perú, agenda y alarmas (GTK4 + layer-shell)"
-arch=('x86_64')
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Calendario de la barra: feriados del Perú, agenda y alarmas (Python + GTK4 + layer-shell)"
+arch=('any')
 license=('GPL-3.0-only')
-depends=('gtk4' 'gtk4-layer-shell' 'pipewire' 'sound-theme-freedesktop')
-makedepends=('cargo')
-options=('!lto' '!debug')
-
-build() {
-    cd "$startdir/src-app"
-    export CARGO_TARGET_DIR="$srcdir/target"
-    cargo build --release --locked
-}
+depends=('python' 'python-gobject' 'gtk4' 'gtk4-layer-shell' 'pipewire' 'sound-theme-freedesktop')
 
 check() {
     cd "$startdir/src-app"
-    export CARGO_TARGET_DIR="$srcdir/target"
-    cargo test --release --locked
+    PYTHONDONTWRITEBYTECODE=1 python -m unittest -q test_logica
 }
 
 package() {
-    install -Dm755 "$srcdir/target/release/zen-calendar" "$pkgdir/usr/bin/zen-calendar"
+    cd "$startdir/src-app"
+    install -Dm755 zen-calendar "$pkgdir/usr/lib/zen-calendar/zen-calendar"
+    install -Dm644 -t "$pkgdir/usr/lib/zen-calendar" tareas.py feriados.py style.css
+    install -d "$pkgdir/usr/bin"
+    ln -s /usr/lib/zen-calendar/zen-calendar "$pkgdir/usr/bin/zen-calendar"
 }
