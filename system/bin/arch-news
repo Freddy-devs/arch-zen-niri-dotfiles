@@ -1,19 +1,55 @@
 #!/usr/bin/env bash
 # Muestra las noticias de archlinux.org de los últimos 15 días.
 # Las noticias anuncian intervenciones manuales: leerlas evita romper el sistema.
+# Sin falsas alarmas:
+#   - "Update to pkg ≥ X" se omite si lo instalado ya cumple (o el paquete no está).
+#   - Cada noticia se muestra una sola vez (registro en $SEEN, solo como root).
+# Uso: arch-news [días] [--all]   (--all ignora el registro de vistas)
 # Nunca falla (no debe bloquear pacman).
 
-DAYS="${1:-15}"
+DAYS=15 ALL=0
+for a in "$@"; do
+    case $a in
+        --all) ALL=1 ;;
+        *[!0-9]*|'') ;;
+        *) DAYS=$a ;;
+    esac
+done
+
+SEEN=/var/lib/arch-news/seen
+[[ $EUID -eq 0 ]] && mkdir -p "${SEEN%/*}" && touch "$SEEN"
+
 feed="$(curl -fsS --max-time 5 https://archlinux.org/feeds/news/ 2>/dev/null)" || exit 0
 limit=$(date -d "-$DAYS days" +%s)
 
-printf '%s' "$feed" | tr -d '\n' | sed 's|<item>|\n|g' | tail -n +2 |
+# 0 = aviso de versión ya cumplido (o paquetes no instalados): no hay nada que hacer.
+already_patched() {
+    local title=$1 pkg req have found=0
+    title=${title//&gt;=/≥}; title=${title//>=/≥}
+    while read -r pkg req; do
+        found=1
+        have=$(pacman -Q "$pkg" 2>/dev/null | awk '{print $2}') || continue
+        [[ -z $have ]] && continue
+        (( $(vercmp "$have" "$req") >= 0 )) || return 1
+    done < <(grep -oE '[a-z0-9][a-z0-9+._-]* ≥ [0-9][^ ,]*' <<<"$title" | sed 's/ ≥ / /')
+    (( found ))
+}
+
+shown=0
 while IFS= read -r item; do
     title=$(sed -n 's|.*<title>\(.*\)</title>.*|\1|p' <<<"$item")
     date=$(sed -n 's|.*<pubDate>\(.*\)</pubDate>.*|\1|p' <<<"$item")
     [[ -n $title && -n $date ]] || continue
+    title=$(sed 's/&gt;/>/g; s/&lt;/</g; s/&amp;/\&/g' <<<"$title")
     ts=$(date -d "$date" +%s 2>/dev/null) || continue
-    (( ts >= limit )) && printf '  ⚠  %s  —  %s\n' "$(date -d "$date" +%F)" "$title"
-done
-echo "  Detalles: https://archlinux.org/news/"
+    (( ts >= limit )) || continue
+    already_patched "$title" && continue
+    key="$(date -d "$date" +%F) $title"
+    (( ALL )) || ! grep -qxF "$key" "$SEEN" 2>/dev/null || continue
+    printf '  ⚠  %s  —  %s\n' "${key%% *}" "$title"
+    [[ $EUID -eq 0 ]] && echo "$key" >> "$SEEN"
+    shown=1
+done < <(printf '%s' "$feed" | tr -d '\n' | sed 's|<item>|\n|g' | tail -n +2)
+
+(( shown )) && echo "  Detalles: https://archlinux.org/news/"
 exit 0
