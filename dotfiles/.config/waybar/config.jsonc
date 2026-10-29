@@ -49,13 +49,20 @@
     // ---------- sistema ----------
     "group/stats": {
         "orientation": "horizontal",
-        "modules": ["cpu", "memory", "disk"]
+        "modules": ["cpu", "custom/gpu", "memory", "disk"]
     },
 
     "cpu": {
         "format": "<span color='#bf616a' size='large' rise='-1pt'>󰍛</span>  {usage}%",
         "interval": 2,
         "states": { "high": 80 },
+        "on-click": "~/.local/bin/zen-term -e btop"
+    },
+
+    // uso de la gráfica Intel (motor más ocupado: dibujo o video); la NVIDIA va apagada
+    "custom/gpu": {
+        "exec": "~/.local/bin/zen-gpu",
+        "return-type": "json",
         "on-click": "~/.local/bin/zen-term -e btop"
     },
 

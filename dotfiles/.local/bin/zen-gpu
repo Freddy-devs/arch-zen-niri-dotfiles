@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""zen-gpu — uso de la gráfica Intel para waybar (custom/gpu).
+
+Imprime una línea JSON cada 2 s: "󰢮  12%". El porcentaje es el motor más ocupado de la Intel
+(dibujo, video o copia); el tooltip detalla cada motor y si la NVIDIA está apagada.
+Lee el tiempo de GPU de cada programa en /proc/<pid>/fdinfo (sin root y sin sondear la GPU):
+solo mira los descriptores de la Intel ya conocidos y busca nuevos cada 10 s.
+"""
+import json
+import os
+import re
+import sys
+import time
+
+INTERVALO = 2
+REBUSCAR = 5                      # cada 5 vueltas (10 s) busca programas nuevos que usen la GPU
+CELESTE, AMARILLO, ROJO = "#78c2ff", "#ebcb8b", "#bf616a"
+ICONO = "\U000F08AE"              # 󰢮 tarjeta de expansión (Nerd Font)
+NOMBRES = {"render": "dibujo", "video": "video", "video-enhance": "video (escalado)", "copy": "copia"}
+NVIDIA = "/sys/bus/pci/devices/0000:01:00.0"
+MOTOR = re.compile(r"^drm-engine-([\w-]+):\s*(\d+) ns", re.M)
+CLIENTE = re.compile(r"^drm-client-id:\s*(\d+)", re.M)
+
+
+def buscar():
+    """Descriptores (pid, fd) abiertos sobre la Intel, de los programas del usuario."""
+    fds = []
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            for fd in os.listdir(f"/proc/{pid}/fd"):
+                if os.readlink(f"/proc/{pid}/fd/{fd}").startswith("/dev/dri/"):
+                    fds.append((pid, fd))
+        except OSError:
+            pass
+    return fds
+
+
+def leer(fds):
+    """Tiempo acumulado por motor, contando cada cliente DRM una sola vez."""
+    total, vistos, vivos = {}, set(), []
+    for pid, fd in fds:
+        try:
+            info = open(f"/proc/{pid}/fdinfo/{fd}").read()
+        except OSError:
+            continue
+        if "drm-driver:\ti915" not in info:
+            continue
+        vivos.append((pid, fd))
+        cliente = CLIENTE.search(info)
+        if not cliente or cliente.group(1) in vistos:
+            continue
+        vistos.add(cliente.group(1))
+        for motor, ns in MOTOR.findall(info):
+            total[motor] = total.get(motor, 0) + int(ns)
+    return total, vivos
+
+
+def nvidia():
+    try:
+        estado = open(f"{NVIDIA}/power/runtime_status").read().strip()
+    except OSError:
+        return ""
+    return "NVIDIA MX150: apagada" if estado == "suspended" else "NVIDIA MX150: encendida"
+
+
+def main():
+    fds, vuelta = buscar(), 0
+    antes, fds = leer(fds)
+    t0 = time.monotonic()
+    while True:
+        time.sleep(INTERVALO)
+        vuelta += 1
+        if vuelta % REBUSCAR == 0:
+            fds = buscar()
+        ahora, fds = leer(fds)
+        t1 = time.monotonic()
+        dt = (t1 - t0) * 1e9
+        uso = {m: max(0.0, min(100.0, (ns - antes.get(m, ns)) / dt * 100)) for m, ns in ahora.items()}
+        antes, t0 = ahora, t1
+
+        pico = round(max(uso.values(), default=0))
+        color = ROJO if pico >= 90 else AMARILLO if pico >= 60 else CELESTE
+        lineas = ["Intel UHD 620"] + [f"  {NOMBRES.get(m, m)}: {u:.0f}%" for m, u in sorted(uso.items())
+                                      if m in NOMBRES]
+        if nv := nvidia():
+            lineas.append(nv)
+        print(json.dumps({
+            "text": f"<span color='{color}' rise='0pt'>{ICONO}</span>  {pico}%",
+            "tooltip": "\n".join(lineas),
+            "class": "high" if pico >= 90 else "",
+        }, ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (BrokenPipeError, KeyboardInterrupt):
+        sys.exit(0)

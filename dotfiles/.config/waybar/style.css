@@ -100,7 +100,7 @@ tooltip label {
 }
 
 /* módulos dentro de un grupo, separados con aire */
-#cpu, #memory, #disk,
+#cpu, #custom-gpu, #memory, #disk,
 #bluetooth, #custom-btbattery, #custom-media, #network, #battery,
 #pulseaudio, #backlight {
     padding: 0 6px;
@@ -121,6 +121,7 @@ tooltip label {
 }
 
 #cpu.high    { color: @red; }
+#custom-gpu.high { color: @red; }
 #memory.high { color: @orange; }
 
 /* ---------- centro: Pac-Man ---------- */
