@@ -188,7 +188,7 @@
     },
 
     "custom/updates": {
-        "format": "<span color='#b9c244'>󰏔</span> {}",
+        "format": "<span color='#b9c244'>󰅢</span> {}",
         "exec": "command -v checkupdates >/dev/null && checkupdates 2>/dev/null | wc -l",
         "exec-if": "command -v checkupdates",
         "interval": 1800,
