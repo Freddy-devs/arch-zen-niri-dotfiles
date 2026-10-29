@@ -80,10 +80,11 @@
     },
 
     "disk": {
-        "format": "<span color='#ebcb8b' rise='0pt'>󰟜</span>  {percentage_used}%",
+        "format": "<span color='#ebcb8b' rise='0pt'>󰟜</span>  {specific_used:0.0f} / {specific_total:0.0f} GiB",
+        "unit": "GiB",
         "path": "/",
         "interval": 60,
-        "tooltip-format": "{used} usados de {total} · libre {free}",
+        "tooltip-format": "{used} usados de {total} ({percentage_used}%) · libre {free}",
         "on-click": "~/.local/bin/zen-term --class zen-tui -e sh -c 'df -h -x tmpfs -x devtmpfs; read -p \"Enter para cerrar\" _'"
     },
 
