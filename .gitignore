@@ -7,3 +7,8 @@
 aur/local/*/src/
 aur/local/*/pkg/
 aur/local/*/*.tar.gz
+
+# restos de ejecución que no deben subirse
+__pycache__/
+*.pyc
+erl_crash.dump

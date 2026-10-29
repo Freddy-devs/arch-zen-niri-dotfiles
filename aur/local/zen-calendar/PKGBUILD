@@ -2,7 +2,7 @@
 # copia junto a este PKGBUILD como src-app/.
 pkgname=zen-calendar
 pkgver=1.0.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Calendario de la barra: feriados del Perú, agenda y alarmas (GTK4 + layer-shell)"
 arch=('x86_64')
 license=('GPL-3.0-only')
