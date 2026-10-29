@@ -1,7 +1,0 @@
-# Tema de iconos para rofi: siempre el icono oficial que trae cada app (hicolor/pixmaps).
-# Adwaita solo cubre las pocas apps del sistema que no traen icono propio.
-[Icon Theme]
-Name=zen-oficial
-Comment=Iconos oficiales de cada aplicación
-Inherits=hicolor,Adwaita
-Directories=

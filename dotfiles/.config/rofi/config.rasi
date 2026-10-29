@@ -6,8 +6,8 @@
 configuration {
     modi:                 "drun";
     show-icons:           true;
-    /* iconos oficiales de cada app, nunca los del tema Nordzy */
-    icon-theme:           "zen-oficial";
+    /* hicolor = el icono oficial que instala cada app (nunca Nordzy); rofi usa Adwaita de respaldo */
+    icon-theme:           "hicolor";
     drun-display-format:  "{name}\n[<span size='small' alpha='60%'>{generic}</span>]";
     display-drun:         "";
     matching:             "fuzzy";
