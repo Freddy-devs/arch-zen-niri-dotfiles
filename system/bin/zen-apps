@@ -22,7 +22,7 @@ aur()  { yay -S --needed --noconfirm --answerclean None --answerdiff None "$@"; 
 
 # id | descripción | tamaño aproximado
 CATALOG=(
-    "brave|Navegador Brave|~400 MB"
+    "brave|Navegador Brave Origin (gratis en Linux, sin extras)|~400 MB"
     "wps|WPS Office en español (Writer, Spreadsheets, Presentation)|~1 GB"
     "claude|Claude Code (instalador oficial, se actualiza solo)|~200 MB"
     "herdr|herdr (instalador oficial)|~30 MB"
@@ -41,7 +41,7 @@ CATALOG=(
 
 install_one() {
     case "$1" in
-        brave)  aur brave-bin ;;
+        brave)  aur brave-origin-bin ;;
         wps)    aur wps-office wps-office-mui-es-es ttf-wps-fonts ;;
         claude) curl -fsSL https://claude.ai/install.sh | bash ;;
         herdr)  curl -fsSL https://herdr.dev/install.sh | sh ;;

@@ -17,7 +17,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Terminal | alacritty + zsh: prompt de bspwm, historial de 100 000 comandos, sugerencias, completado de ~1000 programas, `pkgfile`, banner pixel-art, fastfetch | extra |
 | Fuentes | **Inter** (interfaz), JetBrainsMono Nerd (terminal), Symbols Nerd (iconos) | extra |
 | Paneles | Bluetooth `zen-bluetooth` (panel bajo la barra, con el mouse; clic derecho abre `bluetui`), sonido `zen-audio` (panel con volumen, micrófono, dispositivos y apps), brillo `zen-brightness` (laptop + monitor externo por DDC/CI con `ddcutil`; en el monitor activa DDC/CI en su menú), red `zen-network` (panel con la conexión actual y las redes Wi-Fi: buscar, conectar con contraseña en la misma fila, olvidar; Super+N; clic derecho abre `nmtui` para lo avanzado) | extra |
-| Opcional | `zen-apps`: Brave, WPS, Claude Code, herdr, PHP, MariaDB, PostgreSQL, Podman, Node, Go, Rust, gh, huella, GUIs | a pedido |
+| Opcional | `zen-apps`: Brave Origin, WPS, Claude Code, herdr, PHP, MariaDB, PostgreSQL, Podman, Node, Go, Rust, gh, huella, GUIs | a pedido |
 | Estabilidad | btrfs + snapper + snap-pac + grub-btrfs (sin demonio: una unidad .path de systemd), sin repos testing, aviso de noticias Arch | extra |
 | Seguridad | cortafuegos nftables (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
 
@@ -65,7 +65,7 @@ zen-apps --list          # todo lo disponible
 ```
 | id | Qué instala |
 |---|---|
-| `brave` · `wps` | Navegador Brave · WPS Office en español (AUR con `yay`) |
+| `brave` · `wps` | Navegador Brave Origin · WPS Office en español (AUR con `yay`) |
 | `claude` · `herdr` | Claude Code · herdr (instaladores oficiales, en `~/.local/bin`) |
 | `php` · `mariadb` · `postgresql` | PHP + php-fpm + Composer · MariaDB solo en localhost · PostgreSQL (inicializados, apagados) |
 | `podman` · `node` · `go` · `rust` · `gh` | Podman sin root (`alias docker=podman`) · Node.js · Go · Rust (rustup) · GitHub CLI |

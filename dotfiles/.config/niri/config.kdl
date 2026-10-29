@@ -183,7 +183,7 @@ window-rule {
 }
 
 window-rule {
-    match app-id=r#"^brave-browser$"#
+    match app-id=r#"^brave-(origin|browser)$"#
     default-column-width { proportion 0.66667; }
 }
 

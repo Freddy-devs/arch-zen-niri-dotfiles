@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-# Personaliza Brave (brave-bin) para que combine con el escritorio:
+# Personaliza Brave Origin (brave-origin-bin) para que combine con el escritorio:
 #   - toma los colores del tema GTK del sistema (TokyoNight-Dark) y sigue su modo oscuro
 #   - pestañas verticales en el lado izquierdo, sin barra de título
+#   - al abrir, continúa donde lo dejaste (ventanas y pestañas)
 # Brave debe estar cerrado: si está abierto sobrescribe las preferencias al salir.
 # Uso: zen-brave-theme [--wait]   (--wait espera a que cierres Brave y luego aplica)
 
-import json, os, subprocess, sys, time
+import glob, json, os, subprocess, sys, time
 
-BASE = os.path.expanduser("~/.config/BraveSoftware/Brave-Browser")
+# carpeta del perfil de Origin (se busca por si Brave cambia el nombre)
+_found = sorted(glob.glob(os.path.expanduser("~/.config/BraveSoftware/*Origin*")))
+BASE = _found[0] if _found else os.path.expanduser("~/.config/BraveSoftware/Brave-Origin")
 PREFS = os.path.join(BASE, "Default", "Preferences")
 STATE = os.path.join(BASE, "Local State")
 
 
 def running():
-    return subprocess.run(["pgrep", "-x", "brave"], capture_output=True).returncode == 0
+    return subprocess.run(["pgrep", "-f", "^/opt/brave-origin-bin/"], capture_output=True).returncode == 0
 
 
 def patch(path, changes):
@@ -50,8 +53,9 @@ patch(PREFS, {
     "brave.tabs.vertical_tabs_on_right": False,
     "brave.tabs.vertical_tabs_collapsed": False,
     "brave.tabs.vertical_tabs_show_title_on_window": False,
+    "session.restore_on_startup": 1,                    # 1 = continuar donde lo dejaste
 })
 patch(STATE, {
     "brave.dark_mode": 0,                               # 0 = seguir al sistema (prefer-dark)
 })
-print("Listo: abre Brave para ver el tema del sistema y las pestañas a la izquierda.")
+print("Listo: abre Brave Origin para ver el tema del sistema y las pestañas a la izquierda.")
