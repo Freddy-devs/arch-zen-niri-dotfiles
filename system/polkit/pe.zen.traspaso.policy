@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- zen-tuneles (panel de la barra) llama a zen-traspaso con pkexec: pide la contraseña una vez
+     y la recuerda unos minutos (auth_admin_keep), solo en la sesión activa del escritorio. -->
+<policyconfig>
+  <action id="pe.zen.traspaso">
+    <description>Conectar o apagar túneles con otros PCs</description>
+    <message>Para abrir o cerrar un túnel con otro PC se necesita tu contraseña</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/zen-traspaso</annotate>
+  </action>
+</policyconfig>
