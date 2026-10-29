@@ -74,7 +74,7 @@ tooltip label {
 #bt,
 #netbat,
 #controls,
-#custom-updates,
+#battery,
 #tray,
 #language,
 #custom-power,
@@ -96,7 +96,7 @@ tooltip label {
 #bt:hover,
 #netbat:hover,
 #controls:hover,
-#custom-updates:hover,
+#battery:hover,
 #tray:hover,
 #language:hover,
 #clock:hover {
@@ -106,7 +106,7 @@ tooltip label {
 
 /* módulos dentro de un grupo, separados con aire */
 #cpu, #custom-gpu, #memory, #disk,
-#bluetooth, #custom-btbattery, #custom-media, #network, #battery,
+#bluetooth, #custom-btbattery, #custom-media, #network, #custom-updates,
 #pulseaudio, #backlight {
     padding: 0 6px;
 }
