@@ -52,18 +52,24 @@ zstyle ':completion:*:processes' command 'ps -u $USER -o pid,%cpu,%mem,comm'
 setopt autocd menu_complete list_packed auto_list complete_in_word interactive_comments
 bindkey -e
 
-# ---------- prompt:  usuario  carpeta  git-[ rama]- ❯
+# ---------- prompt: [arch] usuario [carpeta] …/padre/hijo git-[rama] ❯
 # Se arma en cada precmd (sin prompt_subst: un nombre de rama no puede ejecutar nada).
 autoload -Uz add-zsh-hook vcs_info
 zstyle ':vcs_info:*' enable git
-zstyle ':vcs_info:git:*' formats ' %B%F{#d8dee9}git-[%F{#b48ead}%F{#ebcb8b} %b%F{#d8dee9}]-%f%%b'
-zstyle ':vcs_info:git:*' actionformats ' %B%F{#d8dee9}git-[%F{#b48ead}%F{#ebcb8b} %b %F{#bf616a}%a%F{#d8dee9}]-%f%%b'
+# los iconos van como escapes \u (Nerd Font): así no se pierden al copiar o editar el archivo
+_zi_branch=$'\ue0a0'
+zstyle ':vcs_info:git:*' formats " %B%F{#d8dee9}git-[%F{#ebcb8b}${_zi_branch} %b%F{#d8dee9}]%f%%b"
+zstyle ':vcs_info:git:*' actionformats " %B%F{#d8dee9}git-[%F{#ebcb8b}${_zi_branch} %b %F{#bf616a}%a%F{#d8dee9}]%f%%b"
+unset _zi_branch
 
 _zen_prompt() {
     vcs_info
-    local here=''
-    [[ $PWD == "$HOME" ]] && here=''
-    PROMPT="%B%F{#88c0d0}%f  %F{#b48ead}%n%f  %F{#8fbcbb}${here}%f  %F{#bf616a}%~%f%b${vcs_info_msg_0_} %B%(?.%F{#a3be8c}.%F{#bf616a})%f%b "
+    local arch=$'\uf303' home=$'\uf015' dir=$'\uf07c' arrow=$'\u276f'
+    local here=$dir
+    [[ $PWD == "$HOME" ]] && here=$home
+    # ruta corta: solo padre/hijo cuando es más profunda  →  …/proyectos/mi-app
+    # flecha verde (rojo si el último comando falló) marca dónde empieza lo que escribes
+    PROMPT="%B%F{#88c0d0}${arch}%f %F{#b48ead}%n%f %F{#8fbcbb}${here}%f %F{#bf616a}%(4~|…/%2~|%~)%f%b${vcs_info_msg_0_} %B%(?.%F{#a3be8c}.%F{#bf616a})${arrow}%f%b "
 }
 add-zsh-hook precmd _zen_prompt
 
@@ -105,7 +111,9 @@ add-zsh-hook precmd _zen_title_idle
 add-zsh-hook preexec _zen_title_run
 
 # ---------- alias
-alias ls='eza --icons=always --color=always -a --group-directories-first'
+# ls en columnas alineadas y ordenadas por nombre (carpetas primero); ll = lista detallada
+export EZA_ICON_SPACING=1
+alias ls='eza --icons=always --color=always -a --group-directories-first --sort=name --grid --across'
 alias ll='eza --icons=always --color=always -la --git --group-directories-first'
 alias cat='bat --paging=never'
 alias docker='podman'
