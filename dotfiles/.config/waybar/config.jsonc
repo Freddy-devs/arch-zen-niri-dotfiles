@@ -58,7 +58,7 @@
     },
 
     "cpu": {
-        "format": "<span color='#bf616a' size='large' rise='-1pt'>󰍛</span>  {usage}%",
+        "format": "<span color='#f7768e' size='large' rise='-1pt'>󰍛</span>  {usage}%",
         "interval": 2,
         "states": { "high": 80 },
         "on-click": "~/.local/bin/zen-term -e btop"
@@ -72,7 +72,7 @@
     },
 
     "memory": {
-        "format": "<span color='#8fbcbb' rise='0pt'></span>  {used:0.1f} GiB",
+        "format": "<span color='#7dcfff' rise='0pt'></span>  {used:0.1f} GiB",
         "interval": 3,
         "states": { "high": 85 },
         "tooltip-format": "{used:0.2f} / {total:0.2f} GiB · swap {swapUsed:0.2f} GiB\nClic: apps que más usan · clic derecho: btop",
@@ -81,7 +81,7 @@
     },
 
     "disk": {
-        "format": "<span color='#ebcb8b' rise='0pt'>󰟜</span>  {specific_used:0.0f} / {specific_total:0.0f} GiB",
+        "format": "<span color='#fbc02d' rise='0pt'>󰟜</span>  {specific_used:0.0f} / {specific_total:0.0f} GiB",
         "unit": "GiB",
         "path": "/",
         "interval": 60,
@@ -146,8 +146,8 @@
 
     "network": {
         "interval": 3,
-        "format-wifi": "<span color='#a3be8c'>󰖩</span> {bandwidthTotalBytes}",
-        "format-ethernet": "<span color='#a3be8c'>󰈀</span> {bandwidthTotalBytes}",
+        "format-wifi": "<span color='#9ece6a'>󰖩</span> <span color='#fbc02d'>{bandwidthTotalBytes}</span>",
+        "format-ethernet": "<span color='#9ece6a'>󰈀</span> <span color='#fbc02d'>{bandwidthTotalBytes}</span>",
         "format-disconnected": "󰖪 Sin red",
         "tooltip-format-wifi": "{essid} ({signalStrength}%) · {ipaddr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}\nClic: redes Wi-Fi · clic derecho: avanzado (nmtui)",
         "tooltip-format-ethernet": "{ifname} · {ipaddr}/{cidr}\n↓ {bandwidthDownBytes}  ↑ {bandwidthUpBytes}\nClic: redes Wi-Fi · clic derecho: avanzado (nmtui)",
@@ -159,11 +159,11 @@
         "full-at": 99,
         "states": { "warning": 25, "critical": 10 },
         // batería horizontal (se llena de izquierda a derecha); rayo = cargando, enchufe = conectado y llena
-        "format": "<span color='#88c0d0'>{icon}</span> {capacity}%",
-        "format-charging": "<span color='#a3be8c'>{icon} 󱐋</span> {capacity}%",
-        "format-plugged": "<span color='#a3be8c'>{icon} </span> {capacity}%",
-        "format-not-charging": "<span color='#a3be8c'>{icon} </span> {capacity}%",
-        "format-full": "<span color='#a3be8c'>{icon} </span> {capacity}%",
+        "format": "<span color='#7aa2f7'>{icon}</span> {capacity}%",
+        "format-charging": "<span color='#9ece6a'>{icon} 󱐋</span> {capacity}%",
+        "format-plugged": "<span color='#9ece6a'>{icon} </span> {capacity}%",
+        "format-not-charging": "<span color='#9ece6a'>{icon} </span> {capacity}%",
+        "format-full": "<span color='#9ece6a'>{icon} </span> {capacity}%",
         "format-icons": ["", "", "", "", ""],
         "tooltip-format": "Batería · {timeTo}",
         "tooltip-format-charging": "Cargando · {timeTo}",
@@ -179,7 +179,7 @@
     },
 
     "pulseaudio": {
-        "format": "<span color='#88c0d0'>{icon}</span> {volume}%",
+        "format": "<span color='#6c77bb'>{icon}</span> {volume}%",
         "format-muted": "󰝟 Mudo",
         "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
         "scroll-step": 5,
@@ -188,7 +188,7 @@
     },
 
     "backlight": {
-        "format": "<span color='#ebcb8b'>󰖨</span> {percent}%",
+        "format": "<span color='#e0af68'>󰖨</span> {percent}%",
         "tooltip-format": "Brillo {percent}% · clic: brillo de cada pantalla",
         "on-click": "~/.local/bin/zen-toggle brightness",
         "on-scroll-up": "brightnessctl set 5%+",
@@ -196,7 +196,7 @@
     },
 
     "custom/updates": {
-        "format": "<span color='#a3be8c'>󰚰</span> {}",
+        "format": "<span color='#b9c244'>󰚰</span> {}",
         "exec": "command -v checkupdates >/dev/null && checkupdates 2>/dev/null | wc -l",
         "exec-if": "command -v checkupdates",
         "interval": 1800,
@@ -212,7 +212,7 @@
     // idioma del teclado en siglas: LA = latam (por defecto) · US = inglés. Clic o Super+Alt+Space = alternar
     "niri/language": {
         // waybar pone el texto de format-<idioma> en el {} de "format"
-        "format": "<span color='#8fbcbb'>󰌌</span> {}",
+        "format": "<span color='#7dcfff'>󰌌</span> {}",
         "format-es": "LA",
         "format-en": "US",
         "tooltip-format": "{long} · clic o Super+Alt+Space para cambiar",
