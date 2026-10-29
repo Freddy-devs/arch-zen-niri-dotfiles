@@ -140,7 +140,7 @@ agent:
 EOF2
             fi
             NEXT+=("ngrok config add-authtoken <token>   # https://dashboard.ngrok.com/get-started/your-authtoken"
-                   "tunel                                 # abre un túnel (menú) · inspector: http://127.0.0.1:4040")
+                   "tunel <puerto>                        # abre un túnel · inspector: http://127.0.0.1:4040")
             ;;
         huella)
             pac fprintd || return
