@@ -16,6 +16,7 @@
 @define-color orange   #e57c46;
 @define-color yellow   #e0af68;
 @define-color pacman   #e0af68;
+@define-color ghostred #db4b4b;
 @define-color pellet   #583794;
 @define-color green    #9ece6a;
 @define-color arch     #0a9cf5;
@@ -154,6 +155,11 @@ tooltip label {
 
 /* fantasmas azules, como los escritorios ocupados de la polybar */
 #workspaces button { color: @blue; }
+
+/* fantasmas rojos (Blinky) y azules (Inky) mezclados: escritorios 1, 4, 5, 8… rojos y 2, 3, 6, 7… azules
+   (el CSS no puede contar solo los que tienen ventanas); vacíos y pac-man se pintan abajo */
+#workspaces button:nth-child(4n),
+#workspaces button:nth-child(4n+1) { color: @ghostred; }
 
 /* bolitas moradas, como los escritorios vacíos de la polybar */
 #workspaces button.empty {
