@@ -1,0 +1,533 @@
+#!/usr/bin/env python3
+"""zen-locker — pantalla de bloqueo de arch-zen-niri (la lanza zen-lock, no se usa sola).
+
+Protocolo ext-session-lock (Gtk4SessionLock): una ventana por monitor, también los que se
+conecten durante el bloqueo. Si este programa se cae, niri mantiene la sesión bloqueada y
+zen-lock entra con swaylock de respaldo.
+
+Muestra el escritorio detrás de un velo (captura cada monitor al arrancar, solo en RAM),
+la hora, un anillo siempre visible con el texto en el idioma del sistema y, mientras suena
+música, un visualizador de espectro alrededor del anillo (nunca muestra qué suena). La contraseña se verifica con PAM
+(servicio "swaylock", el mismo de siempre: respeta faillock).
+
+    zen-locker                    bloquear (escribe $XDG_RUNTIME_DIR/zen-lock/locked al quedar bloqueado)
+    zen-locker --preview [SEG]    vista previa sin bloquear (Esc o SEG segundos para salir)
+"""
+import array, cairo, cmath, ctypes, ctypes.util, locale, math, os, pwd, random, subprocess, sys, threading, time
+
+# gtk4-layer-shell (y su bloqueo de sesión) debe cargarse antes que libwayland; en Python solo con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4SessionLock", "1.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+gi.require_version("Playerctl", "2.0")
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell, Gtk4SessionLock, Pango, PangoCairo, Playerctl
+
+PREVIEW = len(sys.argv) > 1 and sys.argv[1] == "--preview"
+DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "zen-lock")
+WALLPAPER = "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
+# velo sobre el escritorio: ~57 % de brillo + desenfoque leve, el texto se sigue leyendo
+VEIL = "gblur=sigma=1.5,colorchannelmixer=rr=0.55:gg=0.57:bb=0.62"
+
+
+def capture():
+    """Captura cada monitor con el velo puesto (todas a la vez). Solo en RAM, carpeta 700."""
+    os.makedirs(DIR, mode=0o700, exist_ok=True)
+    for f in os.listdir(DIR):
+        os.remove(os.path.join(DIR, f))
+    try:
+        import json
+        outs = list(json.loads(subprocess.run(["niri", "msg", "-j", "outputs"], capture_output=True,
+                                              text=True, timeout=3).stdout))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return
+    jobs = []
+    for out in outs:
+        raw, shot = os.path.join(DIR, f"{out}-raw.png"), os.path.join(DIR, f"{out}.png")
+        cmd = (f'grim -o "{out}" "{raw}" && ffmpeg -loglevel error -y -i "{raw}" -vf "{VEIL}" '
+               f'-frames:v 1 -update 1 "{shot}"; rm -f "{raw}"')
+        jobs.append(subprocess.Popen(["sh", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+    for j in jobs:
+        try:
+            j.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            j.kill()
+
+
+def forget_shots():
+    for f in os.listdir(DIR) if os.path.isdir(DIR) else []:
+        if f.endswith(".png"):
+            os.remove(os.path.join(DIR, f))
+
+# ---------- textos según el idioma del sistema ----------
+locale.setlocale(locale.LC_ALL, "")
+LANG = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "en")[:2]
+TEXTS = {
+    "es": {"prompt": "Ingresa tu contraseña", "check": "Verificando…", "wrong": "Contraseña incorrecta",
+           "caps": "Bloq Mayús activado", "date": "%A, %d de %B"},
+    "en": {"prompt": "Enter your password", "check": "Verifying…", "wrong": "Wrong password",
+           "caps": "Caps Lock is on", "date": "%A, %B %d"},
+}
+T = TEXTS.get(LANG, TEXTS["en"])
+
+# ---------- paleta Nord Deep ----------
+def rgb(h, a=1.0):
+    return (int(h[1:3], 16) / 255, int(h[3:5], 16) / 255, int(h[5:7], 16) / 255, a)
+
+FROST, FROST2, BLUE, RED, YELLOW = "#88c0d0", "#8fbcbb", "#5e81ac", "#bf616a", "#ebcb8b"
+TEXT, SUBTLE, RING, INSIDE = "#eceff4", "#d8dee9", "#434c5e", "#242933"
+
+R = 96            # radio del anillo
+THICK = 7         # grosor del anillo
+BARS = 48         # bandas del visualizador (se espejan: 96 barras alrededor)
+BAR_GAP = 16      # separación entre el anillo y las barras
+BAR_MAX = 54      # largo máximo de una barra
+AREA_W, AREA_H = 520, 640   # recuadro central: hora, anillo, visualizador y mensajes
+
+
+# ---------- PAM (libpam por ctypes, sin dependencias) ----------
+class PamMessage(ctypes.Structure):
+    _fields_ = [("msg_style", ctypes.c_int), ("msg", ctypes.c_char_p)]
+
+class PamResponse(ctypes.Structure):
+    _fields_ = [("resp", ctypes.c_void_p), ("resp_retcode", ctypes.c_int)]
+
+CONV = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.POINTER(PamMessage)),
+                        ctypes.POINTER(ctypes.POINTER(PamResponse)), ctypes.c_void_p)
+
+class PamConv(ctypes.Structure):
+    _fields_ = [("conv", CONV), ("appdata_ptr", ctypes.c_void_p)]
+
+_pam = ctypes.CDLL(ctypes.util.find_library("pam"))
+_libc = ctypes.CDLL(ctypes.util.find_library("c"))
+_libc.calloc.restype = ctypes.c_void_p
+_libc.calloc.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
+_libc.strdup.restype = ctypes.c_void_p
+_libc.strdup.argtypes = [ctypes.c_char_p]
+_pam.pam_start.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(PamConv), ctypes.POINTER(ctypes.c_void_p)]
+_pam.pam_authenticate.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_pam.pam_setcred.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_pam.pam_end.argtypes = [ctypes.c_void_p, ctypes.c_int]
+PAM_PROMPT_ECHO_OFF, PAM_PROMPT_ECHO_ON, PAM_REFRESH_CRED = 1, 2, 0x10
+
+
+def pam_check(password):
+    """True si PAM acepta la contraseña del usuario actual."""
+    secret = password.encode()
+
+    @CONV
+    def conv(n, msgs, resp, _data):
+        arr = _libc.calloc(n, ctypes.sizeof(PamResponse))   # PAM lo libera
+        if not arr:
+            return 5  # PAM_BUF_ERR
+        out = ctypes.cast(arr, ctypes.POINTER(PamResponse))
+        for i in range(n):
+            if msgs[i].contents.msg_style in (PAM_PROMPT_ECHO_OFF, PAM_PROMPT_ECHO_ON):
+                out[i].resp = _libc.strdup(secret)
+        resp[0] = out
+        return 0
+
+    handle = ctypes.c_void_p()
+    user = pwd.getpwuid(os.getuid()).pw_name.encode()
+    if _pam.pam_start(b"swaylock", user, ctypes.byref(PamConv(conv, None)), ctypes.byref(handle)) != 0:
+        return False
+    rc = _pam.pam_authenticate(handle, 0)
+    if rc == 0:
+        _pam.pam_setcred(handle, PAM_REFRESH_CRED)
+    _pam.pam_end(handle, rc)
+    return rc == 0
+
+
+# ---------- espectro del audio que suena (pw-record + FFT en Python puro) ----------
+class Spectrum:
+    RATE, N = 11025, 512
+    RANGE_DB = 26
+
+    def __init__(self):
+        self.proc = None
+        self.buf = array.array("h", bytes(self.N * 2))
+        self.levels = [0.0] * BARS
+        self.peak = 0.0
+        n = self.N
+        self.window = [0.5 - 0.5 * math.cos(2 * math.pi * i / (n - 1)) for i in range(n)]
+        self.rev = [int(f"{i:09b}"[::-1], 2) for i in range(n)]
+        self.tw = [cmath.exp(-2j * math.pi * k / n) for k in range(n // 2)]
+        # bandas logarítmicas de 60 Hz a 5 kHz
+        lo, hi, hz = 60, 5000, self.RATE / n
+        edges = [lo * (hi / lo) ** (b / BARS) for b in range(BARS + 1)]
+        self.bands = []
+        for b in range(BARS):
+            a = max(1, int(edges[b] / hz))
+            self.bands.append((a, max(a + 1, int(edges[b + 1] / hz) + 1)))
+
+    def start(self):
+        if self.proc:
+            return
+        try:
+            self.proc = subprocess.Popen(
+                ["pw-record", "-P", "{ stream.capture.sink=true node.name=zen-locker-viz }",
+                 "--rate", str(self.RATE), "--channels", "1", "--format", "s16", "-"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            os.set_blocking(self.proc.stdout.fileno(), False)
+        except OSError:
+            self.proc = None
+
+    def stop(self):
+        if self.proc:
+            self.proc.terminate()
+            self.proc = None
+
+    def _read(self):
+        try:
+            data = self.proc.stdout.read()
+        except (OSError, ValueError):
+            return
+        if not data:
+            return
+        new = array.array("h")
+        new.frombytes(data[: len(data) // 2 * 2])
+        merged = (self.buf + new)[-self.N:]
+        self.buf = merged
+
+    def _fft(self, x):
+        n = self.N
+        a = [x[i] for i in self.rev]
+        size = 2
+        while size <= n:
+            half, step = size // 2, n // size
+            for start in range(0, n, size):
+                for k in range(half):
+                    t = self.tw[k * step] * a[start + k + half]
+                    u = a[start + k]
+                    a[start + k] = u + t
+                    a[start + k + half] = u - t
+            size *= 2
+        return a
+
+    def update(self):
+        if not self.proc:
+            self.levels = [l * 0.85 for l in self.levels]
+            return
+        self._read()
+        spec = self._fft([s * w for s, w in zip(self.buf, self.window)])
+        # dB por banda (+ inclinación de ~9 dB hacia los agudos: la música trae mucho más grave)
+        mags = []
+        for i, (a, b) in enumerate(self.bands):
+            m = max(abs(spec[k]) for k in range(a, min(b, self.N // 2)))
+            mags.append(20 * math.log10(m + 1e-9) + 9 * i / BARS)
+        top = max(mags)
+        self.peak = max(top, self.peak - 0.15)                  # ganancia automática, baja lento
+        floor = self.peak - self.RANGE_DB
+        for i, m in enumerate(mags):
+            v = min(1.0, max(0.0, (m - floor) / self.RANGE_DB)) ** 2.4
+            cur = self.levels[i]
+            self.levels[i] = cur + (v - cur) * (0.6 if v > cur else 0.2)
+        if os.environ.get("ZEN_LOCKER_DEBUG"):
+            lv = self.levels
+            print(f"min {min(lv):.2f} media {sum(lv)/len(lv):.2f} max {max(lv):.2f}", file=sys.stderr)
+
+
+# ---------- estado compartido entre monitores ----------
+class Locker:
+    def __init__(self, app):
+        self.app = app
+        self.password = []
+        self.state = "idle"          # idle | check | wrong
+        self.wrong_at = 0.0
+        self.key_flash = []          # (ángulo, momento) de cada tecla: chispa en el anillo
+        self.areas = []
+        self.spectrum = Spectrum()
+        self.playing = False
+        self.viz = 0.0               # 0..1, aparece/desaparece suave
+        self.lock = None
+
+        self.players = Playerctl.PlayerManager()
+        for name in self.players.props.player_names:
+            self._manage(name)
+        self.players.connect("name-appeared", lambda _m, name: self._manage(name))
+        GLib.timeout_add(500, self._poll_player)
+        self.last_draw = 0.0
+        GLib.timeout_add(50, self._frame)   # 20 cuadros por segundo
+
+    def _manage(self, name):
+        try:
+            self.players.manage_player(Playerctl.Player.new_from_name(name))
+        except GLib.Error:
+            pass
+
+    def _poll_player(self):
+        # solo importa si algo suena; el nombre de la canción nunca se muestra
+        playing = False
+        for p in self.players.props.players:
+            try:
+                if p.props.playback_status == Playerctl.PlaybackStatus.PLAYING:
+                    playing = True
+                    break
+            except GLib.Error:
+                continue
+        self.playing = playing
+        if playing:
+            self.spectrum.start()
+        else:
+            self.spectrum.stop()
+        return True
+
+    def _frame(self):
+        target = 1.0 if self.playing else 0.0
+        self.viz += (target - self.viz) * 0.14
+        now = time.monotonic()
+        animating = (self.playing or self.viz > 0.01 or self.key_flash or self.state == "check"
+                     or (self.state == "wrong" and now - self.wrong_at < 0.5))
+        if self.playing or self.viz > 0.01:
+            self.spectrum.update()
+        # sin animación solo hace falta redibujar una vez por segundo (la hora)
+        if animating or now - self.last_draw >= 1.0:
+            self.last_draw = now
+            for a in self.areas:
+                a.queue_draw()
+        return True
+
+    # ----- teclado -----
+    def on_key(self, _ctrl, keyval, _code, state):
+        if self.state == "check":
+            return True
+        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
+            self.submit()
+        elif keyval == Gdk.KEY_BackSpace:
+            if self.password:
+                self.password.pop()
+                self.key_flash.append((random.uniform(0, 2 * math.pi), time.monotonic(), True))
+        elif keyval == Gdk.KEY_Escape or (state & Gdk.ModifierType.CONTROL_MASK and keyval in (Gdk.KEY_u, Gdk.KEY_U)):
+            if PREVIEW and keyval == Gdk.KEY_Escape:
+                self.app.quit()
+            self.password.clear()
+        else:
+            ch = Gdk.keyval_to_unicode(keyval)
+            if ch >= 32 and ch != 127 and len(self.password) < 256:
+                self.password.append(chr(ch))
+                self.key_flash.append((random.uniform(0, 2 * math.pi), time.monotonic(), False))
+        if self.state == "wrong":
+            self.state = "idle"
+        for a in self.areas:
+            a.queue_draw()
+        return True
+
+    def submit(self):
+        if not self.password:
+            return
+        secret = "".join(self.password)
+        self.password.clear()
+        self.state = "check"
+
+        def work():
+            ok = False if PREVIEW else pam_check(secret)
+            if PREVIEW:
+                time.sleep(1)
+            GLib.idle_add(self.done, ok)
+        threading.Thread(target=work, daemon=True).start()
+
+    def done(self, ok):
+        if ok:
+            self.spectrum.stop()
+            self.lock.unlock()
+        else:
+            self.state, self.wrong_at = "wrong", time.monotonic()
+        return False
+
+    def caps_on(self):
+        seat = Gdk.Display.get_default().get_default_seat()
+        kb = seat.get_keyboard() if seat else None
+        return bool(kb and kb.get_caps_lock_state())
+
+    # ----- dibujo -----
+    def draw(self, _area, cr, w, h):
+        now = time.monotonic()
+        cx, cy = w / 2, h / 2 + 10
+        shake = 0.0
+        if self.state == "wrong" and now - self.wrong_at < 0.45:
+            shake = math.sin((now - self.wrong_at) * 60) * 10 * (1 - (now - self.wrong_at) / 0.45)
+        cx += shake
+
+        # hora y fecha
+        self.text(cr, cx, cy - R - BAR_MAX - 95, time.strftime("%H:%M"), "Inter Bold 64", TEXT, 1.0)
+        self.text(cr, cx, cy - R - BAR_MAX - 40, time.strftime(T["date"]).capitalize(), "Inter 15", SUBTLE, 0.85)
+
+        # visualizador de música alrededor del anillo
+        if self.viz > 0.01:
+            levels = self.spectrum.levels
+            total = BARS * 2
+            cr.set_line_width(3.4)
+            cr.set_line_cap(1)  # redondeado
+            buckets = [[] for _ in range(5)]      # 5 intensidades: 5 trazos en vez de 96
+            r0 = R + BAR_GAP
+            for i in range(total):
+                band = i if i < BARS else total - 1 - i
+                lv = levels[band] * self.viz
+                ang = -math.pi / 2 + (i + 0.5) * 2 * math.pi / total
+                buckets[min(4, int(lv * 5))].append((math.cos(ang), math.sin(ang), r0 + 3 + BAR_MAX * lv))
+            for k, bars in enumerate(buckets):
+                if not bars:
+                    continue
+                for c, sn, r1 in bars:
+                    cr.move_to(cx + c * r0, cy + sn * r0)
+                    cr.line_to(cx + c * r1, cy + sn * r1)
+                cr.set_source_rgba(*rgb(FROST if k < 3 else FROST2, (0.4 + 0.15 * k) * self.viz))
+                cr.stroke()
+
+        # interior del anillo
+        cr.set_source_rgba(*rgb(INSIDE, 0.82))
+        cr.arc(cx, cy, R - THICK / 2, 0, 2 * math.pi)
+        cr.fill()
+
+        # anillo (siempre visible) y su color según el estado
+        ring = {"idle": rgb(RING, 0.95), "check": rgb(BLUE, 0.95), "wrong": rgb(RED, 0.95)}[self.state]
+        cr.set_line_width(THICK)
+        cr.set_source_rgba(*ring)
+        cr.arc(cx, cy, R, 0, 2 * math.pi)
+        cr.stroke()
+
+        if self.state == "check":                      # arco girando mientras PAM verifica
+            a0 = (now * 4) % (2 * math.pi)
+            cr.set_source_rgba(*rgb(FROST))
+            cr.arc(cx, cy, R, a0, a0 + math.pi / 2)
+            cr.stroke()
+
+        # chispa en el anillo por cada tecla (como swaylock), se desvanece
+        self.key_flash = [k for k in self.key_flash if now - k[1] < 0.35]
+        for ang, t0, back in self.key_flash:
+            alpha = 1 - (now - t0) / 0.35
+            cr.set_source_rgba(*rgb(RED if back else FROST, alpha))
+            cr.arc(cx, cy, R, ang, ang + math.pi / 5)
+            cr.stroke()
+
+        # centro: candado o puntos de la contraseña
+        if self.password:
+            n = min(len(self.password), 12)
+            dots = "•" * n
+            self.text(cr, cx, cy, dots, "Inter Bold 22", TEXT, 1.0)
+        else:
+            icon = {"idle": "", "check": "", "wrong": ""}[self.state]
+            col = {"idle": FROST, "check": FROST, "wrong": RED}[self.state]
+            self.text(cr, cx, cy, icon, "Symbols Nerd Font 34", col, 1.0)
+
+        # mensaje debajo del anillo, en el idioma del sistema
+        below = cy + R + BAR_MAX + 40
+        msg, col = {"idle": (T["prompt"], SUBTLE), "check": (T["check"], FROST), "wrong": (T["wrong"], RED)}[self.state]
+        self.text(cr, cx, below, msg, "Inter Medium 16", col, 1.0)
+        if self.caps_on():
+            self.text(cr, cx, below + 30, "  " + T["caps"], "Inter 13", YELLOW, 1.0)
+
+    @staticmethod
+    def shaded_texture(path):
+        """Carga la captura en memoria y le pinta una sombra suave detrás del centro, una sola vez
+        (así la hora y el anillo se leen sobre cualquier fondo sin costo por cuadro)."""
+        try:
+            img = cairo.ImageSurface.create_from_png(path)
+        except (cairo.Error, OSError):
+            return None
+        w, h = img.get_width(), img.get_height()
+        cr = cairo.Context(img)
+        cx, cy = w / 2, h / 2 + 30
+        glow = cairo.RadialGradient(cx, cy, 60, cx, cy, 480)
+        glow.add_color_stop_rgba(0, *rgb("#1e222a")[:3], 0.75)
+        glow.add_color_stop_rgba(0.55, *rgb("#1e222a")[:3], 0.45)
+        glow.add_color_stop_rgba(1, *rgb("#1e222a")[:3], 0)
+        cr.set_source(glow)
+        cr.paint()
+        img.flush()
+        return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.B8G8R8A8_PREMULTIPLIED,
+                                     GLib.Bytes.new(bytes(img.get_data())), img.get_stride())
+
+    def text(self, cr, x, y, s, font, color, alpha):
+        layout = PangoCairo.create_layout(cr)
+        layout.set_font_description(Pango.FontDescription.from_string(font))
+        layout.set_text(s, -1)
+        _ink, logical = layout.get_pixel_extents()
+        cr.set_source_rgba(*rgb(color, alpha))
+        cr.move_to(x - logical.width / 2, y - logical.height / 2)
+        PangoCairo.show_layout(cr, layout)
+
+    # ----- una ventana por monitor -----
+    def window_for(self, monitor):
+        win = Gtk.ApplicationWindow(application=self.app)
+        overlay = Gtk.Overlay()
+        name = monitor.get_connector() or ""
+        shot = os.path.join(DIR, f"{name}.png")
+        tex = self.shaded_texture(shot) if os.path.exists(shot) else None
+        if tex is None:
+            try:
+                tex = Gdk.Texture.new_from_filename(WALLPAPER)
+            except GLib.Error:
+                tex = None
+        pic = Gtk.Picture.new_for_paintable(tex)
+        pic.set_content_fit(Gtk.ContentFit.COVER)
+        overlay.set_child(pic)
+        # solo el recuadro central se redibuja 30 veces por segundo (no la pantalla entera)
+        area = Gtk.DrawingArea(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
+                               content_width=AREA_W, content_height=AREA_H, margin_top=40)
+        area.set_draw_func(self.draw)
+        overlay.add_overlay(area)
+        win.set_child(overlay)
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self.on_key)
+        win.add_controller(keys)
+        self.areas.append(area)
+        return win
+
+
+def main():
+    capture()
+    app = Gtk.Application(application_id=None)
+    state = {}
+
+    def activate(app):
+        app.hold()
+        locker = Locker(app)
+        state["locker"] = locker
+        if PREVIEW:
+            # vista previa: capas por encima de todo en cada monitor, sin bloquear la sesión
+            secs = int(sys.argv[2]) if len(sys.argv) > 2 else 15
+            for mon in Gdk.Display.get_default().get_monitors():
+                win = locker.window_for(mon)
+                Gtk4LayerShell.init_for_window(win)
+                Gtk4LayerShell.set_layer(win, Gtk4LayerShell.Layer.OVERLAY)
+                Gtk4LayerShell.set_monitor(win, mon)
+                for edge in (Gtk4LayerShell.Edge.TOP, Gtk4LayerShell.Edge.BOTTOM,
+                             Gtk4LayerShell.Edge.LEFT, Gtk4LayerShell.Edge.RIGHT):
+                    Gtk4LayerShell.set_anchor(win, edge, True)
+                Gtk4LayerShell.set_keyboard_mode(win, Gtk4LayerShell.KeyboardMode.EXCLUSIVE)
+                win.present()
+            forget_shots()
+            GLib.timeout_add_seconds(secs, app.quit)
+            return
+        if not Gtk4SessionLock.is_supported():
+            sys.exit(3)
+        lock = Gtk4SessionLock.Instance.new()
+        locker.lock = lock
+        lock.connect("monitor", lambda _l, mon: lock.assign_window_to_monitor(locker.window_for(mon), mon))
+        lock.connect("failed", lambda *_: (state.update(rc=2), app.quit()))
+        lock.connect("unlocked", lambda *_: (state.update(rc=0), app.quit()))
+
+        def locked(*_):
+            forget_shots()
+            open(os.path.join(DIR, "locked"), "w").close()
+        lock.connect("locked", locked)
+        state["rc"] = 1
+        lock.lock()
+
+    app.connect("activate", activate)
+    app.run([])
+    if "locker" in state:
+        state["locker"].spectrum.stop()
+    sys.exit(state.get("rc", 0))
+
+
+if __name__ == "__main__":
+    main()

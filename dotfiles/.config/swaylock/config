@@ -6,6 +6,7 @@ font-size=22
 indicator-radius=120
 indicator-thickness=10
 show-failed-attempts
+indicator-idle-visible
 ignore-empty-password
 
 color=1e222a
