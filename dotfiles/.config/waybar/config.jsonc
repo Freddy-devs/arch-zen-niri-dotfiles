@@ -16,7 +16,7 @@
 
     "modules-left": ["custom/arch", "group/stats", "group/storage"],
     "modules-center": ["niri/workspaces"],
-    "modules-right": ["group/bt", "group/netbat", "group/controls", "tray", "clock", "battery", "niri/language", "custom/power"],
+    "modules-right": ["group/bt", "group/netbat", "group/controls", "tray", "clock", "battery", "custom/updates", "niri/language", "custom/power"],
 
     // logo: abre el lanzador (igual que Super+Space)
     "custom/arch": {
@@ -99,7 +99,7 @@
     // ---------- red y batería de la laptop ----------
     "group/netbat": {
         "orientation": "horizontal",
-        "modules": ["network", "custom/updates"]
+        "modules": ["network"]
     },
 
     // reproductor: abre zen-media (mini ventana abajo al centro) con lo que suene en Brave, Spotify, VLC…
