@@ -6,6 +6,9 @@
 #   - al abrir, continúa donde lo dejaste (ventanas y pestañas)
 #   - ahorro de memoria: duerme las pestañas que no usas, salvo WhatsApp, Teams y Outlook
 #     (esas quedan siempre activas para recibir notificaciones al instante)
+#   - zen-tab-sleep (~/.local/share/zen-tab-sleep): extensión que duerme cada pestaña que no
+#     usas hace 2 minutos; el Ahorro de memoria de Brave solo lo hace tras horas. Se carga con
+#     --load-extension en ~/.config/brave-origin-flags.conf (este script añade la línea)
 # Brave debe estar cerrado: si está abierto sobrescribe las preferencias al salir.
 # Uso: zen-brave-theme [--wait]   (--wait espera a que cierres Brave y luego aplica)
 
@@ -22,6 +25,8 @@ SIEMPRE_ACTIVOS = [
 _found = sorted(glob.glob(os.path.expanduser("~/.config/BraveSoftware/*Origin*")))
 BASE = _found[0] if _found else os.path.expanduser("~/.config/BraveSoftware/Brave-Origin")
 PREFS = os.path.join(BASE, "Default", "Preferences")
+FLAGS = os.path.expanduser("~/.config/brave-origin-flags.conf")
+TAB_SLEEP = os.path.expanduser("~/.local/share/zen-tab-sleep")
 STATE = os.path.join(BASE, "Local State")
 
 
@@ -46,6 +51,19 @@ def patch(path, changes):
         json.dump(data, f, separators=(",", ":"))
     os.replace(tmp, path)
 
+
+def add_tab_sleep_flag():
+    # brave-origin lee el archivo línea a línea sin expandir ~, por eso la ruta va completa
+    if not os.path.isfile(os.path.join(TAB_SLEEP, "manifest.json")):
+        return
+    lines = open(FLAGS).read().splitlines() if os.path.exists(FLAGS) else []
+    lines = [l for l in lines if not l.startswith("--load-extension=")]
+    lines.append("--load-extension=" + TAB_SLEEP)
+    with open(FLAGS, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+add_tab_sleep_flag()          # no toca el perfil: vale aunque Brave esté abierto (aplica al reiniciarlo)
 
 if running():
     if "--wait" not in sys.argv:

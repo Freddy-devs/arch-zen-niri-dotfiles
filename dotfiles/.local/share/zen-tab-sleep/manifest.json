@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "zen-tab-sleep",
+  "description": "Duerme las pestañas que no usas hace 2 minutos (salvo WhatsApp, Teams y Outlook).",
+  "version": "1.0",
+  "permissions": ["tabs", "alarms"],
+  "background": { "service_worker": "background.js" }
+}
