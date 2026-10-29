@@ -35,6 +35,7 @@ CATALOG=(
     "go|Go|~250 MB"
     "rust|Rust (rustup: cargo, rustc)|~600 MB"
     "gh|GitHub CLI|~40 MB"
+    "ngrok|ngrok (binario oficial, se actualiza con 'ngrok update') + comando tunel para webhooks|~30 MB"
     "huella|Lector de huella (fprintd) para login y sudo|~10 MB"
     "gui|Herramientas gráficas: pavucontrol, blueman, nwg-look|~40 MB"
 )
@@ -119,6 +120,28 @@ EOF
             rustup default stable
             ;;
         gh)     pac github-cli ;;
+        ngrok)
+            # binario oficial en ~/.local/bin: sin sudo y se actualiza solo con «ngrok update»
+            local t; t=$(mktemp -d)
+            curl -fsSL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz | tar -xz -C "$t" &&
+                install -Dm755 "$t/ngrok" "$HOME/.local/bin/ngrok" || { rm -rf "$t"; return 1; }
+            rm -rf "$t"
+            local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/ngrok/ngrok.yml"
+            if [[ ! -f $cfg ]]; then
+                install -Dm600 /dev/stdin "$cfg" <<'EOF2'
+# ngrok — túneles para recibir webhooks en local (comando: tunel)
+# El authtoken lo agrega: ngrok config add-authtoken <token>   (no va al repo: es secreto)
+version: 3
+agent:
+  # inspector de peticiones: ver y repetir cada webhook que llega → http://127.0.0.1:4040
+  web_addr: 127.0.0.1:4040
+  console_ui: iftty
+  update_channel: stable
+EOF2
+            fi
+            NEXT+=("ngrok config add-authtoken <token>   # https://dashboard.ngrok.com/get-started/your-authtoken"
+                   "tunel                                 # abre un túnel (menú) · inspector: http://127.0.0.1:4040")
+            ;;
         huella)
             pac fprintd || return
             NEXT+=("Registrar la huella:  sudo zen-hwsetup  → opción 5")
