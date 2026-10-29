@@ -25,6 +25,9 @@
 @define-color nordic2  #3b4252;
 @define-color nordic3  #434c5e;
 @define-color frost    #81a1c1;
+/* Tokyo Night (mismo tema que la polybar del bspwm): fondo de la barra y de las islas */
+@define-color barbg    #1a1b26;
+@define-color islabg   #222330;
 
 * {
     font-family: "Inter", "Symbols Nerd Font", "JetBrainsMono Nerd Font", sans-serif;
@@ -36,10 +39,10 @@
     border-radius: 0;
 }
 
-/* la barra: fondo translúcido, borde fino con brillo arriba y esquinas de 8 px
+/* la barra: fondo sólido Tokyo Night, borde fino con brillo arriba y esquinas de 8 px
    (el radio coincide con geometry-corner-radius del layer-rule de waybar en niri) */
 window#waybar {
-    background: linear-gradient(180deg, alpha(@nordic1, 0.45), alpha(@nordic0, 0.38));
+    background: @barbg;
     border: 1px solid alpha(@frost, 0.14);
     border-top-color: alpha(@fg, 0.18);
     border-radius: 8px;
@@ -76,7 +79,7 @@ tooltip label {
 #language,
 #custom-power,
 #clock {
-    background: linear-gradient(180deg, alpha(@nordic1, 0.96), alpha(@nordic0, 0.97));
+    background: @islabg;
     border: 1px solid alpha(@nordic3, 0.95);
     border-top-color: alpha(@frost, 0.30);
     border-radius: 10px;
@@ -97,7 +100,7 @@ tooltip label {
 #tray:hover,
 #language:hover,
 #clock:hover {
-    background: linear-gradient(180deg, @nordic2, @nordic1);
+    background: shade(@islabg, 1.25);
     border-color: alpha(@blue, 0.45);
 }
 
