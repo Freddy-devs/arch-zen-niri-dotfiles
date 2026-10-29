@@ -1,0 +1,14 @@
+onboarding = false
+
+# misma paleta que el resto del escritorio
+[theme]
+name = "nord"
+auto_switch = false
+
+# visor/editor de archivos (plugin file-editor-viewer): abre un panel a la derecha con el
+# README del directorio, el archivo seleccionado o el árbol de archivos
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "file-editor-viewer.open"
+description = "ver o editar archivos"

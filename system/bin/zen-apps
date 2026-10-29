@@ -25,7 +25,7 @@ CATALOG=(
     "brave|Navegador Brave Origin (gratis en Linux, sin extras)|~400 MB"
     "wps|WPS Office en español (Writer, Spreadsheets, Presentation)|~1 GB"
     "claude|Claude Code (instalador oficial, se actualiza solo)|~200 MB"
-    "herdr|herdr (instalador oficial)|~30 MB"
+    "herdr|herdr (instalador oficial) + visor de archivos fev|~40 MB"
     "php|PHP 8.5 + php-fpm + Composer + Xdebug (mysql, pgsql, gd, intl, sqlite…)|~70 MB"
     "mariadb|MariaDB (cliente mysql) solo en localhost, apagada|~250 MB"
     "postgresql|PostgreSQL, apagado|~60 MB"
@@ -44,7 +44,11 @@ install_one() {
         brave)  aur brave-origin-bin ;;
         wps)    aur wps-office wps-office-mui-es-es ttf-wps-fonts ;;
         claude) curl -fsSL https://claude.ai/install.sh | bash ;;
-        herdr)  curl -fsSL https://herdr.dev/install.sh | sh ;;
+        herdr)
+            curl -fsSL https://herdr.dev/install.sh | sh || return
+            # visor/editor de archivos en un panel (prefix+m, ver ~/.config/herdr/config.toml)
+            "$HOME/.local/bin/herdr" plugin install --yes Freddy-system/file-editor-viewer
+            ;;
         php)
             # intl, zip, bcmath, iconv y opcache vienen dentro del paquete php
             pac php php-fpm php-pgsql php-gd php-sqlite php-sodium xdebug composer || return

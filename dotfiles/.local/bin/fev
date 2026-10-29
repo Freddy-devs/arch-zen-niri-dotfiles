@@ -1,0 +1,8 @@
+#!/bin/sh
+# fev — visor/editor de archivos (Markdown con Mermaid, Graphviz y LaTeX, código, imágenes).
+# Usa el binario del plugin file-editor-viewer de herdr, así se actualiza junto con el plugin.
+#   fev README.md · fev docs/ · fev open notas.md (dentro de herdr, en un panel al lado)
+b=$(ls -td "$HOME"/.config/herdr/plugins/github-installations/file-editor-viewer-*/*/checkout/target/release/fev 2>/dev/null | head -1)
+[ -x "$b" ] && exec "$b" "$@"
+echo "fev: falta el plugin. Instálalo con: herdr plugin install Freddy-system/file-editor-viewer" >&2
+exit 1
