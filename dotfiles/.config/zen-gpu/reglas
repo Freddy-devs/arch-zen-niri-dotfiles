@@ -1,0 +1,9 @@
+# Qué gráfica usa cada app al abrirla con rofi (zen-run). Nombre del ejecutable, separados por espacio.
+# Las apps sin regla van a la Intel, y a la NVIDIA cuando la Intel pasa del 70 % de carga.
+
+# Intel siempre: con la NVIDIA, Brave y las apps de Chromium/Electron pierden el video por hardware
+# (Chromium en Linux solo decodifica con VA-API, que la NVIDIA no tiene) y lo decodificaría la CPU.
+intel: brave brave-origin chromium google-chrome-stable code teams-for-linux alacritty zen-term thunar rofi
+
+# NVIDIA siempre: juegos, 3D, edición y grabación (NVENC), cómputo
+nvidia: steam lutris heroic prismlauncher minecraft-launcher retroarch blender godot freecad kdenlive shotcut obs davinci-resolve darktable krita gimp

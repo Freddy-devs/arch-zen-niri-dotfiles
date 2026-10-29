@@ -2,6 +2,7 @@
 # zen-hwsetup — ajustes de hardware para el sistema instalado (ASUS VivoBook X510UNO y similares).
 # Uso:  zen-hwsetup              menú interactivo
 #       zen-hwsetup --auto       solo los ajustes seguros (térmico + energía + GPU en ahorro), sin preguntas
+#       zen-hwsetup --nvidia     instala el driver propietario NVIDIA 580xx sin menú
 # Todo es local: no descarga nada salvo la opción "NVIDIA propietario", que usa yay.
 set -euo pipefail
 
@@ -48,31 +49,55 @@ EOF
     done_ "GPU NVIDIA en ahorro automático (estado: $(cat "/sys/bus/pci/devices/$NV/power/runtime_status" 2>/dev/null || echo '?'))"
 }
 
+# quita lockdown= de los parámetros del kernel, sea cual sea el gestor de arranque
+kernel_param_drop() {
+    local f n=0
+    for f in /boot/loader/entries/*.conf /efi/loader/entries/*.conf; do
+        [[ -f $f ]] && grep -q "lockdown=" "$f" || continue
+        sed -i -E "/^options/ s/ ?$1=[^ ]*//" "$f"; n=$((n + 1))
+    done
+    if [[ -f /etc/kernel/cmdline ]] && grep -q "$1=" /etc/kernel/cmdline; then
+        sed -i -E "s/ ?$1=[^ ]*//" /etc/kernel/cmdline; n=$((n + 1))
+    fi
+    if [[ -f /etc/default/grub ]] && grep -q "$1=" /etc/default/grub; then
+        sed -i -E "s/ ?$1=[^ \"]*//" /etc/default/grub
+        grub-mkconfig -o /boot/grub/grub.cfg >/dev/null; n=$((n + 1))
+    fi
+    ((n > 0)) && done_ "Parámetro $1 quitado del arranque ($n archivos)" || done_ "El arranque no tenía $1"
+}
+
+install_nvidia() {
+    [[ -n $NV ]] || { warn "No hay GPU NVIDIA"; return; }
+    log "Driver propietario NVIDIA 580xx para $(lspci -s "$NV" | sed 's/.*: //')"
+    # DKMS compila el módulo para cada kernel con headers (zen y el de respaldo lts)
+    local hdr=() k
+    for k in $(pacman -Qq | grep -E '^linux(-zen|-lts)?$'); do hdr+=("$k-headers"); done
+    pacman -S --needed --noconfirm dkms nvidia-prime "${hdr[@]}"
+    sudo -u "$USR" yay -S --needed --noconfirm nvidia-580xx-dkms nvidia-580xx-utils
+    modinfo -k "$(uname -r)" nvidia >/dev/null 2>&1 || { warn "El módulo nvidia no se compiló: revisa la salida de dkms"; return 1; }
+    # el hook kms metería nouveau en el initramfs; la Intel sigue con arranque gráfico temprano
+    sed -i -E 's/^(HOOKS=.*) kms /\1 /' /etc/mkinitcpio.conf
+    grep -qE '^MODULES=\(.*i915' /etc/mkinitcpio.conf || sed -i -E 's/^MODULES=\((.*)\)/MODULES=(\1 i915)/; s/^MODULES=\( /MODULES=(/' /etc/mkinitcpio.conf
+    mkinitcpio -P >/dev/null
+    done_ "initramfs regenerado (nouveau fuera, i915 temprano)"
+    # el módulo DKMS no está firmado: con lockdown el kernel se negaría a cargarlo
+    kernel_param_drop lockdown
+    gpu_powersave
+    done_ "Driver NVIDIA instalado. Reinicia; luego: prime-run <app>  ·  nvidia-smi"
+}
+
 setup_nvidia() {
     [[ -n $NV ]] || { warn "No hay GPU NVIDIA"; return; }
     log "GPU NVIDIA $(lspci -s "$NV" | sed 's/.*: //')"
-    cat <<'EOF'
-  1) Solo Intel + NVIDIA en ahorro  (recomendado: más batería, todo el escritorio va en la Intel)
-  2) Driver propietario NVIDIA 580xx (para juegos/CUDA con 'prime-run app'; la MX150 es Pascal
-     y los drivers actuales de Arch ya no la soportan; se compila desde el AUR, necesita internet)
-EOF
+    cat <<'EOT'
+  1) Solo Intel + NVIDIA en ahorro  (más batería, todo el escritorio va en la Intel)
+  2) Driver propietario NVIDIA 580xx (juegos/CUDA 12/3D con 'prime-run app'; la MX150 es Pascal
+     y los drivers actuales de Arch ya no la soportan; se compila desde el AUR, necesita internet;
+     Pascal no se apaga sola con este driver y se quita lockdown del kernel)
+EOT
     case "$(ask "Elige" 1)" in
-        2)
-            pacman -S --needed --noconfirm nvidia-prime linux-zen-headers linux-lts-headers
-            sudo -u "$USR" yay -S --needed nvidia-580xx-dkms nvidia-580xx-utils
-            install -Dm644 /dev/stdin /etc/modprobe.d/zen-nvidia.conf <<'EOF'
-options nvidia_drm modeset=1
-EOF
-            gpu_powersave
-            mkinitcpio -P >/dev/null
-            # el módulo DKMS no está firmado: lockdown=integrity impediría cargarlo
-            sed -i 's/ lockdown=integrity//' /etc/default/grub
-            grub-mkconfig -o /boot/grub/grub.cfg >/dev/null
-            done_ "Driver NVIDIA instalado. Reinicia y usa: prime-run <app>"
-            ;;
-        *)
-            gpu_powersave
-            ;;
+        2) install_nvidia ;;
+        *) gpu_powersave ;;
     esac
 }
 
@@ -126,6 +151,9 @@ summary() {
 
 if [[ ${1:-} == --auto ]]; then
     setup_power; gpu_powersave; exit 0
+fi
+if [[ ${1:-} == --nvidia ]]; then
+    install_nvidia; exit
 fi
 
 cat <<'EOF'

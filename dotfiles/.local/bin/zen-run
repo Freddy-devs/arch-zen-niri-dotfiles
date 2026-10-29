@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# zen-run — abre una app en la gráfica que toque (Intel UHD 620 o NVIDIA MX150).
+#   zen-run app [args]           decide solo: reglas de ~/.config/zen-gpu/reglas y, si la app no
+#                                tiene regla, la NVIDIA cuando la Intel pasa del umbral de carga
+#   zen-run --nvidia app [args]  fuerza la NVIDIA        zen-run --intel app [args]  fuerza la Intel
+#   zen-run --explicar app       solo dice qué haría y por qué
+# rofi abre todas las apps con este comando (run-command en config.rasi).
+# Un programa elige su gráfica al abrirse y no puede moverse después: por eso se decide aquí.
+
+REGLAS=${XDG_CONFIG_HOME:-$HOME/.config}/zen-gpu/reglas
+ESTADO=${XDG_RUNTIME_DIR:-/run/user/$UID}/zen-gpu.json
+LOG=${XDG_RUNTIME_DIR:-/run/user/$UID}/zen-gpu-decisiones.log
+UMBRAL=70
+
+forzar="" explicar=""
+while [[ $1 == --* ]]; do
+    case $1 in
+        --nvidia) forzar=nvidia ;;
+        --intel)  forzar=intel ;;
+        --explicar) explicar=1 ;;
+        *) break ;;
+    esac
+    shift
+done
+(($#)) || { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+
+# nombre de la app, saltando prefijos como "env VAR=x" o "flatpak run"
+app=""
+for a in "$@"; do
+    [[ $a == env || $a == *=* || $a == flatpak || $a == run || $a == -* ]] && continue
+    app=${a##*/}; break
+done
+
+regla() {   # imprime intel/nvidia si la app aparece en una línea "intel: ..." o "nvidia: ..."
+    [[ -r $REGLAS ]] || return
+    local gpu lista
+    while IFS=: read -r gpu lista; do
+        [[ $gpu =~ ^[[:space:]]*(intel|nvidia)[[:space:]]*$ ]] || continue
+        for x in $lista; do [[ $app == $x ]] && { echo "${BASH_REMATCH[1]}"; return; }; done
+    done < "$REGLAS"
+}
+
+if [[ ! -e /proc/driver/nvidia/version ]]; then
+    gpu=intel motivo="la NVIDIA no tiene driver propietario"
+elif [[ -n $forzar ]]; then
+    gpu=$forzar motivo="forzado con --$forzar"
+elif r=$(regla) && [[ -n $r ]]; then
+    gpu=$r motivo="regla en $REGLAS"
+else
+    uso=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["intel"]["uso"])' "$ESTADO" 2>/dev/null || echo 0)
+    if ((uso >= UMBRAL)); then gpu=nvidia motivo="la Intel está al $uso% (umbral $UMBRAL%)"
+    else gpu=intel motivo="la Intel está al $uso%, le sobra"; fi
+fi
+
+if [[ -n $explicar ]]; then echo "$app → $gpu ($motivo)"; exit 0; fi
+printf '%(%H:%M:%S)T  %-20s → %-6s  %s\n' -1 "$app" "$gpu" "$motivo" >> "$LOG"
+tail -n 50 "$LOG" > "$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+
+if [[ $gpu == nvidia ]]; then
+    export __NV_PRIME_RENDER_OFFLOAD=1 __VK_LAYER_NV_optimus=NVIDIA_only __GLX_VENDOR_LIBRARY_NAME=nvidia
+    [[ -f /usr/share/glvnd/egl_vendor.d/10_nvidia.json ]] && export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json
+fi
+exec "$@"

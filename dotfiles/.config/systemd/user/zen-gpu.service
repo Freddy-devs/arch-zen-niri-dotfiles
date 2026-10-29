@@ -1,0 +1,15 @@
+[Unit]
+Description=Supervisor de las gráficas Intel + NVIDIA (mide carga para waybar y zen-run)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/zen-gpu --daemon
+Restart=on-failure
+RestartSec=3
+# es un medidor: si hay competencia, que ceda ante todo lo demás
+CPUWeight=20
+Nice=10
+
+[Install]
+WantedBy=graphical-session.target
