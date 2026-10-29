@@ -10,6 +10,8 @@ configuration {
     drun-display-format:  "{name}\n[<span size='small' alpha='60%'>{generic}</span>]";
     display-drun:         "";
     matching:             "fuzzy";
+    /* sin historial: la lista sale en orden alfabético; al escribir, ordena por coincidencia */
+    disable-history:      true;
     sort:                 true;
     sorting-method:       "fzf";
     case-sensitive:       false;
