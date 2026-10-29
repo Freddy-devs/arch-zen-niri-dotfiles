@@ -99,7 +99,7 @@
     // ---------- red y batería de la laptop ----------
     "group/netbat": {
         "orientation": "horizontal",
-        "modules": ["custom/tuneles", "network", "battery"]
+        "modules": ["network", "battery"]
     },
 
     // reproductor: abre zen-media (mini ventana abajo al centro) con lo que suene en Brave, Spotify, VLC…
@@ -134,14 +134,6 @@
         "escape": false,
         "restart-interval": 5,
         "on-click": "~/.local/bin/zen-toggle bluetooth"
-    },
-
-    // túneles WireGuard con otros PCs (zen-traspaso): verde con el número de PCs conectados
-    "custom/tuneles": {
-        "exec": "~/.local/bin/zen-tuneles --waybar",
-        "return-type": "json",
-        "interval": 3,
-        "on-click": "~/.local/bin/zen-toggle tuneles"
     },
 
     "network": {
