@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Genera el tema de cursor Qogir-lime-cursors: el Qogir blanco pintado de verde limón.
+"""Genera el tema de cursor Qogir-lime-cursors: el Qogir blanco pintado de verde limón brillante.
 
 Lee los Xcursor de /usr/share/icons/Qogir-white-cursors y tiñe solo los píxeles grises
 (relleno blanco, sombras y borde oscuro), así el giro azul de "cargando" y el rojo de
-"no permitido" conservan su color. Los enlaces entre cursores se copian tal cual.
+"no permitido" conservan su color. Añade el tamaño 28 (escalado desde el 32). Los enlaces entre cursores se copian tal cual.
 Uso: cursor-lime.py [destino] [--preview archivo.png]
 """
 import os
@@ -12,7 +12,8 @@ import sys
 import zlib
 
 ORIGEN = "/usr/share/icons/Qogir-white-cursors"
-LIMA = (0xA3, 0xE6, 0x35)          # verde limón
+LIMA = (0xC4, 0xFF, 0x1F)          # verde limón brillante
+EXTRA = {28: 32}                   # tamaños nuevos: 28 se escala desde el de 32 (el escritorio usa 28)
 NOMBRE = "Qogir-lime-cursors"
 XCUR_IMG = 0xFFFD0002
 
@@ -50,6 +51,35 @@ def tenir(p):
         return p
     r, g, b = (c * l // 255 for c, l in zip((r, g, b), LIMA))
     return (a << 24) | (r << 16) | (g << 8) | b
+
+
+def escalar(im, nominal, base):
+    """Copia de una imagen a otro tamaño nominal, promediando por área (nítido al reducir)."""
+    f = nominal / base
+    w, h = max(1, round(im["w"] * f)), max(1, round(im["h"] * f))
+    sw, sh, src = im["w"], im["h"], im["px"]
+    px = []
+    for y in range(h):
+        y0, y1 = y / f, min(sh, (y + 1) / f)
+        for x in range(w):
+            x0, x1 = x / f, min(sw, (x + 1) / f)
+            acc, area = [0.0] * 4, 0.0
+            for sy in range(int(y0), min(sh, int(y1) + 1)):
+                cy = min(y1, sy + 1) - max(y0, sy)
+                if cy <= 0:
+                    continue
+                for sx in range(int(x0), min(sw, int(x1) + 1)):
+                    cx = min(x1, sx + 1) - max(x0, sx)
+                    if cx <= 0:
+                        continue
+                    p, k = src[sy * sw + sx], cx * cy
+                    area += k
+                    for i, sh_ in enumerate((24, 16, 8, 0)):
+                        acc[i] += ((p >> sh_) & 255) * k
+            c = [min(255, round(v / area)) for v in acc] if area else [0, 0, 0, 0]
+            px.append((c[0] << 24) | (c[1] << 16) | (c[2] << 8) | c[3])
+    return {"size": nominal, "w": w, "h": h, "xh": min(w - 1, round(im["xh"] * f)),
+            "yh": min(h - 1, round(im["yh"] * f)), "delay": im["delay"], "px": px}
 
 
 def png(path, imgs):
@@ -90,9 +120,12 @@ def main():
         imgs = leer(src)
         for im in imgs:
             im["px"] = [tenir(p) for p in im["px"]]
+        for nominal, base in EXTRA.items():
+            imgs += [escalar(im, nominal, base) for im in imgs if im["size"] == base]
+        imgs.sort(key=lambda i: i["size"])
         escribir(dst, imgs)
-        if nombre in ("default", "pointer", "text", "progress", "not-allowed", "grabbing"):
-            vista.append(max(imgs, key=lambda i: i["w"]))
+        if nombre in ("default", "pointer", "text", "progress", "not-allowed"):
+            vista.append(next(i for i in imgs if i["size"] == 28))
     if "--preview" in sys.argv:
         png(sys.argv[sys.argv.index("--preview") + 1], vista)
     print(f"Tema creado en {destino}")
