@@ -1,0 +1,545 @@
+#!/usr/bin/env python3
+"""zen-ram — panel de memoria debajo de la barra (mismo estilo que zen-audio).
+
+Muestra cuánta RAM se usa y qué apps consumen más (todos sus procesos sumados, en PSS: la
+memoria compartida se reparte y no se cuenta dos veces). Cada app se puede cerrar desde aquí:
+primer clic pide confirmación, el segundo le manda SIGTERM (cierre normal, guarda su estado);
+si no se cierra en unos segundos aparece «Forzar» (SIGKILL). Lo esencial del escritorio no se
+puede cerrar. «Liberar caché» vacía la caché de archivos del kernel (pide la contraseña).
+
+Clic en la RAM de waybar o Super+Shift+M lo abre; otro clic, Super+Shift+M o Esc lo cierra.
+Queda residente: zen-toggle ram lo muestra al instante.
+"""
+import configparser
+import glob
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
+LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
+if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
+    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Gtk4LayerShell as Layer  # noqa: E402
+
+CSS = """
+window.zen-ram { background: transparent; }
+.panel {
+    background: #242933; border-radius: 14px; padding: 14px 14px 10px;
+    color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
+}
+.title { font-size: 15px; font-weight: 800; color: #eceff4; }
+.title-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 17px; color: #8fbcbb; margin-right: 8px; }
+.total { font-family: "JetBrainsMono Nerd Font", monospace; font-weight: 700; color: #d8dee9; }
+progressbar.main { margin: 10px 0 6px; }
+progressbar.main trough { min-height: 8px; }
+progressbar.main progress { min-height: 8px; }
+progressbar trough { background: #3b4252; border-radius: 4px; min-height: 3px; border: none; }
+progressbar progress { background: #8fbcbb; border-radius: 4px; min-height: 3px; border: none; }
+progressbar.warn progress { background: #d08770; }
+progressbar.crit progress { background: #bf616a; }
+.stats { color: #7b88a1; font-size: 11px; }
+.stats-val { color: #d8dee9; font-weight: 700; font-size: 11px; }
+.section { color: #616e88; font-size: 11px; font-weight: 800; letter-spacing: 1px; margin: 14px 0 4px; }
+.app { padding: 6px 4px 6px 2px; border-radius: 8px; }
+.app:hover { background: #2e3440; }
+.app-icon { margin-right: 10px; }
+.app-glyph { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 18px; color: #616e88; margin-right: 10px; min-width: 22px; }
+.app-name { font-weight: 700; color: #e5e9f0; }
+.app-meta { color: #616e88; font-size: 11px; }
+.app-mem { font-family: "JetBrainsMono Nerd Font", monospace; font-weight: 700; color: #d8dee9; margin: 0 8px; }
+.app-mem.big { color: #ebcb8b; }
+.lock { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; color: #4c566a; min-width: 30px; }
+button.kill {
+    background: #2e3440; color: #bf616a; border: none; box-shadow: none; border-radius: 8px;
+    min-width: 30px; min-height: 26px; padding: 0 6px;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font";
+}
+button.kill:hover { background: #3b4252; }
+button.kill.confirm { background: #bf616a; color: #eceff4; font-family: Inter, sans-serif; font-weight: 700; font-size: 11px; }
+button.kill.force { background: #d08770; color: #242933; font-family: Inter, sans-serif; font-weight: 800; font-size: 11px; }
+button.foot {
+    background: #2e3440; color: #d8dee9; border: none; box-shadow: none; border-radius: 8px;
+    padding: 4px 10px; font-weight: 600;
+}
+button.foot:hover { background: #3b4252; }
+.toast { color: #a3be8c; font-size: 11px; margin-top: 8px; }
+.toast.err { color: #bf616a; }
+"""
+
+REFRESH = 2            # segundos entre lecturas con el panel abierto
+TOP = 12               # apps en la lista (el resto, en btop)
+FORCE_AFTER = 4        # segundos sin cerrarse tras SIGTERM → ofrecer SIGKILL
+CONFIRM_FOR = 3        # segundos que dura el «¿Cerrar?»
+GIB = 1024 * 1024      # kB por GiB
+
+INTERP = re.compile(r"^(python[\d.]*|node|bash|sh|zsh|dash|perl|ruby|java|lua[\d.]*)$")
+VERSION = re.compile(r"^[\d.]+$")   # binarios con versión por nombre (claude → 2.1.312)
+# lo esencial del escritorio: cerrarlo deja la sesión rota (se ve, pero sin botón)
+PROTECTED = {
+    "niri", "waybar", "Xwayland", "xwayland-satellite", "pipewire", "pipewire-pulse", "wireplumber",
+    "systemd", "dbus-daemon", "dbus-broker", "dbus-broker-launch", "gnome-keyring-daemon",
+    "polkit-gnome-authentication-agent-1", "swaybg", "swayidle", "mako", "at-spi-bus-launcher",
+    "at-spi2-registryd", "zen-ram",
+}
+
+
+def kb(n):
+    return f"{n / GIB:.1f} GiB" if n >= GIB / 10 else f"{n / 1024:.0f} MiB"
+
+
+def read(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def meminfo():
+    m = {}
+    for line in read("/proc/meminfo").decode().splitlines():
+        k, _, v = line.partition(":")
+        m[k] = int(v.split()[0]) if v.split() else 0
+    total, avail = m.get("MemTotal", 1), m.get("MemAvailable", 0)
+    return {
+        "total": total, "used": total - avail, "avail": avail,
+        "cache": m.get("Cached", 0) + m.get("Buffers", 0) + m.get("SReclaimable", 0),
+        "swap_total": m.get("SwapTotal", 0), "swap_used": m.get("SwapTotal", 0) - m.get("SwapFree", 0),
+    }
+
+
+def app_name(pid, exe):
+    comm = read(f"/proc/{pid}/comm").decode(errors="replace").strip()
+    if VERSION.match(exe):
+        return comm or exe
+    if INTERP.match(exe):
+        # scripts: el nombre que se puso el proceso (zen-calendar) o el del script (zen-audio)
+        if comm and not INTERP.match(comm):
+            return comm
+        for arg in read(f"/proc/{pid}/cmdline").decode(errors="replace").split("\0")[1:]:
+            if arg and not arg.startswith("-"):
+                return os.path.basename(arg)
+    return exe
+
+
+def mem_of(pid):
+    """PSS en kB (RSS si no se puede leer smaps_rollup)."""
+    for line in read(f"/proc/{pid}/smaps_rollup").decode().splitlines():
+        if line.startswith("Pss:"):
+            return int(line.split()[1])
+    statm = read(f"/proc/{pid}/statm").split()
+    return int(statm[1]) * (os.sysconf("SC_PAGE_SIZE") // 1024) if len(statm) > 1 else 0
+
+
+def snapshot():
+    """Memoria del sistema + apps del usuario (procesos agrupados por app, de mayor a menor)."""
+    uid, me = os.getuid(), os.getpid()
+    apps = {}
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) == me:
+            continue
+        try:
+            if os.stat(f"/proc/{d}").st_uid != uid:
+                continue
+            exe = os.path.basename(os.readlink(f"/proc/{d}/exe")).removesuffix(" (deleted)")
+        except OSError:
+            continue
+        name = app_name(d, exe)
+        a = apps.setdefault(name, {"kb": 0, "pids": []})
+        a["kb"] += mem_of(d)
+        a["pids"].append(int(d))
+    return meminfo(), sorted(apps.items(), key=lambda kv: -kv[1]["kb"])
+
+
+def desktop_index():
+    """nombre de proceso → (nombre bonito, icono) según los .desktop instalados."""
+    idx = {}
+    dirs = [os.path.expanduser("~/.local/share/applications"), "/usr/share/applications"]
+    for path in [p for d in dirs for p in sorted(glob.glob(os.path.join(d, "*.desktop")))]:
+        cp = configparser.ConfigParser(interpolation=None, strict=False)
+        try:
+            cp.read(path, encoding="utf-8")
+            e = cp["Desktop Entry"]
+        except (configparser.Error, KeyError, UnicodeDecodeError):
+            continue
+        if e.get("NoDisplay", "").lower() == "true":   # accesos ocultos (manejadores de URL…)
+            continue
+        entry = (e.get("Name", ""), e.get("Icon", ""))
+        keys = {os.path.basename(path)[:-8], e.get("Icon", ""), e.get("StartupWMClass", ""),
+                os.path.basename((e.get("Exec", "").split() or [""])[0])}
+        for k in keys:
+            if k:
+                idx.setdefault(k.lower(), entry)
+    return idx
+
+
+class AppRow:
+    def __init__(self, panel, name):
+        self.panel, self.name, self.pids, self.mem = panel, name, [], 0
+        self.confirm_until = 0
+        self.term_at = 0
+        self.box = Gtk.Box()
+        self.box.add_css_class("app")
+        pretty, icon = panel.lookup(name)
+        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        cand = [i for i in (icon, name, name.lower()) if i and theme.has_icon(i)]
+        if cand:
+            img = Gtk.Image.new_from_icon_name(cand[0])
+            img.set_pixel_size(22)
+            img.add_css_class("app-icon")
+            self.box.append(img)
+        else:
+            glyph = Gtk.Label(label="\U000f08c6")   # nf-md-application_outline
+            glyph.add_css_class("app-glyph")
+            self.box.append(glyph)
+        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        title = Gtk.Label(label=pretty or name, xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=24)
+        title.add_css_class("app-name")
+        self.meta = Gtk.Label(xalign=0)
+        self.meta.add_css_class("app-meta")
+        self.bar = Gtk.ProgressBar(valign=Gtk.Align.CENTER)
+        self.bar.set_margin_top(3)
+        info.append(title)
+        info.append(self.meta)
+        info.append(self.bar)
+        self.box.append(info)
+        self.mem_lbl = Gtk.Label(xalign=1, valign=Gtk.Align.CENTER)
+        self.mem_lbl.add_css_class("app-mem")
+        self.box.append(self.mem_lbl)
+        if name in PROTECTED or name.startswith(("xdg-", "gvfs")):
+            lock = Gtk.Label(label="\U000f033e", tooltip_text="Parte del escritorio: no se cierra desde aquí")
+            lock.add_css_class("lock")
+            self.box.append(lock)
+            self.btn = None
+        else:
+            self.btn = Gtk.Button(valign=Gtk.Align.CENTER)
+            self.btn.add_css_class("kill")
+            self.btn.connect("clicked", self.on_kill)
+            self.box.append(self.btn)
+
+    def update(self, info, total):
+        self.pids, self.mem = info["pids"], info["kb"]
+        n = len(self.pids)
+        self.meta.set_label(f"{n} proceso{'s' if n != 1 else ''}")
+        self.mem_lbl.set_label(kb(self.mem))
+        frac = self.mem / total
+        self.bar.set_fraction(min(1.0, frac))
+        for c in ("warn", "crit"):
+            self.bar.remove_css_class(c)
+        self.mem_lbl.remove_css_class("big")
+        if frac >= 0.25:
+            self.bar.add_css_class("crit")
+            self.mem_lbl.add_css_class("big")
+        elif frac >= 0.10:
+            self.bar.add_css_class("warn")
+        self.sync_button()
+
+    def sync_button(self):
+        if self.btn is None:
+            return
+        now = time.monotonic()
+        for c in ("confirm", "force"):
+            self.btn.remove_css_class(c)
+        if self.term_at and now - self.term_at >= FORCE_AFTER:
+            self.btn.set_label("Forzar")
+            self.btn.add_css_class("force")
+            self.btn.set_tooltip_text("No se cerró: terminarlo a la fuerza (SIGKILL, pierde lo no guardado)")
+        elif now < self.confirm_until:
+            self.btn.set_label("¿Cerrar?")
+            self.btn.add_css_class("confirm")
+            self.btn.set_tooltip_text("Clic otra vez para cerrar")
+        else:
+            self.btn.set_label("\U000f0156")   # nf-md-close
+            self.btn.set_tooltip_text("Cerrar esta app (todos sus procesos)")
+
+    def on_kill(self, _btn):
+        now = time.monotonic()
+        if self.term_at and now - self.term_at >= FORCE_AFTER:
+            self.panel.signal_app(self, signal.SIGKILL)
+        elif now < self.confirm_until:
+            self.confirm_until = 0
+            self.term_at = now
+            self.panel.signal_app(self, signal.SIGTERM)
+        else:
+            self.confirm_until = now + CONFIRM_FOR
+            GLib.timeout_add_seconds(CONFIRM_FOR, lambda: self.sync_button() or False)
+        self.sync_button()
+
+
+class Panel:
+    def __init__(self, app):
+        self.app = app
+        self.rows = {}
+        self.order = []
+        self.timer = 0
+        self.busy = False
+        self.freed = {}   # app cerrada → memoria que usaba (para el aviso al desaparecer)
+        self.index = {}
+        threading.Thread(target=lambda: self.index.update(desktop_index()), daemon=True).start()
+        self.build()
+
+    def lookup(self, name):
+        for k in (name.lower(), name.lower().split("-")[0]):
+            if k in self.index:
+                return self.index[k]
+        for k, v in self.index.items():
+            if k.startswith(name.lower() + "-"):
+                return v
+        return (name, name)
+
+    def build(self):
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        win = Gtk.ApplicationWindow(application=self.app)
+        win.add_css_class("zen-ram")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-ram")
+        Layer.set_layer(win, Layer.Layer.TOP)
+        Layer.set_anchor(win, Layer.Edge.TOP, True)
+        Layer.set_anchor(win, Layer.Edge.LEFT, True)
+        Layer.set_margin(win, Layer.Edge.TOP, 8)
+        Layer.set_margin(win, Layer.Edge.LEFT, 12)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.hide())
+        win.add_controller(keys)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.add_css_class("panel")
+        panel.set_size_request(400, -1)
+        head = Gtk.Box()
+        icon = Gtk.Label(label="")   # nf-fa-memory (mismo chip que la barra)
+        icon.add_css_class("title-icon")
+        title = Gtk.Label(label="Memoria", xalign=0, hexpand=True)
+        title.add_css_class("title")
+        self.total = Gtk.Label()
+        self.total.add_css_class("total")
+        head.append(icon)
+        head.append(title)
+        head.append(self.total)
+        panel.append(head)
+        self.main_bar = Gtk.ProgressBar()
+        self.main_bar.add_css_class("main")
+        panel.append(self.main_bar)
+
+        stats = Gtk.Box(spacing=4)
+        self.stat = {}
+        for key, name, tip in (("apps", "Apps", "Memoria en uso por programas"),
+                               ("cache", "Caché", "Archivos recientes guardados en RAM: se libera sola cuando hace falta"),
+                               ("avail", "Disponible", "Lo que todavía pueden usar las apps"),
+                               ("swap", "Swap", "Memoria movida a zram/disco")):
+            lbl = Gtk.Label(label=name, tooltip_text=tip)
+            lbl.add_css_class("stats")
+            val = Gtk.Label(tooltip_text=tip)
+            val.add_css_class("stats-val")
+            val.set_margin_end(8)
+            stats.append(lbl)
+            stats.append(val)
+            self.stat[key] = val
+        panel.append(stats)
+
+        section = Gtk.Label(label="LO QUE MÁS USA", xalign=0)
+        section.add_css_class("section")
+        panel.append(section)
+        # sin ScrolledWindow: con la lista aún vacía al abrir, el panel se quedaba con alto para una fila
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.append(self.list)
+
+        self.toast = Gtk.Label(xalign=0, wrap=True, max_width_chars=50)
+        self.toast.add_css_class("toast")
+        self.toast.set_visible(False)
+        panel.append(self.toast)
+
+        foot = Gtk.Box(spacing=6)
+        foot.set_margin_top(10)
+        drop = Gtk.Button(label="\U000f00e2  Liberar caché",
+                          tooltip_text="Vacía la caché de archivos del kernel (pide tu contraseña).\n"
+                                       "No cierra nada; la caché vuelve a llenarse con el uso.")
+        drop.add_css_class("foot")
+        drop.connect("clicked", self.drop_caches)
+        btop = Gtk.Button(label="\U000f0128  btop", tooltip_text="Monitor completo de procesos en una terminal")
+        btop.add_css_class("foot")
+        btop.connect("clicked", self.open_btop)
+        spacer = Gtk.Box(hexpand=True)
+        foot.append(drop)
+        foot.append(spacer)
+        foot.append(btop)
+        panel.append(foot)
+
+        win.set_child(panel)
+        self.win = win
+        win.realize()                    # prepara el renderizador ahora y no en el primer clic
+
+    # ---------- mostrar / ocultar
+
+    @staticmethod
+    def focused_monitor():
+        try:
+            out = subprocess.run(["niri", "msg", "-j", "focused-output"], capture_output=True, timeout=2).stdout
+            name = json.loads(out).get("name")
+        except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+            return None
+        monitors = Gdk.Display.get_default().get_monitors()
+        for i in range(monitors.get_n_items()):
+            if monitors.get_item(i).get_connector() == name:
+                return monitors.get_item(i)
+        return None
+
+    def toggle(self):
+        self.hide() if self.win.get_visible() else self.show()
+
+    def show(self):
+        mon = self.focused_monitor()
+        if mon is not None:
+            Layer.set_monitor(self.win, mon)
+        self.toast.set_visible(False)
+        self.win.present()
+        self.refresh()
+        if not self.timer:
+            self.timer = GLib.timeout_add_seconds(REFRESH, self.refresh)
+
+    def hide(self):
+        self.win.set_visible(False)
+        if self.timer:
+            GLib.source_remove(self.timer)
+            self.timer = 0
+        return True
+
+    # ---------- datos
+
+    def refresh(self):
+        if not self.busy:                 # la lectura de /proc va en un hilo: la UI no se traba
+            self.busy = True
+            threading.Thread(target=lambda: GLib.idle_add(self.apply, *snapshot()), daemon=True).start()
+        return True
+
+    def apply(self, mem, apps):
+        self.busy = False
+        total = mem["total"]
+        self.total.set_label(f"{mem['used'] / GIB:.1f} / {total / GIB:.1f} GiB")
+        frac = mem["used"] / total
+        self.main_bar.set_fraction(frac)
+        for c in ("warn", "crit"):
+            self.main_bar.remove_css_class(c)
+        if frac >= 0.90:
+            self.main_bar.add_css_class("crit")
+        elif frac >= 0.75:
+            self.main_bar.add_css_class("warn")
+        self.stat["apps"].set_label(kb(mem["used"]))
+        self.stat["cache"].set_label(kb(mem["cache"]))
+        self.stat["avail"].set_label(kb(mem["avail"]))
+        self.stat["swap"].set_label(f"{kb(mem['swap_used'])}" if mem["swap_total"] else "—")
+
+        alive = {name for name, _ in apps}
+        for name in [n for n in self.freed if n not in alive]:
+            self.say(f"{self.lookup(name)[0] or name} se cerró · liberó ~{kb(self.freed.pop(name))}")
+        top = apps[:TOP]
+        names = [name for name, _ in top]
+        for name, info in top:
+            if name not in self.rows:
+                self.rows[name] = AppRow(self, name)
+            self.rows[name].update(info, total)
+        if names != self.order:           # reordenar sin recrear filas: no parpadea ni pierde el hover
+            child = self.list.get_first_child()
+            while child is not None:
+                nxt = child.get_next_sibling()
+                self.list.remove(child)
+                child = nxt
+            for name in names:
+                self.list.append(self.rows[name].box)
+            self.order = names
+        for name in [n for n in self.rows if n not in alive]:
+            del self.rows[name]
+        return False
+
+    # ---------- acciones
+
+    def signal_app(self, row, sig):
+        sent = 0
+        for pid in row.pids:
+            try:
+                os.kill(pid, sig)
+                sent += 1
+            except (ProcessLookupError, PermissionError):
+                pass
+        self.freed[row.name] = row.mem
+        pretty = self.lookup(row.name)[0] or row.name
+        self.say(f"Cerrando {pretty}…" if sig == signal.SIGTERM else f"Forzando el cierre de {pretty}…")
+        GLib.timeout_add(1200, lambda: self.refresh() and False)
+        if sig == signal.SIGTERM:
+            GLib.timeout_add_seconds(FORCE_AFTER, lambda: self.refresh() and False)
+
+    def drop_caches(self, _btn):
+        before = meminfo()["cache"]
+        try:
+            proc = Gio.Subprocess.new(["pkexec", "/bin/sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
+                                      Gio.SubprocessFlags.STDERR_SILENCE)
+        except GLib.Error:
+            self.say("No se pudo pedir permiso (pkexec)", error=True)
+            return
+
+        def done(p, res):
+            try:
+                ok = p.wait_check_finish(res)
+            except GLib.Error:
+                ok = False
+            if ok:
+                self.say(f"Caché liberada: {kb(max(0, before - meminfo()['cache']))}")
+            else:
+                self.say("Cancelado: no se liberó la caché", error=True)
+            self.refresh()
+
+        proc.wait_check_async(None, done)
+
+    def open_btop(self, _btn):
+        self.hide()
+        subprocess.Popen([os.path.expanduser("~/.local/bin/zen-term"), "-e", "btop"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def say(self, text, error=False):
+        self.toast.set_label(text)
+        (self.toast.add_css_class if error else self.toast.remove_css_class)("err")
+        self.toast.set_visible(True)
+
+
+def main():
+    app = Gtk.Application(application_id="pe.zen.Ram")
+    state = {}
+
+    def activate(a):
+        if "panel" in state:          # otra llamada a zen-ram: abrir/cerrar
+            state["panel"].toggle()
+            return
+        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        a.hold()
+        state["panel"] = Panel(a)
+        if "--daemon" not in sys.argv:
+            state["panel"].show()
+        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-ram.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
+
+    app.connect("activate", activate)
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()

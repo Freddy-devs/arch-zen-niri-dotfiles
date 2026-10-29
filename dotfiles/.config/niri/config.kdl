@@ -145,6 +145,7 @@ spawn-at-startup "sh" "-c" "~/.local/bin/zen-media --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-bluetooth --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-network --daemon"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-brightness --daemon"
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-ram --daemon"
 spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
@@ -224,6 +225,7 @@ layer-rule {
     match namespace="^zen-audio$"
     match namespace="^zen-media$"
     match namespace="^zen-brightness$"
+    match namespace="^zen-ram$"
     match namespace="^zen-calendar$"
     geometry-corner-radius 14
     // sombra muy suave y difusa para los popups
@@ -267,6 +269,7 @@ binds {
     Mod+Shift+B hotkey-overlay-title="Bluetooth" { spawn-sh "~/.local/bin/zen-toggle bluetooth"; }
     Mod+N hotkey-overlay-title="Red y Wi-Fi" { spawn-sh "~/.local/bin/zen-toggle network"; }
     Mod+I hotkey-overlay-title="Brillo de cada pantalla" { spawn-sh "~/.local/bin/zen-toggle brightness"; }
+    Mod+Shift+M hotkey-overlay-title="Memoria RAM (apps que más usan)" { spawn-sh "~/.local/bin/zen-toggle ram"; }
     Mod+E hotkey-overlay-title="Archivos (Thunar)" { spawn "thunar"; }
     Mod+V hotkey-overlay-title="Portapapeles: elegir y copiar" { spawn-sh "~/.local/bin/zen-clip menu"; }
     // Alt+Shift+V: últimas 10 copias, flechas + Enter pega al instante (también en la terminal)

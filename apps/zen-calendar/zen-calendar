@@ -142,6 +142,7 @@ class App:
         self.view = self.today.replace(day=1)
         self.selected = self.today
         self.was_active = False
+        self.hovered = False   # el ratón entró al panel desde que se abrió
         self.held = False
         self.notif = None
         self.notif_by_task = {}
@@ -174,6 +175,9 @@ class App:
         win.add_controller(keys)
         # se cierra al hacer clic fuera (pierde el foco), igual que un menú
         win.connect("notify::is-active", self.on_active)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", lambda *_: setattr(self, "hovered", True))
+        win.add_controller(motion)
         win.connect("close-request", lambda _w: (self.hide(), True)[1])
 
         # ---- columna izquierda: reloj + mes
@@ -293,7 +297,9 @@ class App:
     def on_active(self, win, _pspec):
         if win.is_active():
             self.was_active = True
-        elif self.was_active and win.get_visible():
+        # solo si el ratón ya pasó por el panel: abierto desde una notificación (o con el ratón en
+        # otra pantalla), focus-follows-mouse de niri le quitaba el foco al instante y se cerraba solo
+        elif self.was_active and self.hovered and win.get_visible():
             self.hide()
 
     def on_typing(self, entry):
@@ -437,6 +443,7 @@ class App:
         except TypeError:
             pass
         self.was_active = False
+        self.hovered = False
         Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.ON_DEMAND)
         self.close_picker()
         self.entry_title.set_text("")
