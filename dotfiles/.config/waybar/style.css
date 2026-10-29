@@ -1,30 +1,30 @@
-/* Waybar — Nord con islas de fondo azul oscuro nórdico: la barra entera es de vidrio translúcido (niri desenfoca lo de atrás) con
-   borde suave y esquinas de 8 px; dentro, cada grupo es una "isla" con su fondo y bordes redondeados.
+/* Waybar — Tokyo Night, los mismos colores que la polybar del bspwm (tema Emilia): barra #1a1b26 con esquinas de 8 px;
+   dentro, cada grupo es una "isla" #222330 con bordes redondeados.
    Escritorios estilo Pac-Man al centro. */
-@define-color base     #242933;
-@define-color mantle   #1e222a;
-@define-color surface  #2e3440;
-@define-color line     #434c5e;
-@define-color fg       #eceff4;
-@define-color sub      #d8dee9;
-@define-color dim      #616e88;
-@define-color blue     #88c0d0;
-@define-color cyan     #8fbcbb;
-@define-color purple   #b48ead;
-@define-color magenta  #b48ead;
-@define-color red      #bf616a;
-@define-color orange   #d08770;
-@define-color yellow   #ebcb8b;
-@define-color pacman   #ebcb8b;
-@define-color pellet   #81a1c1;
-@define-color green    #a3be8c;
-@define-color arch     #1793d1;
-/* azul oscuro nórdico: fondo de las islas */
-@define-color nordic0  #1e222a;
-@define-color nordic1  #2e3440;
-@define-color nordic2  #3b4252;
-@define-color nordic3  #434c5e;
-@define-color frost    #81a1c1;
+@define-color base     #1a1b26;
+@define-color mantle   #1a1b26;
+@define-color surface  #222330;
+@define-color line     #414868;
+@define-color fg       #f1f1f1;
+@define-color sub      #f1f1f1;
+@define-color dim      #8c8c8c;
+@define-color blue     #7aa2f7;
+@define-color cyan     #7dcfff;
+@define-color purple   #583794;
+@define-color magenta  #bb9af7;
+@define-color red      #f7768e;
+@define-color orange   #e57c46;
+@define-color yellow   #e0af68;
+@define-color pacman   #e0af68;
+@define-color pellet   #583794;
+@define-color green    #9ece6a;
+@define-color arch     #0a9cf5;
+/* fondos de la barra y las islas (los bordes se funden con el fondo, como en la polybar) */
+@define-color nordic0  #1a1b26;
+@define-color nordic1  #222330;
+@define-color nordic2  #2a2b3d;
+@define-color nordic3  #222330;
+@define-color frost    #1a1b26;
 /* Tokyo Night (mismo tema que la polybar del bspwm): fondo de la barra y de las islas */
 @define-color barbg    #1a1b26;
 @define-color islabg   #222330;
@@ -44,7 +44,7 @@
 window#waybar {
     background: @barbg;
     border: 1px solid alpha(@frost, 0.14);
-    border-top-color: alpha(@fg, 0.18);
+    border-top-color: @frost;
     border-radius: 8px;
     color: @fg;
 }
@@ -81,11 +81,11 @@ tooltip label {
 #clock {
     background: @islabg;
     border: 1px solid alpha(@nordic3, 0.95);
-    border-top-color: alpha(@frost, 0.30);
+    border-top-color: @nordic3;
     border-radius: 10px;
     margin: 7px 3px;
     padding: 0 12px;
-    box-shadow: 0 2px 6px alpha(black, 0.45), inset 0 1px 0 alpha(@fg, 0.04);
+    box-shadow: none;
     transition: all 200ms ease;
 }
 
@@ -150,13 +150,10 @@ tooltip label {
     transition: color 200ms ease, background 200ms ease;
 }
 
-/* fantasmas con los colores clásicos: rojo, rosa, celeste y naranja */
-#workspaces button:nth-child(4n+1) { color: @red; }
-#workspaces button:nth-child(4n+2) { color: @magenta; }
-#workspaces button:nth-child(4n+3) { color: @cyan; }
-#workspaces button:nth-child(4n+4) { color: @orange; }
+/* fantasmas azules, como los escritorios ocupados de la polybar */
+#workspaces button { color: @blue; }
 
-/* bolitas: redondas, celeste azul (sin tinte verde) */
+/* bolitas moradas, como los escritorios vacíos de la polybar */
 #workspaces button.empty {
     color: @pellet;
 }
@@ -252,5 +249,5 @@ tooltip label {
     color: @fg;
     font-weight: 700;
     padding: 0 14px;
-    border-color: alpha(@purple, 0.55);
+    border-color: @nordic3;
 }
