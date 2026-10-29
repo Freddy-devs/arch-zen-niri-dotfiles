@@ -238,7 +238,7 @@ tooltip label {
     border-color: @red;
 }
 
-/* la hora, antes del idioma y del botón de apagado */
+/* la hora, antes de actualizaciones, idioma y botón de apagado */
 #clock {
     color: @fg;
     font-weight: 700;
