@@ -29,9 +29,11 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 - **Sin SSH**, sin avahi/cups. MariaDB (si la instalas con `zen-apps`) solo en localhost.
 - **Acceso remoto solo por túnel**: WireGuard (`wireguard-tools`) que inicia la laptop hacia tu
   servidor; nunca se abre un puerto de entrada.
-- **Traspaso de archivos en la red local** (`zen-traspaso`, a pedido): otro PC entra por un túnel
-  WireGuard y copia con `rsync` por SSH. Encendido abre solo UDP 51820 desde la LAN y SSH dentro del
-  túnel (solo llave, solo ese PC); `sudo zen-traspaso apagar` lo cierra todo. Nada queda al arrancar.
+- **Túneles con otros PCs de la red local** (`zen-traspaso` + panel `zen-tuneles` en la barra, Super+Shift+N,
+  a pedido): cada PC se agrega una vez pegando su código público («Copiar mi código» en el otro) y luego
+  se conecta o apaga con un interruptor; conectado, SSH en una terminal o `rsync` a `~/Recibido/`. Los
+  dos PCs encienden su lado. Encendido abre solo UDP 51820 desde la LAN y SSH dentro del túnel (solo
+  llave, solo los PCs conectados); «Apagar todo» (`sudo zen-traspaso apagar`) lo cierra. Nada queda al arrancar.
 - **Red privada**: MAC aleatoria por red Wi-Fi, IPv6 temporal, no envía el nombre del equipo al router.
 - **DNS cifrado obligatorio** (DNS-over-TLS a Quad9, respaldo Cloudflare) con systemd-resolved. NetworkManager no
   pasa el DNS del router (`dns=none` + `systemd-resolved=false`): ninguna consulta sale al DNS del
