@@ -107,3 +107,12 @@ button.pick-link {
     min-height: 22px; padding: 0 6px; font-size: 11px; font-weight: 700;
 }
 button.pick-link:hover { background: #3b4252; }
+/* «hora»: botón con aspecto de campo; gris mientras no hay hora elegida */
+button.time-btn {
+    background: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 9px; box-shadow: none;
+    min-height: 30px; min-width: 64px; padding: 0 8px; font-weight: 600;
+}
+button.time-btn:hover { border-color: #88c0d0; }
+button.time-btn.empty { color: #616e88; font-weight: 400; }
+button.pick.ampm { min-width: 44px; background: #3b4252; }
+button.pick.ampm:checked { background: #88c0d0; color: #242933; font-weight: 800; }

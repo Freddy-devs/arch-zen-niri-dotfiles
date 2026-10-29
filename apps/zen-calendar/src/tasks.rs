@@ -11,7 +11,7 @@ use std::path::PathBuf;
 pub const ALLDAY: &str = "09:00"; // hora de aviso de las tareas sin hora
 pub const REMIND_EVERY: i64 = 300; // segundos entre avisos de una tarea vencida
 pub const SNOOZE_MIN: i64 = 15;
-pub const PRE_ALERTS: [i64; 2] = [30, 5]; // minutos antes de la hora
+pub const PRE_ALERTS: [i64; 3] = [30, 10, 5]; // minutos antes de la hora
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Task {
@@ -122,53 +122,9 @@ pub fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
 }
 
-/// "15:30", "3pm", "3:30 p.m.", "1530" -> Some("HH:MM") · "" -> Some("") · inválida -> None
-pub fn parse_time(text: &str) -> Option<String> {
-    let s: String = text.to_lowercase().chars().filter(|c| *c != '.' && !c.is_whitespace()).collect();
-    if s.is_empty() {
-        return Some(String::new());
-    }
-    let (num, suffix) = match s.find(|c: char| c.is_ascii_alphabetic()) {
-        Some(i) => (&s[..i], &s[i..]),
-        None => (s.as_str(), ""),
-    };
-    let pm = match suffix {
-        "" => None,
-        "am" | "a" => Some(false),
-        "pm" | "p" => Some(true),
-        _ => return None,
-    };
-    let (h, m) = match num.split_once(':') {
-        Some((h, m)) if m.len() == 2 => (h, m),
-        Some(_) => return None,
-        None if num.len() <= 2 => (num, "0"),
-        None if num.len() <= 4 => num.split_at(num.len() - 2),
-        None => return None,
-    };
-    if h.is_empty() || h.len() > 2 || !h.chars().all(|c| c.is_ascii_digit()) || !m.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    let (mut h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
-    if let Some(pm) = pm {
-        if !(1..=12).contains(&h) {
-            return None;
-        }
-        h = h % 12 + if pm { 12 } else { 0 };
-    }
-    (h <= 23 && m <= 59).then(|| format!("{h:02}:{m:02}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn horas() {
-        for (i, o) in [("15:30", Some("15:30")), ("3pm", Some("15:00")), ("3:30 p.m.", Some("15:30")), ("1530", Some("15:30")),
-                       ("12am", Some("00:00")), ("9", Some("09:00")), ("", Some("")), ("25:00", None), ("abc", None), ("13pm", None)] {
-            assert_eq!(parse_time(i).as_deref(), o, "{i}");
-        }
-    }
 
     #[test]
     fn avisos() {
@@ -177,6 +133,10 @@ mod tests {
         let ep = 1_000_000;
         assert!(matches!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"14:00"}"#), now, ep), Some((Alert::Pre(30), _))));
         assert!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"14:00","pre_done":[30]}"#), now, ep).is_none());
+        // 30, 10 y 5 min antes: a las 13:52 de una tarea de las 14:00 toca el de 10
+        let at = |h, m| NaiveDate::from_ymd_opt(2026, 10, 27).unwrap().and_hms_opt(h, m, 0).unwrap();
+        assert!(matches!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"14:00","pre_done":[30]}"#), at(13, 52), ep), Some((Alert::Pre(10), _))));
+        assert!(matches!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"14:00","pre_done":[30,10]}"#), at(13, 56), ep), Some((Alert::Pre(5), _))));
         assert!(matches!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"13:00"}"#), now, ep), Some((Alert::Due, _))));
         assert!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"13:00","last_alert":999990}"#), now, ep).is_none());
         assert!(due_alert(&task(r#"{"id":1,"date":"2026-10-27","time":"13:00","done":true}"#), now, ep).is_none());
