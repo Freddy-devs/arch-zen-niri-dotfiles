@@ -155,8 +155,9 @@ spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-sche
 spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------
+// esquinas suaves, como los paneles de la barra
 window-rule {
-    geometry-corner-radius 8
+    geometry-corner-radius 14
     clip-to-geometry true
 }
 
