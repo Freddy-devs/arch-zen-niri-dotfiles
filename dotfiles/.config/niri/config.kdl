@@ -85,7 +85,8 @@ layout {
 }
 
 cursor {
-    xcursor-theme "Qogir-white-cursors"
+    // Qogir blanco pintado de verde limón (system/art/cursor-lime.py)
+    xcursor-theme "Qogir-lime-cursors"
     xcursor-size 24
     hide-when-typing
 }
@@ -149,7 +150,7 @@ spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-clip watch"
 spawn-at-startup "swayidle" "-w" "timeout" "600" "~/.local/bin/zen-lock" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "~/.local/bin/zen-lock"
-spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme Colloid-Dark-Nord; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
+spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme Colloid-Dark-Nord; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-lime-cursors"
 spawn-at-startup "/usr/local/bin/zen-first-login"
 
 // ---------- reglas de ventana ----------
