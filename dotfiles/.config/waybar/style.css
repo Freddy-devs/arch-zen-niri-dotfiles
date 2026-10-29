@@ -66,6 +66,7 @@ tooltip label {
 /* ---------- islas: cada grupo con su fondo translúcido, borde suave y esquinas redondeadas ---------- */
 #custom-arch,
 #stats,
+#storage,
 #workspaces,
 #bt,
 #netbat,
@@ -87,6 +88,7 @@ tooltip label {
 
 #custom-arch:hover,
 #stats:hover,
+#storage:hover,
 #workspaces:hover,
 #bt:hover,
 #netbat:hover,
@@ -106,7 +108,7 @@ tooltip label {
     padding: 0 6px;
 }
 
-/* ---------- izquierda: logo + CPU · RAM · disco ---------- */
+/* ---------- izquierda: logo + [CPU · GPU] + [RAM · disco] ---------- */
 #custom-arch {
     color: @arch;
     font-size: 17px;
@@ -116,7 +118,8 @@ tooltip label {
 
 #custom-arch:hover { color: @cyan; }
 
-#stats {
+#stats,
+#storage {
     color: @sub;
 }
 

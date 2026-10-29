@@ -14,7 +14,7 @@
     "margin-right": 10,
     "reload_style_on_change": true,
 
-    "modules-left": ["custom/arch", "group/stats"],
+    "modules-left": ["custom/arch", "group/stats", "group/storage"],
     "modules-center": ["niri/workspaces"],
     "modules-right": ["group/bt", "group/netbat", "group/controls", "tray", "clock", "custom/updates", "niri/language", "custom/power"],
 
@@ -49,7 +49,12 @@
     // ---------- sistema ----------
     "group/stats": {
         "orientation": "horizontal",
-        "modules": ["cpu", "custom/gpu", "memory", "disk"]
+        "modules": ["cpu", "custom/gpu"]
+    },
+
+    "group/storage": {
+        "orientation": "horizontal",
+        "modules": ["memory", "disk"]
     },
 
     "cpu": {
