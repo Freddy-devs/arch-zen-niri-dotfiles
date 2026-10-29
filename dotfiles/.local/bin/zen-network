@@ -258,6 +258,10 @@ class Panel:
 
     def refresh(self):
         self.refresh_pending = False
+        # con el campo de contraseña abierto el panel retiene el teclado: con focus-follows-mouse
+        # de niri, mover el ratón fuera mandaba lo que se escribía a la ventana de debajo
+        Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.EXCLUSIVE if self.asking
+                                else Layer.KeyboardMode.ON_DEMAND)
         wifi_on = self.client.wireless_get_enabled()
         self.updating_switch = True
         self.power.set_active(wifi_on)

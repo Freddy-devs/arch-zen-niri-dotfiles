@@ -140,6 +140,8 @@ struct Ui {
     upcoming: gtk::Box,
     entry_title: gtk::Entry,
     entry_time: gtk::Entry,
+    picker: gtk::Revealer,
+    picker_stack: gtk::Stack,
 }
 
 struct App {
@@ -307,13 +309,22 @@ impl App {
 
         let add = hbox(6, "add-row");
         let entry_title = gtk::Entry::builder().placeholder_text("Nueva tarea o alarma…").hexpand(true).build();
-        let entry_time = gtk::Entry::builder().placeholder_text("hora").width_chars(7).max_width_chars(7).build();
-        entry_time.set_tooltip_text(Some("15:30 · 3pm · vacío = todo el día (aviso 9:00 am)"));
+        // la hora no se escribe: clic en el campo → elegir hora → elegir minutos (selector bajo la fila)
+        let entry_time = gtk::Entry::builder().placeholder_text("hora").width_chars(7).max_width_chars(7).editable(false).build();
+        entry_time.set_tooltip_text(Some("Clic: elige la hora y luego los minutos · sin hora = todo el día (aviso 9:00 am)"));
         let add_btn = gtk::Button::with_label("Agregar");
         add_btn.add_css_class("add");
         for e in [&entry_title, &entry_time] {
             let me = self.clone();
             e.connect_activate(move |_| me.add_task());
+            // al escribir, el panel retiene el teclado: con focus-follows-mouse de niri, sacar el
+            // ratón del panel le quitaba el foco y lo cerraba a media tarea (Esc o el reloj lo cierran)
+            let w = win.clone();
+            e.connect_changed(move |e| {
+                if !e.text().is_empty() {
+                    w.set_keyboard_mode(KeyboardMode::Exclusive);
+                }
+            });
         }
         let me = self.clone();
         add_btn.connect_clicked(move |_| me.add_task());
@@ -321,6 +332,8 @@ impl App {
         add.append(&entry_time);
         add.append(&add_btn);
         right.append(&add);
+        let (picker, picker_stack) = self.time_picker(&entry_time, &entry_title);
+        right.append(&picker);
         right.append(&label("PRÓXIMOS FERIADOS", "section"));
         let upcoming = vbox("");
         right.append(&upcoming);
@@ -332,6 +345,7 @@ impl App {
 
         let ui = Rc::new(Ui {
             win, time, ampm, date, month, year, cells, day_title, day_sub, events, tasks, upcoming, entry_title, entry_time,
+            picker, picker_stack,
         });
         *self.ui.borrow_mut() = Some(ui.clone());
         ui
@@ -347,6 +361,97 @@ impl App {
             .find(|m| m.connector().as_deref() == Some(name))
     }
 
+    /// Selector de hora en dos pasos dentro del panel (no un popover: le quitaría el foco y lo cerraría).
+    /// Clic en el campo hora → cuadrícula de 24 horas → cuadrícula de minutos de 5 en 5.
+    fn time_picker(&self, entry_time: &gtk::Entry, entry_title: &gtk::Entry) -> (gtk::Revealer, gtk::Stack) {
+        let stack = gtk::Stack::builder()
+            .transition_type(gtk::StackTransitionType::SlideLeftRight)
+            .transition_duration(150)
+            .vhomogeneous(false)
+            .interpolate_size(true)
+            .build();
+        let picker = gtk::Revealer::builder().child(&stack).reveal_child(false).build();
+        let hour = Rc::new(Cell::new(0u32));
+
+        // paso 1: hora (12 am … 11 pm, en orden del día)
+        let hours = vbox("picker");
+        let head = hbox(6, "");
+        let title = label("ELIGE LA HORA", "pick-head");
+        title.set_hexpand(true);
+        let none = gtk::Button::with_label("Sin hora");
+        none.add_css_class("pick-link");
+        head.append(&title);
+        head.append(&none);
+        hours.append(&head);
+        let grid = gtk::Grid::builder().column_homogeneous(true).row_spacing(3).column_spacing(3).build();
+        hours.append(&grid);
+
+        // paso 2: minutos
+        let mins = vbox("picker");
+        let head = hbox(6, "");
+        let back = gtk::Button::new();
+        back.add_css_class("pick-link");
+        let mtitle = label("MINUTOS", "pick-head");
+        mtitle.set_hexpand(true);
+        head.append(&back);
+        head.append(&mtitle);
+        mins.append(&head);
+        let mgrid = gtk::Grid::builder().column_homogeneous(true).row_spacing(3).column_spacing(3).build();
+        mins.append(&mgrid);
+
+        stack.add_named(&hours, Some("hours"));
+        stack.add_named(&mins, Some("mins"));
+
+        for h in 0..24u32 {
+            let b = gtk::Button::with_label(&format!("{} {}", hour12(h), if h >= 12 { "pm" } else { "am" }));
+            b.add_css_class("pick");
+            let (st, e, hr, bk) = (stack.clone(), entry_time.clone(), hour.clone(), back.clone());
+            b.connect_clicked(move |_| {
+                hr.set(h);
+                e.set_text(&fmt_time(&format!("{h:02}:00")));
+                bk.set_label(&format!("‹ {} {}", hour12(h), if h >= 12 { "pm" } else { "am" }));
+                st.set_visible_child_name("mins");
+            });
+            grid.attach(&b, (h % 6) as i32, (h / 6) as i32, 1, 1);
+        }
+        for (i, m) in (0..60u32).step_by(5).enumerate() {
+            let b = gtk::Button::with_label(&format!(":{m:02}"));
+            b.add_css_class("pick");
+            let (p, e, t, hr) = (picker.clone(), entry_time.clone(), entry_title.clone(), hour.clone());
+            b.connect_clicked(move |_| {
+                e.set_text(&fmt_time(&format!("{:02}:{m:02}", hr.get())));
+                p.set_reveal_child(false);
+                t.grab_focus();
+            });
+            mgrid.attach(&b, (i % 6) as i32, (i / 6) as i32, 1, 1);
+        }
+
+        let st = stack.clone();
+        back.connect_clicked(move |_| st.set_visible_child_name("hours"));
+        let (p, e, t) = (picker.clone(), entry_time.clone(), entry_title.clone());
+        none.connect_clicked(move |_| {
+            e.set_text("");
+            p.set_reveal_child(false);
+            t.grab_focus();
+        });
+
+        // abrir / cerrar al hacer clic en el campo (siempre empieza por la hora)
+        let click = gtk::GestureClick::new();
+        click.set_propagation_phase(gtk::PropagationPhase::Capture);   // antes que el texto interno del Entry
+        let (p, st) = (picker.clone(), stack.clone());
+        click.connect_pressed(move |_, _, _, _| {
+            st.set_visible_child_name("hours");
+            p.set_reveal_child(!p.reveals_child());
+        });
+        entry_time.add_controller(click);
+        (picker, stack)
+    }
+
+    fn close_picker(ui: &Ui) {
+        ui.picker.set_reveal_child(false);
+        ui.picker_stack.set_visible_child_name("hours");
+    }
+
     fn show(self: &Rc<Self>, day: Option<NaiveDate>) {
         let ui = self.ui().unwrap_or_else(|| self.build());
         let today = Local::now().date_naive();
@@ -356,11 +461,13 @@ impl App {
         self.view.set(sel.with_day(1).unwrap());
         ui.win.set_monitor(Self::focused_monitor().as_ref());
         self.was_active.set(false);
+        ui.win.set_keyboard_mode(KeyboardMode::OnDemand);
+        Self::close_picker(&ui);
         ui.entry_title.set_text("");
         ui.entry_time.set_text("");
         self.refresh();
-        self.tick();
         ui.win.present();
+        self.tick();   // después de present: tick no pinta con la ventana oculta (el reloj salía vacío 1 s)
     }
 
     fn hide(&self) {
@@ -616,6 +723,7 @@ impl App {
         });
         ui.entry_title.set_text("");
         ui.entry_time.set_text("");
+        Self::close_picker(&ui);
         ui.entry_title.grab_focus();
         self.refresh();
         self.check_alarms();
