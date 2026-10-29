@@ -207,6 +207,8 @@ o elige el kernel `linux-lts`. Luego `snapper rollback` si quieres quedarte en �
 Ojo: los snapshots no guardan el kernel (está en `/boot`, fuera de btrfs). Un snapshot de ANTES de
 una actualización del kernel puede arrancar sin Wi-Fi o GPU; en ese caso usa `linux-lts` o el más reciente.
 Antes de actualizar, `news` muestra las noticias de archlinux.org (también aparecen en cada `pacman -Syu`).
+Sin falsas alarmas: los avisos "Update to paquete ≥ versión" se omiten si ya tienes esa versión (o no tienes
+el paquete), y en `pacman` cada noticia sale una sola vez (`/var/lib/arch-news/seen`). `arch-news 30 --all` muestra todo.
 
 ## Estructura
 ```
