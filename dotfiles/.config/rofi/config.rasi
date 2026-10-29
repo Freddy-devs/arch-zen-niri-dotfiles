@@ -6,7 +6,8 @@
 configuration {
     modi:                 "drun";
     show-icons:           true;
-    icon-theme:           "Nordzy-dark";
+    /* iconos oficiales de cada app, nunca los del tema Nordzy */
+    icon-theme:           "zen-oficial";
     drun-display-format:  "{name}\n[<span size='small' alpha='60%'>{generic}</span>]";
     display-drun:         "";
     matching:             "fuzzy";
