@@ -72,8 +72,14 @@ install_nvidia() {
     # DKMS compila el módulo para cada kernel con headers (zen y el de respaldo lts)
     local hdr=() k
     for k in $(pacman -Qq | grep -E '^linux(-zen|-lts)?$'); do hdr+=("$k-headers"); done
-    pacman -S --needed --noconfirm dkms nvidia-prime "${hdr[@]}"
+    pacman -S --needed --noconfirm dkms "${hdr[@]}"
+    # el nvidia-utils oficial (590+) ya no soporta Pascal y choca con el 580xx: se cambia por este
+    # (-dd: nvidia-prime depende de "nvidia-utils", que el 580xx también provee)
+    pacman -Q nvidia-utils &>/dev/null && pacman -Rdd --noconfirm nvidia-utils
     sudo -u "$USR" yay -S --needed --noconfirm nvidia-580xx-dkms nvidia-580xx-utils
+    pacman -Q nvidia-580xx-utils &>/dev/null || { warn "No se instaló nvidia-580xx-utils"; return 1; }
+    # prime-run, ya con el 580xx instalado (si no, arrastraría el nvidia-utils oficial)
+    pacman -S --needed --noconfirm nvidia-prime
     modinfo -k "$(uname -r)" nvidia >/dev/null 2>&1 || { warn "El módulo nvidia no se compiló: revisa la salida de dkms"; return 1; }
     # el hook kms metería nouveau en el initramfs; la Intel sigue con arranque gráfico temprano
     sed -i -E 's/^(HOOKS=.*) kms /\1 /' /etc/mkinitcpio.conf
