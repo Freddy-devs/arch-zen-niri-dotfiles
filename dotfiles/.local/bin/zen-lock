@@ -1,0 +1,35 @@
+#!/bin/sh
+# zen-lock — bloquea la pantalla dejando ver el escritorio detrás de un velo oscuro translúcido.
+# Toma una captura de cada monitor (grim), la oscurece con un desenfoque muy leve (ffmpeg) y se la
+# pasa a swaylock; al escribir la contraseña se vuelve al escritorio tal cual estaba.
+# Privacidad: las capturas viven en $XDG_RUNTIME_DIR (RAM, carpeta 700) y se borran apenas swaylock
+# las carga. Las ventanas marcadas en niri con block-out-from "screen-capture" salen en negro.
+# Si algo falla, bloquea igual con el wallpaper (nunca se queda sin bloquear).
+
+pgrep -x swaylock >/dev/null && exit 0
+
+dir="${XDG_RUNTIME_DIR:?}/zen-lock"
+rm -rf "$dir"
+mkdir -m 700 "$dir" || exec swaylock -f
+
+outs=$(niri msg -j outputs | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))')
+# todas las pantallas a la vez; velo: ~57 % de brillo + desenfoque leve, el texto sigue leyéndose
+for out in $outs; do
+    { grim -o "$out" "$dir/$out-raw.png" &&
+      ffmpeg -loglevel error -y -i "$dir/$out-raw.png" \
+          -vf "gblur=sigma=1.5,colorchannelmixer=rr=0.55:gg=0.57:bb=0.62" \
+          -frames:v 1 -update 1 "$dir/$out.png"; } 2>/dev/null &
+done
+wait
+rm -f "$dir"/*-raw.png
+
+set --
+for out in $outs; do
+    [ -s "$dir/$out.png" ] && set -- "$@" -i "$out:$dir/$out.png"
+done
+
+# -f: swaylock se queda en segundo plano después de cargar las imágenes y bloquear
+swaylock -f "$@"
+rc=$?
+rm -rf "$dir"
+exit $rc

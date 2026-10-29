@@ -148,7 +148,7 @@ spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wall
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-clip watch"
-spawn-at-startup "swayidle" "-w" "timeout" "600" "swaylock -f" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "swaylock -f"
+spawn-at-startup "swayidle" "-w" "timeout" "600" "~/.local/bin/zen-lock" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "~/.local/bin/zen-lock"
 spawn-at-startup "sh" "-c" "gsettings set org.gnome.desktop.interface color-scheme prefer-dark; gsettings set org.gnome.desktop.interface gtk-theme Colloid-Dark-Nord; gsettings set org.gnome.desktop.interface icon-theme Nordzy-dark; gsettings set org.gnome.desktop.interface font-name 'Inter 11'; gsettings set org.gnome.desktop.interface cursor-theme Qogir-white-cursors"
 spawn-at-startup "/usr/local/bin/zen-first-login"
 
@@ -270,7 +270,7 @@ binds {
     Mod+V hotkey-overlay-title="Portapapeles: elegir y copiar" { spawn-sh "~/.local/bin/zen-clip menu"; }
     // Alt+Shift+V: últimas 10 copias, flechas + Enter pega al instante (también en la terminal)
     Alt+Shift+V hotkey-overlay-title="Portapapeles: elegir y pegar" { spawn-sh "~/.local/bin/zen-clip pick"; }
-    Mod+Alt+L hotkey-overlay-title="Bloquear" { spawn "swaylock" "-f"; }
+    Mod+Alt+L hotkey-overlay-title="Bloquear" { spawn-sh "~/.local/bin/zen-lock"; }
     Mod+Alt+Space hotkey-overlay-title="Idioma del teclado (latam / inglés)" { switch-layout "next"; }
 
     // cerrar / salir / apagar

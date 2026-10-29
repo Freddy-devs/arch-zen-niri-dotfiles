@@ -1,4 +1,4 @@
-# swaylock — pantalla de bloqueo · Nord (misma paleta que la barra)
+# swaylock — pantalla de bloqueo (zen-lock le pasa el escritorio con un velo; esta imagen es el respaldo) · Nord (misma paleta que la barra)
 image=/usr/share/backgrounds/zen-niri/wallpaper.jpg
 scaling=fill
 font=Inter
@@ -8,26 +8,26 @@ indicator-thickness=10
 show-failed-attempts
 ignore-empty-password
 
-color=16161e
-inside-color=1a1b26d9
-inside-clear-color=1a1b26d9
-inside-ver-color=1a1b26d9
-inside-wrong-color=1a1b26d9
-ring-color=3b4261
-ring-clear-color=e0af68
-ring-ver-color=7aa2f7
-ring-wrong-color=f7768e
-key-hl-color=bb9af7
-bs-hl-color=f7768e
+color=1e222a
+inside-color=242933d9
+inside-clear-color=242933d9
+inside-ver-color=242933d9
+inside-wrong-color=242933d9
+ring-color=434c5e
+ring-clear-color=ebcb8b
+ring-ver-color=88c0d0
+ring-wrong-color=bf616a
+key-hl-color=b48ead
+bs-hl-color=bf616a
 line-color=00000000
 line-clear-color=00000000
 line-ver-color=00000000
 line-wrong-color=00000000
 separator-color=00000000
-text-color=c0caf5
-text-clear-color=e0af68
-text-ver-color=7aa2f7
-text-wrong-color=f7768e
-layout-bg-color=1a1b26d9
-layout-border-color=3b4261
-layout-text-color=c0caf5
+text-color=eceff4
+text-clear-color=ebcb8b
+text-ver-color=88c0d0
+text-wrong-color=bf616a
+layout-bg-color=242933d9
+layout-border-color=434c5e
+layout-text-color=eceff4

@@ -21,6 +21,9 @@ mako
 swaybg
 swayidle
 swaylock
+# zen-lock: captura el escritorio (grim) y le pone el velo (ffmpeg)
+grim
+ffmpeg
 wl-clipboard
 cliphist
 # zen-clip pega al instante la copia elegida (simula Shift+Insert)
