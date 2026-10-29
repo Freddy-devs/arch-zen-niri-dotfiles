@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# zen-traspaso — túnel WireGuard para que otro PC de la red local le pase archivos a esta laptop.
+#
+# Respeta la "caja fuerte" del cortafuegos: no queda nada abierto ni habilitado al arrancar.
+#   sudo zen-traspaso preparar        llaves de esta laptop + ~/traspaso-otro-pc.sh para el otro PC
+#   sudo zen-traspaso par WG_PUB 'SSH_PUB'   registra las llaves PÚBLICAS que imprimió el otro PC
+#   sudo zen-traspaso encender        túnel + SSH solo dentro del túnel + 2 reglas de cortafuegos
+#   sudo zen-traspaso apagar          quita todo lo anterior
+#   zen-traspaso estado
+#
+# Encendido abre solo: UDP 51820 desde la red local (WireGuard no responde a quien no tenga la
+# llave) y TCP 22 desde dentro del túnel. sshd escucha solo en 10.77.0.1, sin contraseñas, solo con
+# la llave del otro PC (from="10.77.0.2") y solo para tu usuario. El sshd del sistema no se toca.
+# El otro PC copia con:  rsync -avP carpeta/ USUARIO@10.77.0.1:~/Recibido/
+set -u
+
+IF=zen-traspaso
+PORT=51820
+YO=10.77.0.1 OTRO=10.77.0.2
+DIR=/etc/wireguard
+CONF=$DIR/$IF.conf
+KEY=$DIR/$IF.key
+SSH_UNIT=zen-traspaso-ssh
+TAG=zen-traspaso                       # comentario de las reglas nft, para quitarlas luego
+USUARIO=${SUDO_USER:-$(id -un)}
+CASA=$(getent passwd "$USUARIO" | cut -d: -f6)
+
+ok()   { printf '\e[32m✔\e[0m %s\n' "$*"; }
+warn() { printf '\e[33m!\e[0m %s\n' "$*"; }
+die()  { printf '\e[31m✘\e[0m %s\n' "$*" >&2; exit 1; }
+root() { ((EUID == 0)) || die "Usa: sudo zen-traspaso $1"; }
+
+# interfaz y red de la ruta por defecto (la LAN real, sea cable o Wi-Fi)
+lan_dev() { ip -4 route show default | awk '{for (i=1;i<NF;i++) if ($i=="dev") {print $(i+1); exit}}'; }
+lan_ip()  { ip -4 -br addr show dev "$(lan_dev)" | awk '{split($3,a,"/"); print a[1]}'; }
+lan_net() { ip -4 route show dev "$(lan_dev)" scope link | awk '/proto kernel/ {print $1; exit}'; }
+
+reglas_handles() { nft -a list chain inet zen_filter input 2>/dev/null | awk -v t="\"$TAG\"" '$0 ~ "comment " t {print $NF}'; }
+
+preparar() {
+    root preparar
+    pacman -S --needed --noconfirm wireguard-tools openssh rsync >/dev/null || die "No se pudieron instalar wireguard-tools, openssh y rsync"
+    install -d -m700 "$DIR"
+    [[ -s $KEY ]] || (umask 077; wg genkey > "$KEY")
+    ssh-keygen -A >/dev/null                         # llaves de host de sshd si faltan
+    local pub ip; pub=$(wg pubkey < "$KEY"); ip=$(lan_ip)
+    [[ -n $ip ]] || die "Sin red: conéctate a la red local primero"
+    local out=$CASA/traspaso-otro-pc.sh
+    # solo lleva datos públicos (llave pública e IP): se puede mandar por cualquier medio
+    cat > "$out" <<EOF
+#!/usr/bin/env bash
+# Para el OTRO PC (Arch). Ejecútalo con: sudo bash traspaso-otro-pc.sh
+# Crea sus llaves y el túnel hacia la laptop $ip. Las privadas no salen de este PC.
+set -eu
+U=\${SUDO_USER:-\$(id -un)}; H=\$(getent passwd "\$U" | cut -d: -f6)
+pacman -S --needed --noconfirm wireguard-tools openssh rsync
+install -d -m700 /etc/wireguard
+[ -s /etc/wireguard/$IF.key ] || (umask 077; wg genkey > /etc/wireguard/$IF.key)
+umask 077
+cat > /etc/wireguard/$IF.conf <<CONF
+[Interface]
+PrivateKey = \$(cat /etc/wireguard/$IF.key)
+Address = $OTRO/24
+
+[Peer]
+PublicKey = $pub
+Endpoint = $ip:$PORT
+AllowedIPs = $YO/32
+PersistentKeepalive = 25
+CONF
+sudo -u "\$U" mkdir -p -m700 "\$H/.ssh"
+[ -s "\$H/.ssh/id_ed25519" ] || sudo -u "\$U" ssh-keygen -q -t ed25519 -N '' -f "\$H/.ssh/id_ed25519" -C "\$U@traspaso"
+echo
+echo "Listo. En la laptop ejecuta (son llaves PÚBLICAS, puedes mandarlas por chat):"
+echo
+echo "  sudo zen-traspaso par \$(wg pubkey < /etc/wireguard/$IF.key) '\$(cat "\$H/.ssh/id_ed25519.pub")'"
+echo
+echo "Cuando la laptop diga 'encendido':  sudo wg-quick up $IF"
+echo "Pasar archivos:  rsync -avP CARPETA/ $USUARIO@$YO:~/Recibido/"
+echo "Al terminar:     sudo wg-quick down $IF"
+EOF
+    chown "$USUARIO": "$out"; chmod 644 "$out"
+    ok "Llaves de esta laptop listas (pública: $pub)"
+    ok "Para el otro PC: $out  (mándalo por USB, chat o correo: solo tiene datos públicos)"
+    warn "Si la IP de esta laptop cambia ($ip), vuelve a correr 'preparar' y manda el archivo otra vez"
+}
+
+par() {
+    root par
+    local wgpub=${1:-} sshpub=${2:-}
+    [[ $wgpub =~ ^[A-Za-z0-9+/]{43}=$ ]] || die "Llave WireGuard inválida (44 caracteres terminando en =)"
+    [[ $sshpub =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+(\ .*)?$ ]] || die "Llave SSH inválida (debe empezar con ssh-ed25519)"
+    [[ -s $KEY ]] || die "Primero: sudo zen-traspaso preparar"
+    (umask 077; cat > "$CONF" <<EOF
+[Interface]
+PrivateKey = $(cat "$KEY")
+Address = $YO/24
+ListenPort = $PORT
+
+[Peer]
+PublicKey = $wgpub
+AllowedIPs = $OTRO/32
+EOF
+)
+    # la llave SSH del otro PC solo vale desde su IP del túnel y sin reenvíos
+    local ak=$CASA/.ssh/authorized_keys clave
+    clave=$(awk '{print $1" "$2}' <<<"$sshpub")     # sin el comentario del otro PC: el nuestro marca la línea
+    install -d -m700 -o "$USUARIO" -g "$(id -gn "$USUARIO")" "$CASA/.ssh"
+    [[ -f $ak ]] && sed -i "/ $TAG\$/d" "$ak"       # reemplaza la llave anterior del traspaso
+    printf 'from="%s",no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s %s\n' "$OTRO" "$clave" "$TAG" >> "$ak"
+    chown "$USUARIO": "$ak"; chmod 600 "$ak"
+    install -d -m755 -o "$USUARIO" -g "$(id -gn "$USUARIO")" "$CASA/Recibido"
+    ok "Otro PC registrado. Ahora: sudo zen-traspaso encender"
+}
+
+encender() {
+    root encender
+    [[ -s $CONF ]] || die "Falta registrar el otro PC: sudo zen-traspaso par …"
+    nft list chain inet zen_filter input >/dev/null 2>&1 || die "El cortafuegos zen_filter no está cargado (sudo systemctl restart nftables)"
+    local net; net=$(lan_net)
+    [[ -n $net ]] || die "Sin red local"
+    ip link show "$IF" >/dev/null 2>&1 || wg-quick up "$IF" >/dev/null 2>&1 || die "No se pudo levantar el túnel ($CONF)"
+    if [[ -z $(reglas_handles) ]]; then
+        nft insert rule inet zen_filter input ip saddr "$net" udp dport "$PORT" accept comment "\"$TAG\""
+        nft insert rule inet zen_filter input iifname "$IF" tcp dport 22 accept comment "\"$TAG\""
+        nft insert rule inet zen_filter input iifname "$IF" icmp type echo-request accept comment "\"$TAG\""
+    fi
+    if ! systemctl is-active -q "$SSH_UNIT"; then
+        systemctl reset-failed "$SSH_UNIT" 2>/dev/null
+        systemd-run -q --unit="$SSH_UNIT" --description="SSH solo dentro del túnel zen-traspaso" \
+            /usr/bin/sshd -D -e -o ListenAddress="$YO" -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no -o PermitRootLogin=no -o AllowUsers="$USUARIO" \
+            -o AuthenticationMethods=publickey -o X11Forwarding=no -o AllowTcpForwarding=no \
+            || die "No arrancó sshd del túnel (journalctl -u $SSH_UNIT)"
+    fi
+    sleep 1
+    systemctl is-active -q "$SSH_UNIT" || die "sshd del túnel se cayó: journalctl -u $SSH_UNIT"
+    ok "encendido: el otro PC entra por $(lan_ip):$PORT (solo desde $net) · SSH en $YO:22"
+    echo "  En el otro PC: sudo wg-quick up $IF && rsync -avP CARPETA/ $USUARIO@$YO:~/Recibido/"
+    echo "  Al terminar aquí: sudo zen-traspaso apagar"
+}
+
+apagar() {
+    root apagar
+    systemctl stop "$SSH_UNIT" 2>/dev/null
+    systemctl reset-failed "$SSH_UNIT" 2>/dev/null
+    local h; for h in $(reglas_handles); do nft delete rule inet zen_filter input handle "$h"; done
+    ip link show "$IF" >/dev/null 2>&1 && wg-quick down "$IF" >/dev/null 2>&1
+    ok "apagado: sin túnel, sin SSH y el cortafuegos vuelve a estar cerrado"
+}
+
+estado() {
+    if ip link show "$IF" >/dev/null 2>&1; then
+        ok "túnel $IF arriba"
+        ((EUID == 0)) && wg show "$IF" | sed 's/^/  /'
+    else
+        echo "túnel apagado"
+    fi
+    systemctl is-active -q "$SSH_UNIT" && ok "SSH del túnel escuchando en $YO:22" || echo "SSH del túnel apagado"
+    ((EUID == 0)) && { [[ -n $(reglas_handles) ]] && warn "reglas de cortafuegos del traspaso abiertas" || echo "cortafuegos cerrado"; }
+    return 0
+}
+
+case ${1:-} in
+    preparar) preparar ;;
+    par) shift; par "$@" ;;
+    encender) encender ;;
+    apagar) apagar ;;
+    estado|"") estado ;;
+    *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
