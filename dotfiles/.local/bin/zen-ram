@@ -80,7 +80,9 @@ button.foot:hover { background: #3b4252; }
 """
 
 REFRESH = 2            # segundos entre lecturas con el panel abierto
-TOP = 12               # apps en la lista (el resto, en btop)
+TOP = 40               # apps en la lista
+VISIBLE = 10           # filas a la vista; el resto con scroll
+ROW_H = 48             # alto de una fila (px)
 FORCE_AFTER = 4        # segundos sin cerrarse tras SIGTERM → ofrecer SIGKILL
 CONFIRM_FOR = 3        # segundos que dura el «¿Cerrar?»
 GIB = 1024 * 1024      # kB por GiB
@@ -357,9 +359,12 @@ class Panel:
         section = Gtk.Label(label="LO QUE MÁS USA", xalign=0)
         section.add_css_class("section")
         panel.append(section)
-        # sin ScrolledWindow: con la lista aún vacía al abrir, el panel se quedaba con alto para una fila
+        # alto fijo para VISIBLE filas: con propagate-natural-height, como la lista está vacía al
+        # abrir, el panel se quedaba con alto para una sola fila
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        panel.append(self.list)
+        panel.append(Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                        min_content_height=VISIBLE * ROW_H, max_content_height=VISIBLE * ROW_H,
+                                        child=self.list))
 
         self.toast = Gtk.Label(xalign=0, wrap=True, max_width_chars=50)
         self.toast.add_css_class("toast")
