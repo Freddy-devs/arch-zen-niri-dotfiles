@@ -2,3 +2,8 @@
 *.log
 *.pkg.tar.zst
 *.iso
+
+# restos de makepkg en aur/local
+aur/local/*/src/
+aur/local/*/pkg/
+aur/local/*/*.tar.gz
