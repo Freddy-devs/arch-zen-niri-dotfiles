@@ -2,7 +2,7 @@ onboarding = false
 
 # misma paleta que el resto del escritorio
 [theme]
-name = "nord"
+name = "tokyo-night"
 auto_switch = false
 
 # visor/editor de archivos (plugin file-editor-viewer): abre un panel a la derecha con el
