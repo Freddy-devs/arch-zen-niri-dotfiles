@@ -10,7 +10,7 @@
 set -eu
 ((EUID == 0)) || { echo "Usa: sudo zen-cortafuegos" >&2; exit 1; }
 
-pacman -S --needed --noconfirm ufw >/dev/null
+pacman -S --needed --noconfirm ufw >/dev/null 2>&1
 
 systemctl disable --now nftables >/dev/null 2>&1 || true
 nft list table inet zen_filter >/dev/null 2>&1 && nft delete table inet zen_filter
