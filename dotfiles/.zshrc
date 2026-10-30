@@ -71,7 +71,7 @@ _zen_prompt() {
     [[ $PWD == "$HOME" ]] && here=$home
     # ruta corta: solo padre/hijo cuando es más profunda  →  …/proyectos/mi-app
     # flecha verde (rojo si el último comando falló) marca dónde empieza lo que escribes
-    PROMPT="%B%F{#88c0d0}${arch}%f %F{#b48ead}%n%f %F{#8fbcbb}${here}%f %F{#bf616a}%(4~|…/%2~|%~)%f%b${vcs_info_msg_0_} %B%(?.%F{#a3be8c}.%F{#bf616a})${arrow}%f%b "
+    PROMPT="%B%F{#88c0d0}${arch}%f %F{#c9a6ff}%n%f %F{#8fbcbb}${here}%f %F{#ff8a92}%(4~|…/%2~|%~)%f%b${vcs_info_msg_0_} %B%(?.%F{#a3be8c}.%F{#bf616a})${arrow}%f%b "
 }
 add-zsh-hook precmd _zen_prompt
 
