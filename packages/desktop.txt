@@ -107,5 +107,6 @@ usbutils
 iw
 # Seguridad
 nftables
+ufw
 apparmor
 wireguard-tools

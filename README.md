@@ -19,13 +19,14 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 | Paneles | Bluetooth `zen-bluetooth` (panel bajo la barra, con el mouse; clic derecho abre `bluetui`), sonido `zen-audio` (panel con volumen, micrófono, dispositivos y apps), brillo `zen-brightness` (laptop + monitor externo por DDC/CI con `ddcutil`; en el monitor activa DDC/CI en su menú), red `zen-network` (panel con la conexión actual y las redes Wi-Fi: buscar, conectar con contraseña en la misma fila, olvidar; Super+N; clic derecho abre `nmtui` para lo avanzado) | extra |
 | Opcional | `zen-apps`: Brave Origin, WPS, Claude Code, herdr, PHP, MariaDB, PostgreSQL, Podman, Node, Go, Rust, gh, huella, GUIs | a pedido |
 | Estabilidad | btrfs + snapper + snap-pac + grub-btrfs (sin demonio: una unidad .path de systemd), sin repos testing, aviso de noticias Arch | extra |
-| Seguridad | cortafuegos nftables (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
+| Seguridad | cortafuegos ufw (entrada cerrada), sin SSH, DNS cifrado, kernel endurecido | extra |
 
 ## Seguridad ("caja fuerte")
 - **Disco sin cifrar** (a propósito): sin contraseña al encender y los datos se leen desde cualquier
   USB live si algún día hay que recuperarlos.
-- **Cortafuegos** (`/etc/nftables.conf`): entrada bloqueada por defecto, sin puertos abiertos y sin
-  responder a ping. La salida es libre. Ver: `sudo nft list ruleset` · bloqueos: `journalctl -k -g zen-fw`.
+- **Cortafuegos ufw** (lo arma `sudo zen-cortafuegos`): entrada bloqueada por defecto, sin puertos
+  abiertos y sin responder a ping. La salida es libre. Es el único cortafuegos (nftables.service queda
+  desactivado para que no borre sus reglas). Ver: `sudo ufw status verbose` · bloqueos: `journalctl -k -g UFW`.
 - **Sin SSH**, sin avahi/cups. MariaDB (si la instalas con `zen-apps`) solo en localhost.
 - **Acceso remoto solo por túnel**: WireGuard (`wireguard-tools`) que inicia la laptop hacia tu
   servidor; nunca se abre un puerto de entrada.

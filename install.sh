@@ -364,8 +364,7 @@ step_files() {
     install -m755 "$S"/bin/* /usr/local/bin/
     install -m644 "$S/wallpaper.jpg" /usr/share/backgrounds/zen-niri/wallpaper.jpg
     install -Dm755 "$S/environment/90-zen-vm-render" /usr/lib/systemd/user-environment-generators/90-zen-vm-render
-    # seguridad: cortafuegos, sysctl, privacidad de red, DNS cifrado
-    install -Dm644 "$S/security/nftables.conf"          /etc/nftables.conf
+    # seguridad: sysctl, privacidad de red, DNS cifrado (el cortafuegos ufw lo arma zen-cortafuegos)
     install -Dm644 "$S/security/90-zen-hardening.conf"  /etc/sysctl.d/90-zen-hardening.conf
     install -Dm644 "$S/security/20-zen-privacy.conf"    /etc/NetworkManager/conf.d/20-zen-privacy.conf
     install -Dm644 "$S/security/zen-dns.conf"           /etc/systemd/resolved.conf.d/zen-dns.conf
@@ -539,10 +538,9 @@ step_services() {
     # --force: reemplaza otro gestor de login si archinstall dejó uno (gdm, lightdm…)
     systemctl enable --force sddm >/dev/null
     enable NetworkManager bluetooth systemd-timesyncd fstrim.timer pkgfile-update.timer \
-        systemd-oomd apparmor nftables systemd-resolved reflector.timer paccache.timer
-    # ufw choca con nftables: nftables.conf empieza con "flush ruleset" y borra sus reglas, así que
-    # "ufw status" mostraría un cortafuegos que no está activo. El único cortafuegos es nftables.
-    systemctl disable --now ufw >/dev/null 2>&1 || true
+        systemd-oomd apparmor systemd-resolved reflector.timer paccache.timer
+    # cortafuegos: ufw es el único (entrada cerrada, salida libre, sin ping); desactiva nftables.service
+    /usr/local/bin/zen-cortafuegos >/dev/null || warn "zen-cortafuegos falló: corre 'sudo zen-cortafuegos'"
     # batería entre 60 y 90 % aunque el cargador quede enchufado (solo si el equipo lo permite)
     compgen -G '/sys/class/power_supply/BAT*/charge_control_end_threshold' >/dev/null &&
         enable zen-charge-limit.service
