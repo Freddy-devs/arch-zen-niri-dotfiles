@@ -30,11 +30,15 @@ CATALOG=(
     "mariadb|MariaDB (cliente mysql) solo en localhost, apagada|~250 MB"
     "postgresql|PostgreSQL, apagado|~60 MB"
     "podman|Podman sin root + compose + buildah (alias docker)|~150 MB"
+    "db|Bases de datos en la terminal: rainfrog + pgcli|~30 MB"
     "node|Node.js LTS con fnm (varias versiones: fnm install 22, fnm use 22)|~90 MB"
     "elixir|Erlang/OTP + Elixir (mix, iex) + rebar3|~250 MB"
+    "python|uv: Python, entornos y paquetes (reemplaza pip/venv)|~40 MB"
     "go|Go|~250 MB"
     "rust|Rust (rustup: cargo, rustc)|~600 MB"
     "gh|GitHub CLI|~40 MB"
+    "ia|Búsqueda para agentes IA: ast-grep, jq, yq, tokei, tree|~40 MB"
+    "antigravity|Antigravity IDE de Google (AUR, desde dl.google.com)|~600 MB"
     "ngrok|ngrok (binario oficial, se actualiza con 'ngrok update') + comando tunel para webhooks|~30 MB"
     "huella|Lector de huella (fprintd) para login y sudo|~10 MB"
     "gui|Herramientas gráficas: pavucontrol, blueman, nwg-look|~40 MB"
@@ -114,6 +118,19 @@ EOF
             NEXT+=("Node.js: abre una terminal nueva (o: exec zsh). Otra versión:  fnm install 22 && fnm use 22")
             ;;
         elixir) pac erlang elixir rebar3 ;;
+        python)
+            pac uv || return
+            NEXT+=("Python con uv:  uv python install 3.13 · uv init proyecto · uv add paquete · uv tool install X")
+            ;;
+        db)
+            pac rainfrog pgcli || return
+            NEXT+=("Bases de datos:  rainfrog --url postgres://usuario@localhost/base   (o mysql://… · sqlite://archivo)")
+            ;;
+        ia)     pac ast-grep jq go-yq tokei tree ;;
+        antigravity)
+            aur antigravity-ide || return
+            NEXT+=("Antigravity IDE: búscalo en el lanzador (Super+Space) o ejecuta antigravity-ide")
+            ;;
         go)     pac go ;;
         rust)
             pac rustup || return
