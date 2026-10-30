@@ -3,6 +3,7 @@
 # Uso:  zen-hwsetup              menú interactivo
 #       zen-hwsetup --auto       solo los ajustes seguros (térmico + energía + GPU en ahorro), sin preguntas
 #       zen-hwsetup --nvidia     instala el driver propietario NVIDIA 580xx sin menú
+#       zen-hwsetup --nvidia-off apaga la NVIDIA (no carga su driver)  ·  --nvidia-on la vuelve a encender
 # Todo es local: no descarga nada salvo la opción "NVIDIA propietario", que usa yay.
 set -euo pipefail
 
@@ -47,6 +48,27 @@ ACTION=="add|bind", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x03
 EOF
     echo auto > "/sys/bus/pci/devices/$NV/power/control" 2>/dev/null || true
     done_ "GPU NVIDIA en ahorro automático (estado: $(cat "/sys/bus/pci/devices/$NV/power/runtime_status" 2>/dev/null || echo '?'))"
+}
+
+# con el driver propietario cargado la MX150 (Pascal) nunca se apaga; sin él, gpu_powersave la apaga.
+# El paquete queda instalado: 'sudo modprobe nvidia' o --nvidia-on la vuelven a usar
+gpu_off() {
+    [[ -n $NV ]] || { warn "No hay GPU NVIDIA"; return; }
+    install -Dm644 /dev/stdin /etc/modprobe.d/zen-nvidia-off.conf <<'EOF'
+# NVIDIA apagada: el driver no se carga al arrancar (se revierte con: sudo zen-hwsetup --nvidia-on)
+blacklist nvidia
+blacklist nvidia_drm
+blacklist nvidia_modeset
+blacklist nvidia_uvm
+EOF
+    gpu_powersave
+    done_ "NVIDIA apagada desde el próximo arranque (todo va en la Intel). Reinicia para aplicarlo"
+}
+
+gpu_on() {
+    rm -f /etc/modprobe.d/zen-nvidia-off.conf
+    modprobe nvidia 2>/dev/null && modprobe nvidia_drm 2>/dev/null && modprobe nvidia_uvm 2>/dev/null \
+        && done_ "Driver NVIDIA cargado de nuevo" || warn "No se pudo cargar el driver NVIDIA ahora; reinicia"
 }
 
 # quita lockdown= de los parámetros del kernel, sea cual sea el gestor de arranque
@@ -100,9 +122,11 @@ setup_nvidia() {
   2) Driver propietario NVIDIA 580xx (juegos/CUDA 12/3D con 'prime-run app'; la MX150 es Pascal
      y los drivers actuales de Arch ya no la soportan; se compila desde el AUR, necesita internet;
      Pascal no se apaga sola con este driver y se quita lockdown del kernel)
+  3) Apagar la NVIDIA dejando el driver instalado (se revierte con: zen-hwsetup --nvidia-on)
 EOT
     case "$(ask "Elige" 1)" in
         2) install_nvidia ;;
+        3) gpu_off ;;
         *) gpu_powersave ;;
     esac
 }
@@ -159,7 +183,13 @@ if [[ ${1:-} == --auto ]]; then
     setup_power; gpu_powersave; exit 0
 fi
 if [[ ${1:-} == --nvidia ]]; then
-    install_nvidia; exit
+    rm -f /etc/modprobe.d/zen-nvidia-off.conf; install_nvidia; exit
+fi
+if [[ ${1:-} == --nvidia-off ]]; then
+    gpu_off; exit
+fi
+if [[ ${1:-} == --nvidia-on ]]; then
+    gpu_on; exit
 fi
 
 cat <<'EOF'
