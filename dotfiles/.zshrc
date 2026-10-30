@@ -105,6 +105,9 @@ eval "$(zoxide init zsh)"
 # comando que no existe: dice qué paquete lo trae (pkgfile)
 if [[ -r /usr/share/doc/pkgfile/command-not-found.zsh ]]; then
     source /usr/share/doc/pkgfile/command-not-found.zsh
+    # el aviso también con sangría, bajo la f de freddy
+    functions -c command_not_found_handler _zen_cnf_pkgfile
+    command_not_found_handler() { _zen_cnf_pkgfile "$@" 2>&1 | _zen_ind >&2; return 127 }
 fi
 
 # ---------- título de la ventana: la carpeta, o el comando mientras corre
@@ -116,9 +119,23 @@ add-zsh-hook preexec _zen_title_run
 # ---------- alias
 # ls en columnas alineadas y ordenadas por nombre (carpetas primero); ll = lista detallada
 export EZA_ICON_SPACING=1
-alias ls='eza --icons=always --color=always -a --group-directories-first --sort=name --grid --across'
-alias ll='eza --icons=always --color=always -la --git --group-directories-first'
-alias cat='bat --paging=never'
+# lo que imprimen ls, ll y cat empieza bajo la f de freddy (2 columnas, como un párrafo con sangría);
+# solo en pantalla: en tuberías y archivos (ls | grep, cat x > y) sale tal cual
+_zen_ind() { sed -u 's/^/  /' }
+ls() {
+    local opts=(--icons=always --color=always -a --group-directories-first --sort=name --grid --across)
+    (( $# )) || set -- .   # sin carpeta: la actual (eza 0.23 si no, lee la lista desde stdin)
+    if [[ -t 1 ]]; then eza $opts --width=$((COLUMNS - 2)) "$@" | _zen_ind; else eza $opts "$@"; fi
+}
+ll() {
+    local opts=(--icons=always --color=always -la --git --group-directories-first)
+    (( $# )) || set -- .
+    if [[ -t 1 ]]; then eza $opts "$@" | _zen_ind; else eza $opts "$@"; fi
+}
+cat() {
+    if [[ -t 1 ]]; then bat --paging=never --color=always --terminal-width=$((COLUMNS - 2)) "$@" | _zen_ind
+    else bat --paging=never "$@"; fi
+}
 alias docker='podman'
 alias update='sudo pacman -Syu'
 alias news='arch-news 30'
