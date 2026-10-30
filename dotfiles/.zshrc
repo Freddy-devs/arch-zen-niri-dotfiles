@@ -75,11 +75,6 @@ _zen_prompt() {
 }
 add-zsh-hook precmd _zen_prompt
 
-# raya tenue entre un comando y el siguiente (no en el primer prompt ni después de clear)
-_zen_sep() { (( _zen_sep_on )) && print -P "%F{#3b4252}${(l:COLUMNS::─:)}%f"; _zen_sep_on=1 }
-_zen_sep_clear() { [[ $2 == (clear|reset)(| *) ]] && _zen_sep_on=0 }
-add-zsh-hook precmd _zen_sep
-add-zsh-hook preexec _zen_sep_clear
 
 # ---------- plugins
 # sugerencia en gris mientras escribes: primero tu historial, si no hay, el completado (→ acepta)
