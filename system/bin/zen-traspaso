@@ -4,7 +4,7 @@
 # Respeta la "caja fuerte" del cortafuegos: no queda nada abierto ni habilitado al arrancar.
 #   sudo zen-traspaso preparar        llaves de esta laptop + ~/Descargas/traspaso-otro-pc.sh para el otro PC
 #   sudo zen-traspaso par WG_PUB 'SSH_PUB'   registra las llaves PÚBLICAS que imprimió el otro PC
-#   sudo zen-traspaso encender        túnel + SSH solo dentro del túnel + 2 reglas de cortafuegos
+#   sudo zen-traspaso encender        túnel + SSH solo dentro del túnel + 2 reglas en ufw
 #   sudo zen-traspaso apagar          quita todo lo anterior
 #   zen-traspaso estado
 #
@@ -21,7 +21,7 @@ DIR=/etc/wireguard
 CONF=$DIR/$IF.conf
 KEY=$DIR/$IF.key
 SSH_UNIT=zen-traspaso-ssh
-TAG=zen-traspaso                       # comentario de las reglas nft, para quitarlas luego
+TAG=zen-traspaso                       # comentario de las reglas de ufw, para quitarlas luego
 USUARIO=${SUDO_USER:-$(id -un)}
 CASA=$(getent passwd "$USUARIO" | cut -d: -f6)
 
@@ -35,7 +35,9 @@ lan_dev() { ip -4 route show default | awk '{for (i=1;i<NF;i++) if ($i=="dev") {
 lan_ip()  { ip -4 -br addr show dev "$(lan_dev)" | awk '{split($3,a,"/"); print a[1]}'; }
 lan_net() { ip -4 route show dev "$(lan_dev)" scope link | awk '/proto kernel/ {print $1; exit}'; }
 
-reglas_handles() { nft -a list chain inet zen_filter input 2>/dev/null | awk -v t="\"$TAG\"" '$0 ~ "comment " t {print $NF}'; }
+# números de las reglas de ufw del traspaso, de mayor a menor (borrar una no corre las demás)
+reglas_ufw() { LC_ALL=C ufw status numbered 2>/dev/null | awk -v t="# $TAG" 'index($0, t) {
+                   if (match($0, /^\[ *[0-9]+\]/)) {n = substr($0, RSTART + 1, RLENGTH - 2); gsub(/ /, "", n); print n}}' | sort -rn; }
 
 preparar() {
     root preparar
@@ -120,14 +122,14 @@ EOF
 encender() {
     root encender
     [[ -s $CONF ]] || die "Falta registrar el otro PC: sudo zen-traspaso par …"
-    nft list chain inet zen_filter input >/dev/null 2>&1 || die "El cortafuegos zen_filter no está cargado (sudo systemctl restart nftables)"
+    LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active' || die "ufw no está activo: sudo zen-cortafuegos"
     local net; net=$(lan_net)
     [[ -n $net ]] || die "Sin red local"
     ip link show "$IF" >/dev/null 2>&1 || wg-quick up "$IF" >/dev/null 2>&1 || die "No se pudo levantar el túnel ($CONF)"
-    if [[ -z $(reglas_handles) ]]; then
-        nft insert rule inet zen_filter input ip saddr "$net" udp dport "$PORT" accept comment "\"$TAG\""
-        nft insert rule inet zen_filter input iifname "$IF" tcp dport 22 accept comment "\"$TAG\""
-        nft insert rule inet zen_filter input iifname "$IF" icmp type echo-request accept comment "\"$TAG\""
+    # el ping dentro del túnel lo deja pasar una regla fija de zen-cortafuegos (/etc/ufw/before.rules)
+    if [[ -z $(reglas_ufw) ]]; then
+        ufw allow proto udp from "$net" to any port "$PORT" comment "$TAG" >/dev/null
+        ufw allow in on "$IF" proto tcp to any port 22 comment "$TAG" >/dev/null
     fi
     if ! systemctl is-active -q "$SSH_UNIT"; then
         systemctl reset-failed "$SSH_UNIT" 2>/dev/null
@@ -148,7 +150,7 @@ apagar() {
     root apagar
     systemctl stop "$SSH_UNIT" 2>/dev/null
     systemctl reset-failed "$SSH_UNIT" 2>/dev/null
-    local h; for h in $(reglas_handles); do nft delete rule inet zen_filter input handle "$h"; done
+    local n; for n in $(reglas_ufw); do ufw --force delete "$n" >/dev/null; done
     ip link show "$IF" >/dev/null 2>&1 && wg-quick down "$IF" >/dev/null 2>&1
     ok "apagado: sin túnel, sin SSH y el cortafuegos vuelve a estar cerrado"
 }
@@ -161,7 +163,7 @@ estado() {
         echo "túnel apagado"
     fi
     systemctl is-active -q "$SSH_UNIT" && ok "SSH del túnel escuchando en $YO:22" || echo "SSH del túnel apagado"
-    ((EUID == 0)) && { [[ -n $(reglas_handles) ]] && warn "reglas de cortafuegos del traspaso abiertas" || echo "cortafuegos cerrado"; }
+    ((EUID == 0)) && { [[ -n $(reglas_ufw) ]] && warn "reglas de cortafuegos del traspaso abiertas" || echo "cortafuegos cerrado"; }
     return 0
 }
 
