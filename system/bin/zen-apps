@@ -129,6 +129,9 @@ EOF
         ia)     pac ast-grep jq go-yq tokei tree ;;
         antigravity)
             aur antigravity-ide || return
+            # su ícono solo está en pixmaps: rofi (icon-theme hicolor) mostraría el de Nordzy
+            mkdir -p "$HOME/.local/share/icons/hicolor/512x512/apps"
+            ln -sf /usr/share/pixmaps/antigravity-ide.png "$HOME/.local/share/icons/hicolor/512x512/apps/antigravity-ide.png"
             NEXT+=("Antigravity IDE: búscalo en el lanzador (Super+Space) o ejecuta antigravity-ide")
             ;;
         go)     pac go ;;
