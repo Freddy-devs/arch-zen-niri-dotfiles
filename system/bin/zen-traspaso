@@ -22,7 +22,7 @@ CONF=$DIR/$IF.conf
 KEY=$DIR/$IF.key
 SSH_UNIT=zen-traspaso-ssh
 TAG=zen-traspaso                       # comentario de las reglas de ufw, para quitarlas luego
-USUARIO=${SUDO_USER:-$(id -un)}
+USUARIO=${SUDO_USER:-$( [[ -n ${PKEXEC_UID:-} ]] && id -un "$PKEXEC_UID" || id -un )}
 CASA=$(getent passwd "$USUARIO" | cut -d: -f6)
 
 ok()   { printf '\e[32m✔\e[0m %s\n' "$*"; }
