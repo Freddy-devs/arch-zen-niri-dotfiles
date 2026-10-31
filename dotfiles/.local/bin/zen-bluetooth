@@ -4,6 +4,7 @@
 Clic en el ícono de Bluetooth de waybar lo abre; otro clic (o Esc) lo cierra.
 Habla directo con BlueZ por D-Bus y registra su propio agente, así que el
 emparejamiento acepta solo la confirmación del código de lo que se empareja desde el panel.
+El menú (󰇙) de cada dispositivo emparejado decide si se reconecta solo (Trusted) y lo renombra (Alias).
 """
 import os
 import secrets
@@ -21,7 +22,8 @@ from dbus.mainloop.glib import DBusGMainLoop  # noqa: E402
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk  # noqa: E402
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 BLUEZ = "org.bluez"
 ADAPTER = "org.bluez.Adapter1"
@@ -38,6 +40,9 @@ ICONS = {
 }
 
 ROWS_VISIBLE, ROW_HEIGHT = 5, 51     # filas de la lista sin scroll y alto de cada una (con su margen)
+VISIBLE_SECS = 120                   # "Visible para otros dispositivos" se apaga solo a los 2 min
+# batería de 0 a 100 % en pasos de 10 (Nerd Font: vacía, 10 %… 90 %, llena)
+BATTERY_ICONS = "\U000f008e\U000f007a\U000f007b\U000f007c\U000f007d\U000f007e\U000f007f\U000f0080\U000f0081\U000f0082\U000f0079"
 
 CSS = """
 window.zen-bt { background: transparent; }
@@ -84,6 +89,33 @@ button.scan {
     font-weight: 700; font-size: 12px; padding: 2px 10px; min-height: 0;
 }
 button.scan:hover { background: #3b4252; color: #eceff4; }
+menubutton.more > button {
+    background: transparent; color: #7b88a1; border: none; box-shadow: none; border-radius: 8px;
+    font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; padding: 4px 6px; min-height: 0;
+}
+menubutton.more > button:hover, menubutton.more > button:checked { background: #3b4252; color: #eceff4; }
+.bat { color: #a3be8c; font-size: 11px; font-weight: 700; margin-left: 8px; }
+.bat.low { color: #ebcb8b; }
+.bat.crit { color: #bf616a; }
+row.dev.editing { background: #3b4252; border-left-color: #ebcb8b; }
+entry.rename {
+    background: #2e3440; color: #eceff4; border: 1px solid #4c566a; border-radius: 6px;
+    box-shadow: none; outline: none; padding: 2px 8px; min-height: 26px; margin-right: 6px;
+}
+entry.rename:focus-within { border-color: #88c0d0; }
+popover.dev-menu > contents {
+    background: #242933; border: 1px solid #292e42; border-radius: 10px; padding: 10px; color: #eceff4;
+}
+.menu-label { font-weight: 700; color: #eceff4; margin-right: 12px; }
+.menu-hint { color: #616e88; font-size: 11px; margin-top: 2px; }
+button.menu-item {
+    background: transparent; color: #d8dee9; border: none; box-shadow: none; border-radius: 6px;
+    font-weight: 700; padding: 4px 6px; margin-top: 8px; min-height: 0;
+}
+button.menu-item:hover { background: #3b4252; color: #eceff4; }
+.vis { margin-top: 10px; }
+.vis-label { color: #d8dee9; font-weight: 600; }
+.vis-time { color: #ebcb8b; font-size: 11px; font-weight: 700; margin-right: 8px; }
 switch { background: #3b4252; border: none; }
 switch:checked { background: #88c0d0; }
 switch slider { background: #eceff4; }
@@ -164,6 +196,10 @@ class Panel:
         self.shown = {}            # lo que muestra cada lista: si no cambia, no se rearma (parpadeo, clics perdidos)
         self.refresh_pending = False
         self.updating_switch = False
+        self.editing = None        # dispositivo que se está renombrando: su fila no se rearma
+        self.menu_open = None      # dispositivo con el menú abierto: tampoco (se cerraría el menú)
+        self.visible_until = None  # Discoverable encendido desde el panel: cuándo se apaga solo
+        self.visible_timer = None
         self.blocked = False       # adaptador bloqueado por rfkill: el interruptor no puede encenderlo
 
         self.agent = Agent(self.bus, self)
@@ -203,6 +239,21 @@ class Panel:
         head.append(title)
         head.append(self.power)
         panel.append(head)
+
+        # visible para que otros equipos encuentren la laptop; se apaga a los 2 min o al cerrar
+        self.vis_box = Gtk.Box()
+        self.vis_box.add_css_class("vis")
+        vis_label = Gtk.Label(label="Visible para otros dispositivos", xalign=0, hexpand=True)
+        vis_label.add_css_class("vis-label")
+        self.vis_time = Gtk.Label()
+        self.vis_time.add_css_class("vis-time")
+        self.visible = Gtk.Switch(valign=Gtk.Align.CENTER,
+                                  tooltip_text="Se apaga solo a los 2 minutos o al cerrar el panel")
+        self.visible.connect("notify::active", self.on_visible)
+        self.vis_box.append(vis_label)
+        self.vis_box.append(self.vis_time)
+        self.vis_box.append(self.visible)
+        panel.append(self.vis_box)
 
         panel.append(self.section("MIS DISPOSITIVOS"))
         self.paired_list = self.listbox()
@@ -296,9 +347,14 @@ class Panel:
         powered = bool(ad and ad.get("Powered"))
         discovering = bool(ad and ad.get("Discovering"))
 
+        discoverable = bool(powered and ad.get("Discoverable"))
+        if not discoverable and self.visible_until:
+            self.stop_visible_timer()     # lo apagó BlueZ (DiscoverableTimeout) u otro programa
         self.updating_switch = True
         self.power.set_active(powered)
+        self.visible.set_active(discoverable)
         self.updating_switch = False
+        self.vis_box.set_visible(powered)
         # sin adaptador o con rfkill el interruptor no hace nada: se bloquea y se avisa
         blocked = bool(ad and ad.get("PowerState") == "off-blocked")
         self.power.set_sensitive(bool(ad) and not blocked)
@@ -331,13 +387,39 @@ class Panel:
                   else "Presiona Buscar para encontrar dispositivos" if powered else "")
         return False
 
+    def row_key(self, path, dev, bat):
+        return (str(dev.get("Alias") or dev.get("Name") or dev.get("Address")), str(dev.get("Icon", "")),
+                bool(dev.get("Connected")), bool(dev.get("Paired")), bool(dev.get("Trusted")), bat,
+                path in self.busy)
+
     def fill(self, lb, items, empty_text):
-        key = (empty_text, tuple((str(p), str(d.get("Alias") or d.get("Name") or d.get("Address")), str(d.get("Icon", "")),
-                                  bool(d.get("Connected")), bool(d.get("Paired")), b, p in self.busy)
-                                 for p, d, b in items))
-        if self.shown.get(lb) == key:
-            return
-        self.shown[lb] = key
+        """Rearma la lista solo si cambia lo que muestra; si solo cambian algunas filas, cambia esas.
+
+        La fila que se renombra o tiene el menú abierto queda congelada (su clave no cambia): una
+        señal de BlueZ no le borra lo escrito ni le cierra el menú.
+        """
+        keys = [(str(p), self.row_key(p, d, b)) for p, d, b in items]
+        frozen = {p for p in (self.editing, self.menu_open) if p}
+        old = self.shown.get(lb)
+        if old:
+            old_text, old_keys = old
+            before = dict(old_keys)
+            keys = [(p, before[p] if p in frozen and p in before else k) for p, k in keys]
+            if old_keys == keys and (keys or old_text == empty_text):
+                return
+            paths = [p for p, _ in keys]
+            if keys and paths == [p for p, _ in old_keys]:
+                # mismas filas en el mismo orden: se cambian solo las que cambiaron
+                for i, ((_, k), (_, was)) in enumerate(zip(keys, old_keys)):
+                    if k != was:
+                        self.replace_row(lb, i, self.device_row(*items[i]))
+                self.shown[lb] = (empty_text, keys)
+                return
+            if frozen & set(before) & set(paths):
+                return       # cambió el orden con una fila en uso: se rearma cuando termine
+        if self.editing and lb is self.paired_list and self.editing not in [p for p, _ in keys]:
+            self.editing = None      # el dispositivo que se renombraba desapareció
+        self.shown[lb] = (empty_text, keys)
         while (child := lb.get_first_child()) is not None:
             lb.remove(child)
         if not items:
@@ -350,6 +432,25 @@ class Panel:
             return
         for path, dev, bat in items:
             lb.append(self.device_row(path, dev, bat))
+
+    def replace_row(self, lb, i, new):
+        old = lb.get_row_at_index(i)
+        focus = self.win.get_focus()
+        had_focus = focus is not None and (focus == old or focus.is_ancestor(old))
+        lb.remove(old)
+        lb.insert(new, i)
+        if had_focus:
+            new.grab_focus()     # el teclado sigue en la misma fila
+
+    def battery_label(self, bat):
+        pct = max(0, min(100, int(bat)))
+        lbl = Gtk.Label(label=f"{BATTERY_ICONS[round(pct / 10)]} {pct}%", tooltip_text=f"Batería {pct} %")
+        lbl.add_css_class("bat")
+        if pct <= 10:
+            lbl.add_css_class("crit")
+        elif pct <= 25:
+            lbl.add_css_class("low")
+        return lbl
 
     def device_row(self, path, dev, bat):
         name = str(dev.get("Alias") or dev.get("Name") or dev.get("Address"))
@@ -365,13 +466,14 @@ class Panel:
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
         nl = Gtk.Label(label=name, xalign=0, ellipsize=3)
         nl.add_css_class("dev-name")
-        sub = "Conectado" if connected else "Desconectado" if paired else "Nuevo"
-        if bat is not None:
-            sub += f" · 󰁹 {int(bat)}%"
-        sl = Gtk.Label(label=sub, xalign=0)
+        subline = Gtk.Box()
+        sl = Gtk.Label(label="Conectado" if connected else "Desconectado" if paired else "Nuevo", xalign=0)
         sl.add_css_class("dev-sub")
+        subline.append(sl)
+        if bat is not None:          # solo si el dispositivo expone org.bluez.Battery1
+            subline.append(self.battery_label(bat))
         text.append(nl)
-        text.append(sl)
+        text.append(subline)
         box.append(icon)
         box.append(text)
 
@@ -393,6 +495,7 @@ class Panel:
             btn.connect("clicked", lambda b: action())
             box.append(btn)
             if paired:
+                box.append(self.device_menu(path, name, bool(dev.get("Trusted")), icon.get_label()))
                 forget = Gtk.Button(label="󰆴", valign=Gtk.Align.CENTER, tooltip_text="Olvidar dispositivo")
                 forget.add_css_class("icon")
                 forget.connect("clicked", lambda b: self.forget(path, name))
@@ -401,6 +504,130 @@ class Panel:
         row.activate_action = action or (lambda: None)
         row.set_child(box)
         return row
+
+    def device_menu(self, path, name, trusted, icon):
+        """Botón 󰇙 con "Reconectar solo" (Trusted) y "Renombrar" (Alias)."""
+        pop = Gtk.Popover()
+        pop.add_css_class("dev-menu")
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        line = Gtk.Box()
+        lbl = Gtk.Label(label="Reconectar solo", xalign=0, hexpand=True)
+        lbl.add_css_class("menu-label")
+        sw = Gtk.Switch(active=trusted, valign=Gtk.Align.CENTER)    # estado real antes de conectar la señal
+        sw.connect("notify::active", lambda s, _: self.set_trusted(path, name, s))
+        line.append(lbl)
+        line.append(sw)
+        hint = Gtk.Label(label="Se conecta solo al encenderse, sin abrir el panel", xalign=0,
+                         wrap=True, max_width_chars=30)
+        hint.add_css_class("menu-hint")
+        rename = Gtk.Button(label="󰏫  Renombrar")
+        rename.add_css_class("menu-item")
+        rename.connect("clicked", lambda b: (pop.popdown(),
+                                             GLib.idle_add(lambda: self.start_edit(path, name, icon) and False)))
+        for w in (line, hint, rename):
+            body.append(w)
+        pop.set_child(body)
+
+        def opened(*_):
+            self.menu_open = path
+
+        def closed(*_):
+            if self.menu_open == path:
+                self.menu_open = None
+            self.queue_refresh()     # lo que cambió con el menú abierto se muestra ahora
+        pop.connect("show", opened)
+        pop.connect("closed", closed)
+
+        # con child (no label) GTK no le añade la flecha ▾
+        more = Gtk.MenuButton(child=Gtk.Label(label="󰇙"), valign=Gtk.Align.CENTER,
+                              tooltip_text="Reconectar solo, renombrar", popover=pop)
+        more.add_css_class("more")
+        return more
+
+    def edit_row(self, path, name, icon):
+        """Fila con el campo para renombrar: Enter guarda, Esc cancela (sin cerrar el panel)."""
+        row = Gtk.ListBoxRow(activatable=False)
+        row.add_css_class("dev")
+        row.add_css_class("editing")
+        box = Gtk.Box()
+        ic = Gtk.Label(label=icon)
+        ic.add_css_class("dev-icon")
+        entry = Gtk.Entry(text=name, hexpand=True, valign=Gtk.Align.CENTER,
+                          placeholder_text="Vacío = nombre original")
+        entry.add_css_class("rename")
+        save = Gtk.Button(label="Guardar", valign=Gtk.Align.CENTER)
+        save.add_css_class("act")
+        save.add_css_class("primary")
+        cancel = Gtk.Button(label="󰅖", valign=Gtk.Align.CENTER, tooltip_text="Cancelar (Esc)")
+        cancel.add_css_class("icon")
+        entry.connect("activate", lambda e: self.save_alias(path, entry, save))
+        save.connect("clicked", lambda b: self.save_alias(path, entry, save))
+        cancel.connect("clicked", lambda b: self.cancel_edit())
+        # en captura: Esc llega aquí antes que al controlador de la ventana, que cerraría el panel
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and (self.cancel_edit() or True))
+        row.add_controller(keys)
+        for w in (ic, entry, save, cancel):
+            box.append(w)
+        row.set_child(box)
+        row.entry = entry
+        return row
+
+    def start_edit(self, path, name, icon):
+        if self.editing and self.editing != path:
+            self.cancel_edit()
+        text, keys = self.shown.get(self.paired_list, ("", []))
+        i = next((n for n, (p, _) in enumerate(keys) if p == str(path)), None)
+        if i is None:
+            return
+        self.editing = str(path)
+        row = self.edit_row(path, name, icon)
+        self.replace_row(self.paired_list, i, row)
+        keys = list(keys)
+        keys[i] = (str(path), ("edit",))     # clave fija: la fila no se toca hasta guardar o cancelar
+        self.shown[self.paired_list] = (text, keys)
+        GLib.idle_add(lambda: row.entry.grab_focus() and False)   # selecciona todo: se escribe encima
+
+    def cancel_edit(self):
+        self.editing = None
+        self.refresh()               # la fila vuelve a ser la normal ya, no en 200 ms
+
+    def save_alias(self, path, entry, save):
+        # vacío: BlueZ vuelve al nombre que anuncia el dispositivo
+        alias = entry.get_text().strip()
+        entry.set_sensitive(False)
+        save.set_sensitive(False)
+
+        def done(*_):
+            self.set_status(f"✔ Renombrado a {alias}" if alias else "✔ Vuelve a su nombre original", "ok")
+            self.cancel_edit()
+
+        def fail(e):
+            entry.set_sensitive(True)
+            save.set_sensitive(True)
+            entry.grab_focus_without_selecting()     # sigue editando con lo escrito
+            self.set_status(f"✘ No se pudo renombrar ({e.get_dbus_message() or e.get_dbus_name()})", "err")
+
+        self.dev_iface(path, PROPS).Set(DEVICE, "Alias", dbus.String(alias),
+                                        reply_handler=done, error_handler=fail, timeout=10)
+
+    def set_trusted(self, path, name, sw):
+        # no pasa por self.call: no marca el dispositivo en busy, así que el agente no acepta nada por esto
+        on = sw.get_active()
+
+        def done(*_):
+            self.set_status(f"{name}: {'se reconecta solo' if on else 'ya no se reconecta solo'}", "ok")
+
+        def fail(e):
+            self.updating_switch = True
+            sw.set_active(not on)            # vuelve al estado real
+            self.updating_switch = False
+            self.set_status(f"✘ No se pudo cambiar {name} ({e.get_dbus_message() or e.get_dbus_name()})", "err")
+
+        if self.updating_switch:
+            return
+        self.dev_iface(path, PROPS).Set(DEVICE, "Trusted", dbus.Boolean(on),
+                                        reply_handler=done, error_handler=fail, timeout=10)
 
     # ---------- acciones ----------
     def call(self, path, method, name, ok_msg, err_msg, then=None, iface=DEVICE, args=(), device=None):
@@ -490,6 +717,49 @@ class Panel:
         except dbus.DBusException:
             pass
 
+    def on_visible(self, sw, _):
+        if self.updating_switch:
+            return
+        self.set_visible_for_others(sw.get_active())
+
+    def set_visible_for_others(self, on):
+        if not self.adapter_path:
+            return
+        try:
+            props = self.adapter_props()
+            if on:
+                # BlueZ también lo apaga a los 2 min: si el panel muere, no queda visible para siempre
+                props.Set(ADAPTER, "DiscoverableTimeout", dbus.UInt32(VISIBLE_SECS))
+            props.Set(ADAPTER, "Discoverable", dbus.Boolean(on))
+        except dbus.DBusException as e:
+            self.set_status(f"✘ No se pudo {'hacer visible' if on else 'ocultar'} el Bluetooth "
+                            f"({e.get_dbus_message() or e.get_dbus_name()})", "err")
+            self.queue_refresh()     # el interruptor vuelve a mostrar el estado real
+            return
+        if on:
+            self.visible_until = GLib.get_monotonic_time() + VISIBLE_SECS * 1_000_000
+            if not self.visible_timer:
+                self.visible_timer = GLib.timeout_add_seconds(1, self.tick_visible)
+            self.tick_visible()
+        else:
+            self.stop_visible_timer()
+
+    def tick_visible(self):
+        left = (self.visible_until - GLib.get_monotonic_time()) // 1_000_000 if self.visible_until else 0
+        if left <= 0:
+            self.visible_timer = None    # devolver False quita el temporizador
+            self.set_visible_for_others(False)
+            self.queue_refresh()
+            return False
+        self.vis_time.set_label(f"{left // 60}:{left % 60:02d}")
+        return True
+
+    def stop_visible_timer(self):
+        if self.visible_timer:
+            GLib.source_remove(self.visible_timer)
+        self.visible_timer = self.visible_until = None
+        self.vis_time.set_label("")
+
     def toggle(self):
         self.hide() if self.win.get_visible() else self.show()
 
@@ -508,6 +778,8 @@ class Panel:
                 self.adapter_props().Set(ADAPTER, "Pairable", dbus.Boolean(False))
         except dbus.DBusException:
             pass
+        if self.visible_until:       # visible desde el panel: deja de serlo al cerrarlo
+            self.set_visible_for_others(False)
         self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
 
     def close(self):

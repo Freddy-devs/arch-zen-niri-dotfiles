@@ -5,6 +5,9 @@ Un slider por pantalla: la de la laptop (brightnessctl) y los monitores externos
 (ddcutil, el monitor cambia su propio brillo). Clic en el brillo de waybar o Super+I lo abre;
 otro clic, Super+I, Super+C o Esc lo cierra y el proceso termina. Lo que encuentra `ddcutil detect`
 (lento: 1-5 s) se guarda en $XDG_RUNTIME_DIR y se reusa mientras no cambien las pantallas conectadas.
+Rueda del ratón sobre un slider o ↑/↓: ±5 %. Con varias pantallas, "Todas las pantallas" mueve todas.
+El último brillo puesto a cada monitor externo se guarda en ~/.local/state/zen-brightness.json; si
+el monitor vuelve con otro valor, su fila ofrece "Restaurar N %" (no se aplica solo).
 """
 import glob
 import json
@@ -26,7 +29,8 @@ zen_panel.preload_layer_shell()     # re-exec con gtk4-layer-shell, antes de imp
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk  # noqa: E402
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 CSS = """
 window.zen-brightness { background: transparent; }
@@ -53,11 +57,22 @@ scale slider {
     margin: -4px; border: none; box-shadow: none;
 }
 scale:hover slider { background: #eceff4; }
+.screen.all { padding-bottom: 10px; border-bottom: 1px solid #292e42; }
+.screen.all .screen-icon { color: #ebcb8b; }
+button.restore {
+    background: #3b4252; color: #ebcb8b; border: none; box-shadow: none; border-radius: 6px;
+    font-size: 11px; font-weight: 700; padding: 1px 8px; min-height: 0;
+}
+button.restore:hover { background: #434c5e; }
 """
 
 MIN_LAPTOP = 1     # 0 % apaga la pantalla de la laptop: no dejar llegar ahí
 DDC_CACHE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-brightness-ddc.json")
 INTERNAL = ("eDP", "LVDS", "DSI")     # conectores de la pantalla propia de la laptop
+DDC_CACHE_VERSION = 2                 # 2: guarda la serie del monitor (clave del brillo recordado)
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                     "zen-brightness.json")
+STEP = 5                              # rueda del ratón y ↑/↓
 
 
 def run(*cmd, timeout=6):
@@ -86,9 +101,14 @@ class Laptop:
 class Monitor:
     icon, kind = "󰍹", "ddc"
 
-    def __init__(self, bus, name):
-        self.bus, self.name = bus, name
+    def __init__(self, bus, name, serial=""):
+        self.bus, self.name, self.serial = bus, name, serial
         self.max = None          # máximo que informa el monitor (no siempre 100)
+
+    @property
+    def key(self):
+        # el bus i2c cambia según el puerto o el orden de arranque: el monitor se reconoce por nombre y serie
+        return f"{self.name} #{self.serial}" if self.serial else self.name
 
     def get(self):
         # "VCP 10 C 50 100" = brillo actual 50 de máximo 100
@@ -135,15 +155,16 @@ def monitors(outputs):
     try:
         with open(DDC_CACHE) as f:
             cache = json.load(f)
-        if cache.get("outputs") == outputs:
-            return [Monitor(m["bus"], m["name"]) for m in cache["monitors"]]
+        if cache.get("v") == DDC_CACHE_VERSION and cache.get("outputs") == outputs:
+            return [Monitor(m["bus"], m["name"], m.get("serial", "")) for m in cache["monitors"]]
     except (OSError, ValueError, KeyError, TypeError):
         pass
     found = ddc_detect()
     if found:              # vacío no se guarda: quizá el DDC/CI se activa luego en el OSD
         try:
             with open(DDC_CACHE + ".part", "w") as f:
-                json.dump({"outputs": outputs, "monitors": [{"bus": m.bus, "name": m.name} for m in found]}, f)
+                json.dump({"v": DDC_CACHE_VERSION, "outputs": outputs,
+                           "monitors": [{"bus": m.bus, "name": m.name, "serial": m.serial} for m in found]}, f)
             os.replace(DDC_CACHE + ".part", DDC_CACHE)
         except OSError:
             pass
@@ -157,12 +178,32 @@ def forget_monitors():
         pass
 
 
+def load_state():
+    """Último brillo puesto a cada monitor externo: {clave del monitor: %}."""
+    try:
+        with open(STATE) as f:
+            data = json.load(f).get("monitors", {})
+        return {str(k): int(v) for k, v in data.items()}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
+def save_state(values):
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE + ".part", "w") as f:
+            json.dump({"monitors": values}, f, indent=1)
+        os.replace(STATE + ".part", STATE)
+    except OSError:
+        pass
+
+
 def ddc_detect():
     screens = []
     if shutil.which("ddcutil"):
         # solo bloques "Display N": "Invalid display" es la pantalla de la laptop (sin DDC/CI)
         valid = False
-        bus = model = brand = None
+        bus = model = brand = serial = None
         for line in run("ddcutil", "detect", timeout=20).splitlines() + [""]:
             line = line.strip()
             if line.startswith("Display "):
@@ -175,19 +216,30 @@ def ddc_detect():
                 model = line.split(":", 1)[1].strip()
             elif line.startswith("Mfg id:") and " - " in line:
                 brand = line.split(" - ", 1)[1].split()[0]        # "SAM - Samsung Electric…" → Samsung
+            elif line.startswith("Serial number:"):
+                serial = line.split(":", 1)[1].strip() or serial
+            elif line.startswith("Binary serial number:") and not serial:
+                binary = line.split(":", 1)[1].split()[:1]       # "0 (0x00000000)" = sin serie
+                serial = binary[0] if binary and binary[0] != "0" else None
             elif not line:
                 if valid and bus:
                     name = " ".join(x for x in (brand or "Monitor", model) if x) or f"Monitor (i2c-{bus})"
-                    screens.append(Monitor(bus, name))
-                valid, bus, model, brand = False, None, None, None
+                    screens.append(Monitor(bus, name, serial or ""))
+                valid, bus, model, brand, serial = False, None, None, None, None
     return screens
 
 
 class Row:
-    """Nombre de la pantalla + slider de brillo. Aplica con una pausa corta: DDC es lento."""
+    """Nombre de la pantalla + slider de brillo. Aplica con una pausa corta: DDC es lento.
 
-    def __init__(self, screen):
+    on_value(): avisa al panel de un valor nuevo (leído o movido), para "Todas las pantallas".
+    on_sent(row, pct): el valor que se le mandó a la pantalla (el panel lo recuerda).
+    remembered: el último brillo guardado de este monitor; si el leído es otro, ofrece restaurarlo.
+    """
+
+    def __init__(self, screen, on_value=None, on_sent=None, remembered=None):
         self.screen, self.updating, self.pending, self.busy = screen, False, None, False
+        self.on_value, self.on_sent, self.remembered = on_value, on_sent, remembered
         self.touched = 0.0       # último movimiento del usuario: una lectura vieja no lo pisa
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.box.add_css_class("screen")
@@ -196,8 +248,13 @@ class Row:
         icon.add_css_class("screen-icon")
         name = Gtk.Label(label=screen.name, xalign=0, ellipsize=3, hexpand=True)
         name.add_css_class("screen-name")
+        self.restore = Gtk.Button(valign=Gtk.Align.CENTER, visible=False,
+                                  tooltip_text="Brillo que tenía la última vez que lo cambiaste")
+        self.restore.add_css_class("restore")
+        self.restore.connect("clicked", lambda b: self.do_restore())
         head.append(icon)
         head.append(name)
+        head.append(self.restore)
         self.box.append(head)
 
         row = Gtk.Box()
@@ -216,7 +273,27 @@ class Row:
         high.add_css_class("sun")
         for w in (low, self.scale, high, self.pct):
             row.append(w)
+        # rueda: ±5 % (la de GtkRange da pasos raros); en captura para que el slider no la use también
+        scroll = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.VERTICAL
+                                           | Gtk.EventControllerScrollFlags.DISCRETE,
+                                           propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        scroll.connect("scroll", lambda c, dx, dy: bool(dy) and (self.nudge(-STEP if dy > 0 else STEP) or True))
+        row.add_controller(scroll)
         self.box.append(row)
+
+    def nudge(self, delta):
+        if self.scale.get_sensitive():
+            self.scale.set_value(max(0, min(100, int(self.scale.get_value()) + delta)))
+
+    def show_restore(self, pct):
+        # ±1 % es redondeo del máximo del monitor, no otro valor
+        offer = self.remembered is not None and pct is not None and abs(pct - self.remembered) > 1
+        self.restore.set_label(f"Restaurar {self.remembered} %" if offer else "")
+        self.restore.set_visible(offer)
+
+    def do_restore(self):
+        self.restore.set_visible(False)
+        self.scale.set_value(self.remembered)      # por on_change: mismo flush que un arrastre
 
     def load(self):
         def work():
@@ -238,6 +315,9 @@ class Row:
             self.scale.set_value(pct)
             self.updating = False
             self.pct.set_label(f"{pct}%")
+            self.show_restore(pct)
+        if self.on_value:
+            self.on_value()
         return False
 
     def on_change(self, scale):
@@ -246,9 +326,12 @@ class Row:
         if self.updating:
             return
         self.touched = time.monotonic()
+        self.restore.set_visible(False)      # el usuario eligió otro valor: ese es el que se recuerda
         self.pending = pct
         if not self.busy:
             self.flush()
+        if self.on_value:
+            self.on_value()
 
     def flush(self):
         """Un solo comando a la vez; al terminar manda el último valor pedido (sin cola de pasos)."""
@@ -256,6 +339,8 @@ class Row:
             self.busy = False
             return
         pct, self.pending, self.busy = self.pending, None, True
+        if self.on_sent:
+            self.on_sent(self, pct)
 
         def work():
             self.screen.set(pct)
@@ -263,10 +348,45 @@ class Row:
         threading.Thread(target=work, daemon=True).start()
 
 
+class AllScreens(Row):
+    """"Todas las pantallas": mueve el slider de cada fila, y cada una manda su valor con su propio flush."""
+
+    icon, kind, name = "\U000f037a", "all", "Todas las pantallas"
+
+    def __init__(self, panel):
+        super().__init__(self)       # hace de su propia "pantalla": solo icono y nombre
+        self.panel = panel
+        self.box.add_css_class("all")
+        self.box.set_visible(False)  # solo con más de una pantalla
+
+    def on_change(self, scale):
+        pct = int(scale.get_value())
+        self.pct.set_label(f"{pct}%")
+        if self.updating:
+            return
+        self.touched = time.monotonic()
+        for row in self.panel.rows:
+            if row.scale.get_sensitive():
+                row.scale.set_value(pct)
+
+    def sync(self):
+        """Muestra el promedio de las pantallas, salvo mientras el usuario lo arrastra."""
+        values = [int(r.scale.get_value()) for r in self.panel.rows if r.scale.get_sensitive()]
+        self.scale.set_sensitive(bool(values))
+        if values and time.monotonic() - self.touched > 1.5:
+            pct = round(sum(values) / len(values))
+            self.updating = True
+            self.scale.set_value(pct)
+            self.updating = False
+            self.pct.set_label(f"{pct}%")
+
+
 class Panel:
     def __init__(self, app):
         self.app = app
         self.rows = []
+        self.remembered = load_state()
+        self.save_pending = False
         self.build()
         # la laptop aparece ya; los monitores DDC llegan después (detect puede tardar segundos)
         self.fill(laptops())
@@ -296,12 +416,20 @@ class Panel:
         head.append(icon)
         head.append(title)
         panel.append(head)
+        self.all = AllScreens(self)
+        panel.append(self.all.box)
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         panel.append(self.list)
         self.note = Gtk.Label(xalign=0, wrap=True, max_width_chars=40)
         self.note.add_css_class("note")
         self.note.set_visible(False)
         panel.append(self.note)
+
+        # ↑/↓: ±5 % a la pantalla con el foco o a la primera. En captura: el slider enfocado
+        # movería solo 1 %
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self.on_key)
+        win.add_controller(keys)
 
         win.set_child(panel)
         self.win = win
@@ -310,11 +438,14 @@ class Panel:
     def fill(self, screens, outputs=None):
         """Añade filas; con `outputs` es la tanda de monitores y decide la nota."""
         for s in screens:
-            row = Row(s)
+            row = Row(s, on_value=self.all.sync, on_sent=self.remember,
+                      remembered=self.remembered.get(s.key) if s.kind == "ddc" else None)
             self.rows.append(row)
             self.list.append(row.box)
             if self.win.get_visible():
                 row.load()
+        self.all.box.set_visible(len(self.rows) > 1)
+        self.all.sync()
         if outputs is None or not has_external(outputs):
             return False     # la nota solo tiene sentido si hay un monitor externo enchufado
         if not shutil.which("ddcutil"):
@@ -323,6 +454,30 @@ class Panel:
         elif not screens:
             self.note.set_label("El monitor externo no responde por DDC/CI: actívalo en su menú (OSD).")
             self.note.set_visible(True)
+        return False
+
+    def on_key(self, ctrl, key, code, state):
+        if key not in (Gdk.KEY_Up, Gdk.KEY_Down) or not self.rows:
+            return False
+        focus = self.win.get_focus()
+        rows = ([self.all] if self.all.box.get_visible() else []) + self.rows
+        target = next((r for r in rows if focus is not None and focus.is_ancestor(r.box)), self.rows[0])
+        target.nudge(STEP if key == Gdk.KEY_Up else -STEP)
+        return True
+
+    def remember(self, row, pct):
+        """Guarda el último brillo mandado a cada monitor externo (con pausa: un arrastre manda muchos)."""
+        if row.screen.kind != "ddc":
+            return
+        self.remembered[row.screen.key] = row.remembered = pct
+        if not self.save_pending:
+            self.save_pending = True
+            GLib.timeout_add(1000, self.save)
+
+    def save(self):
+        if self.save_pending:
+            self.save_pending = False
+            save_state(self.remembered)
         return False
 
     def toggle(self):
@@ -334,6 +489,7 @@ class Panel:
             row.load()
 
     def hide(self):
+        self.save()                  # lo pendiente de recordar, antes de terminar
         self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
         return True
 
