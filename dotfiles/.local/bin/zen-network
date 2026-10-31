@@ -3,10 +3,16 @@
 
 Clic en el ícono de red de waybar lo abre; otro clic (o Esc) lo cierra.
 Habla directo con NetworkManager por libnm: muestra la conexión actual, busca redes
-Wi-Fi y conecta (la contraseña se escribe en la misma fila). Lo avanzado (red oculta,
-802.1X, IP fija) sigue en nmtui con clic derecho en la barra.
+Wi-Fi y conecta (la contraseña se escribe en la misma fila). Cada red guardada tiene su menú (⋮):
+conectar sola, preferida, ver o compartir la contraseña (QR). Abajo: red oculta y compartir Wi-Fi
+(punto de acceso). VPN y WireGuard guardadas se conectan desde su sección. Lo avanzado (802.1X,
+IP fija) sigue en nmtui con clic derecho en la barra.
 """
 import os
+import secrets
+import shutil
+import socket
+import subprocess
 import sys
 
 # lo común de los paneles vive en zen_panel.py, junto al script real (~/.local/bin o el repo)
@@ -19,7 +25,8 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("NM", "1.0")
-from gi.repository import GLib, Gtk, NM  # noqa: E402
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, GLib, Gtk, NM  # noqa: E402
 
 ApFlags = getattr(NM, "80211ApFlags")
 Sec = getattr(NM, "80211ApSecurityFlags")
@@ -38,6 +45,13 @@ IN_MEMORY = GLib.Variant("a{sv}", {"persist": GLib.Variant("s", "memory")})
 FINAL_STATES = (ACState.ACTIVATED, ACState.DEACTIVATED)
 
 NAME = "zen-network"     # pidfile: hide() lo borra antes de salir si espera una conexión
+
+SEC = NM.SETTING_WIRELESS_SECURITY_SETTING_NAME      # "802-11-wireless-security": donde vive la clave
+VPN_TYPES = ("vpn", "wireguard")
+HOTSPOT_ID = "Compartir Wi-Fi"                       # nombre del perfil de punto de acceso que crea el panel
+# sin caracteres que se confunden al dictarla o leerla en el móvil (0/O, 1/l/I, 8/B)
+HOTSPOT_CHARS = "abcdefghijkmnpqrstuvwxyzACDEFGHJKLMNPQRTUVWXY2345679"
+HIDDEN_KINDS = [("WPA2", "wpa-psk"), ("WPA3", "sae"), ("Abierta", None)]
 
 CSS = """
 window.zen-net { background: transparent; }
@@ -96,6 +110,24 @@ switch { background: #3b4252; border: none; }
 switch:checked { background: #88c0d0; }
 switch slider { background: #eceff4; }
 scrolledwindow { background: transparent; }
+.menu { margin-top: 8px; padding-top: 4px; border-top: 1px solid #434c5e; }
+.menu-line { min-height: 30px; }
+.menu-label { color: #d8dee9; font-weight: 600; font-size: 12px; }
+.menu switch { margin: 3px 0; }
+button.act.danger:hover { background: #bf616a; color: #eceff4; }
+entry.pass.shown { margin-right: 2px; }
+button.icon.copy:hover { color: #88c0d0; }
+.foot { margin-top: 8px; }
+.card { background: #2e3440; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+.card-title { font-weight: 700; color: #eceff4; }
+.hint { color: #7b88a1; font-size: 11px; font-weight: 600; }
+.warn { color: #ebcb8b; font-size: 11px; font-weight: 600; margin-top: 4px; }
+button.seg {
+    background: #242933; color: #d8dee9; border: 1px solid #434c5e; box-shadow: none;
+    font-weight: 700; font-size: 12px; padding: 2px 10px; min-height: 0; margin: 8px 6px 0 0; border-radius: 8px;
+}
+button.seg:checked { background: #88c0d0; color: #242933; border-color: #88c0d0; }
+image.qr { background: #ffffff; border-radius: 6px; margin: 6px 0 8px; }
 """
 
 
@@ -127,6 +159,62 @@ def security(ap):
     return "Abierta", None, True
 
 
+def set_security(conn, key_mgmt, password):
+    """Pone la clave WPA/WPA3 al perfil; key_mgmt None la quita (red abierta)."""
+    sec = conn.get_setting_wireless_security()
+    if not key_mgmt:
+        if sec is not None:
+            conn.remove_setting(NM.SettingWirelessSecurity.__gtype__)
+        return
+    if sec is None:
+        sec = NM.SettingWirelessSecurity.new()
+        conn.add_setting(sec)
+    sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, key_mgmt)
+    sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK, password)
+    # la clave la guarda NM (sin esto, un perfil con clave "del agente" la volvía a pedir y fallaba)
+    sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK_FLAGS, NM.SettingSecretFlags.NONE)
+
+
+def conn_is_ap(conn):
+    """Perfil de punto de acceso (el que comparte Wi-Fi), no una red a la que conectarse."""
+    s = conn.get_setting_wireless() if conn else None
+    return bool(s) and s.get_mode() == NM.SETTING_WIRELESS_MODE_AP
+
+
+def qr_escape(text):
+    return "".join("\\" + ch if ch in '\\;,:"' else ch for ch in text)
+
+
+def wifi_qr_text(conn, ssid, password):
+    """Texto estándar que la cámara del móvil entiende como «unirse a esta red»."""
+    sec = conn.get_setting_wireless_security() if conn else None
+    km = sec.get_key_mgmt() if sec else None
+    kind = "WEP" if km == "none" else "WPA" if password else "nopass"
+    parts = [f"T:{kind}", f"S:{qr_escape(ssid)}"]
+    if password:
+        parts.append(f"P:{qr_escape(password)}")
+    s = conn.get_setting_wireless() if conn else None
+    if s and s.get_hidden():
+        parts.append("H:true")
+    return "WIFI:" + ";".join(parts) + ";;"
+
+
+def qr_texture(text):
+    """PNG del QR con qrencode como textura; None si qrencode no está instalado."""
+    if not shutil.which("qrencode"):
+        return None
+    # por stdin y no como argumento: la clave no queda a la vista en la lista de procesos
+    png = subprocess.run(["qrencode", "-t", "PNG", "-s", "4", "-m", "2", "-o", "-"], input=text.encode(),
+                         capture_output=True, check=True, timeout=5).stdout
+    return Gdk.Texture.new_from_bytes(GLib.Bytes.new(png))
+
+
+def secret_text(secrets):
+    """La clave dentro de lo que devuelve get_secrets (WPA o, en perfiles viejos, WEP)."""
+    sec = secrets.unpack().get(SEC, {}) if secrets else {}
+    return sec.get("psk") or sec.get("wep-key0") or ""
+
+
 class Panel:
     def __init__(self, app):
         self.app = app
@@ -142,6 +230,13 @@ class Panel:
         self.scan_timer = None     # tope de espera del escaneo en curso (uno solo, no uno por cada Buscar)
         self.hw_on = True          # Wi-Fi no bloqueado por hardware (tecla o interruptor del equipo)
         self.closing = None        # cerrado con una conexión en curso: id del tope de espera antes de salir
+        self.expanded = None       # uuid de la red guardada con el menú abierto
+        self.menu_in = None        # lista donde ya está armado ese menú ("active" o "avail")
+        self.vpn_key = None
+        self.page = None           # vista de abajo abierta: "hidden", "share" o "hotspot"
+        self.hotspot_key = None
+        self.hotspot_pw = {}       # uuid del punto de acceso -> clave ya leída (no se vuelve a pedir a NM)
+        self.quiet = False         # interruptores del menú movidos por el panel, no por el usuario
         self.active_key = self.avail_key = None   # lo que muestra cada lista: si no cambia, no se rearma
 
         c = self.client
@@ -182,6 +277,12 @@ class Panel:
         self.active_list = self.listbox()
         panel.append(self.active_list)
 
+        # VPN y WireGuard guardadas sin conectar (las activas ya salen arriba); sin ninguna, no se ve
+        self.vpn_head = self.section("VPN")
+        self.vpn_list = self.listbox()
+        panel.append(self.vpn_head)
+        panel.append(self.vpn_list)
+
         avail_head = Gtk.Box()
         sec = self.section("REDES WI-FI")
         sec.set_hexpand(True)
@@ -205,7 +306,22 @@ class Panel:
         scroller.set_visible(self.wifi is not None)
         panel.append(scroller)
 
-        self.status = Gtk.Label(xalign=0, wrap=True, max_width_chars=44)
+        # red oculta y compartir Wi-Fi: fuera de las listas, así ninguna señal de NM rearma sus campos
+        foot = Gtk.Box(spacing=6)
+        foot.add_css_class("foot")
+        for label, page in (("Red oculta…", "hidden"), ("Compartir Wi-Fi", "hotspot")):
+            b = Gtk.Button(label=label)
+            b.add_css_class("scan")
+            b.connect("clicked", lambda b, p=page: self.open_page(None if self.page == p else p))
+            foot.append(b)
+        foot.set_visible(self.wifi is not None)
+        panel.append(foot)
+        self.pages = {"hidden": self.build_hidden(), "share": self.build_share(), "hotspot": self.build_hotspot()}
+        for box in self.pages.values():
+            box.set_visible(False)
+            panel.append(box)
+
+        self.status =Gtk.Label(xalign=0, wrap=True, max_width_chars=44)
         self.status.add_css_class("status")
         self.status.set_visible(False)
         panel.append(self.status)
@@ -213,6 +329,8 @@ class Panel:
         win.set_child(panel)
         win.connect("close-request", lambda w: self.close())
         self.win = win
+        # cerrado con una clave copiada, el proceso sigue sirviéndola hasta que otro copie algo
+        win.get_clipboard().connect("notify::local", lambda *a: self.quit_if_done())
         win.realize()                    # prepara el renderizador ahora y no en el primer clic
 
     def section(self, text):
@@ -244,15 +362,165 @@ class Panel:
         row.set_child(lbl)
         lb.append(row)
 
+    # ---------- vistas de abajo (fuera de las listas: nada las rearma) ----------
+    def card(self, title):
+        """Tarjeta con título y botón de cerrar; devuelve (tarjeta, etiqueta del título)."""
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        card.add_css_class("card")
+        head = Gtk.Box()
+        lbl = Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3)
+        lbl.add_css_class("card-title")
+        close = Gtk.Button(label="󰅖", valign=Gtk.Align.CENTER, tooltip_text="Cerrar")
+        close.add_css_class("icon")
+        close.add_css_class("copy")
+        close.connect("clicked", lambda b: self.open_page(None))
+        head.append(lbl)
+        head.append(close)
+        card.append(head)
+        return card, lbl
+
+    def secret_line(self):
+        """Clave a la vista en un campo de solo lectura (se puede seleccionar) y botón de copiar."""
+        line = Gtk.Box()
+        entry = Gtk.Entry(editable=False, hexpand=True)
+        entry.add_css_class("pass")
+        entry.add_css_class("shown")
+        copy = Gtk.Button(label="󰆏", valign=Gtk.Align.CENTER, tooltip_text="Copiar")
+        copy.add_css_class("icon")
+        copy.add_css_class("copy")
+        copy.connect("clicked", lambda b: self.copy(entry.get_text()))
+        line.append(entry)
+        line.append(copy)
+        return line, entry
+
+    def qr_picture(self):
+        # Gtk.Image y no Picture: Picture se estiraba a todo el ancho de la tarjeta y el QR tapaba el panel
+        pic = Gtk.Image(halign=Gtk.Align.CENTER)
+        pic.add_css_class("qr")
+        return pic
+
+    def build_hidden(self):
+        card, _ = self.card("Red oculta")
+        self.hid_ssid = Gtk.Entry(placeholder_text="Nombre de la red (SSID)", hexpand=True)
+        self.hid_ssid.add_css_class("pass")
+        self.hid_ssid.connect("activate", lambda e: self.hid_pass.grab_focus()
+                              if self.hid_pass.get_visible() else self.connect_hidden())
+        card.append(self.hid_ssid)
+
+        seg = Gtk.Box()
+        buttons = []
+        for label, _km in HIDDEN_KINDS:
+            b = Gtk.ToggleButton(label=label)
+            b.add_css_class("seg")
+            if buttons:
+                b.set_group(buttons[0])
+            buttons.append(b)
+            seg.append(b)
+        buttons[0].set_active(True)
+        self.hid_kind = HIDDEN_KINDS[0][1]
+        for b, (_label, km) in zip(buttons, HIDDEN_KINDS):
+            b.connect("toggled", lambda b, km=km: b.get_active() and self.set_hidden_kind(km))
+        card.append(seg)
+
+        line = Gtk.Box()
+        self.hid_pass = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True, placeholder_text="Contraseña")
+        self.hid_pass.add_css_class("pass")
+        self.hid_pass.connect("activate", lambda e: self.connect_hidden())
+        ok = Gtk.Button(label="Conectar", valign=Gtk.Align.END)
+        for c in ("act", "primary", "pass-ok"):
+            ok.add_css_class(c)
+        ok.connect("clicked", lambda b: self.connect_hidden())
+        line.append(self.hid_pass)
+        line.append(ok)
+        card.append(line)
+        return card
+
+    def set_hidden_kind(self, km):
+        self.hid_kind = km
+        self.hid_pass.set_visible(km is not None)      # una red abierta no lleva clave
+
+    def build_share(self):
+        card, self.share_title = self.card("")
+        self.share_qr = self.qr_picture()
+        hint = Gtk.Label(label="Escanéalo con la cámara del móvil para unirte", xalign=0.5)
+        hint.add_css_class("hint")
+        self.share_pass_line, self.share_pass = self.secret_line()
+        card.append(self.share_qr)
+        card.append(hint)
+        card.append(self.share_pass_line)
+        return card
+
+    def build_hotspot(self):
+        card, self.hs_title = self.card("Compartir Wi-Fi")
+        self.hs_info = Gtk.Label(xalign=0, wrap=True, max_width_chars=44)
+        self.hs_info.add_css_class("hint")
+        self.hs_warn = Gtk.Label(xalign=0, wrap=True, max_width_chars=44)
+        self.hs_warn.add_css_class("warn")
+        self.hs_qr = self.qr_picture()
+        self.hs_pass_line, self.hs_pass = self.secret_line()
+        self.hs_btn = Gtk.Button(halign=Gtk.Align.END, margin_top=8)
+        self.hs_btn.add_css_class("act")
+        self.hs_btn.connect("clicked", lambda b: self.hs_action())
+        for w in (self.hs_info, self.hs_warn, self.hs_qr, self.hs_pass_line, self.hs_btn):
+            card.append(w)
+        self.hs_action = lambda: None
+        return card
+
+    def open_page(self, page):
+        self.page = page
+        for name, box in self.pages.items():
+            box.set_visible(name == page)
+        if page != "share":
+            # la clave no queda guardada en un widget oculto
+            self.share_pass.set_text("")
+            self.share_qr.set_from_paintable(None)
+        if page == "hidden":
+            # si ya había algo escrito, el foco no lo selecciona (la tecla siguiente lo borraba)
+            GLib.idle_add(lambda: self.hid_ssid.grab_focus_without_selecting() and False)
+        elif page == "hotspot":
+            self.hotspot_key = None
+            self.update_hotspot()
+
+    def set_qr(self, picture, text):
+        """Pone el QR de `text`; sin qrencode avisa y lo oculta en vez de fallar."""
+        try:
+            tex = qr_texture(text)
+        except (OSError, subprocess.SubprocessError, GLib.Error):
+            self.set_status("✘ No se pudo crear el QR", "err")
+            tex = None
+        else:
+            if tex is None:
+                self.set_status("Instala qrencode para compartir con QR (sudo pacman -S qrencode)", "err")
+        picture.set_from_paintable(tex)
+        if tex is not None:
+            picture.set_pixel_size(tex.get_width())     # a su tamaño: escalado, el QR se ve borroso
+        picture.set_visible(tex is not None)
+        return tex is not None
+
+    def copy(self, text):
+        if not text:
+            return
+        data = GLib.Bytes.new(text.encode())
+        providers = [Gdk.ContentProvider.new_for_bytes(m, data)
+                     for m in ("text/plain;charset=utf-8", "text/plain", "UTF8_STRING")]
+        # marca de contraseña: zen-clip (cliphist) no la guarda en el historial
+        providers.append(Gdk.ContentProvider.new_for_bytes("x-kde-passwordManagerHint", GLib.Bytes.new(b"secret")))
+        self.win.get_clipboard().set_content(Gdk.ContentProvider.new_union(providers))
+        self.set_status("✔ Copiada: se puede pegar hasta 1 min después de cerrar el panel", "ok")
+
     # ---------- NetworkManager ----------
     def queue_refresh(self):
         if self.win.get_visible() and not self.refresh_pending:
             self.refresh_pending = True
             GLib.timeout_add(200, self.refresh)
 
+    def wifi_conns(self):
+        # el perfil de punto de acceso no es una red a la que conectarse
+        return [c for c in self.client.get_connections()
+                if c.get_connection_type() == "802-11-wireless" and not conn_is_ap(c)]
+
     def saved_wifi(self):
-        return {conn_ssid(c): c for c in self.client.get_connections()
-                if c.get_connection_type() == "802-11-wireless"}
+        return {conn_ssid(c): c for c in self.wifi_conns()}
 
     def refresh(self):
         self.refresh_pending = False
@@ -278,20 +546,42 @@ class Panel:
             if ac.get_connection_type() == "802-11-wireless" and ac.get_connection():
                 active_ssid = conn_ssid(ac.get_connection())
         # la clave lleva lo mismo que se pinta (ícono de señal, %, IP): si no, la fila quedaba con datos viejos
-        key = tuple((ac.get_path(), ac.get_id(), self.active_info(ac)) for ac in actives)
-        if key != self.active_key:
+        key = (self.expanded, tuple((ac.get_path(), ac.get_id(), self.active_info(ac)) for ac in actives))
+        # con el menú de la red conectada abierto, la señal o la IP que cambian no lo rearman (se perdían la
+        # clave a la vista y los interruptores); sí lo hace que cambien las conexiones mismas
+        frozen = (self.menu_in == "active" and self.active_key is not None and key[0] == self.active_key[0]
+                  and [k[:2] for k in key[1]] == [k[:2] for k in self.active_key[1]])
+        if key != self.active_key and not frozen:
             self.active_key = key
+            if self.menu_in == "active":
+                self.menu_in = None
             self.clear(self.active_list)
             for ac in actives:
                 self.active_list.append(self.active_row(ac))
             if not actives:
                 self.empty(self.active_list, "Sin conexión")
 
+        # VPN y WireGuard guardadas que no están activas
+        active_uuids = {ac.get_uuid() for ac in self.client.get_active_connections()}
+        vpns = sorted((c for c in self.client.get_connections()
+                       if c.get_connection_type() in VPN_TYPES and c.get_uuid() not in active_uuids),
+                      key=lambda c: c.get_id().lower())
+        key = tuple((c.get_uuid(), c.get_id(), c.get_id() in self.busy) for c in vpns)
+        if key != self.vpn_key:
+            self.vpn_key = key
+            self.clear(self.vpn_list)
+            for c in vpns:
+                self.vpn_list.append(self.vpn_row(c))
+        self.vpn_head.set_visible(bool(vpns))
+        self.vpn_list.set_visible(bool(vpns))
+
         if not self.wifi:
             return False
         self.spinner.set_spinning(self.scanning)
         self.scan_btn.set_label("Detener" if self.scanning else "Buscar")
         self.scan_btn.set_sensitive(wifi_on)
+        if self.page == "hotspot":
+            self.update_hotspot()
 
         # mientras se escribe la contraseña no se rearma la lista: cada señal de NM (redes que
         # aparecen, escaneos) creaba un campo nuevo, se perdía lo escrito y el foco lo seleccionaba todo
@@ -306,14 +596,19 @@ class Panel:
                 best[ssid] = ap
         saved = self.saved_wifi()
         aps = sorted(best.values(), key=lambda a: (ap_ssid(a) not in saved, -a.get_strength()))
-        key = (wifi_on, self.scanning and not aps, self.asking, tuple(sorted(self.busy)), tuple(sorted(saved)),
-               tuple((ap_ssid(a), a.get_strength(), a.get_frequency()) for a in aps))
+        key = (wifi_on, self.scanning and not aps, (self.asking, self.expanded), tuple(sorted(self.busy)),
+               tuple(sorted(saved)), tuple((ap_ssid(a), a.get_strength(), a.get_frequency()) for a in aps))
+        # igual con el menú de una red abierto: solo lo rearma lo que pide el usuario (otro menú, conectar)
+        if wifi_on and self.menu_in == "avail" and self.avail_key and key[2:4] == self.avail_key[2:4]:
+            return False
         # buscando, las redes que aparecen no rearman la lista (se rearma una vez al terminar);
         # sí lo hace lo que pide el usuario: abrir el campo de contraseña, conectar, olvidar
         if key == self.avail_key or (self.scanning and self.avail_key and key[:5] == self.avail_key[:5]):
             return False
         self.avail_key = key
         self.pass_ssid = None
+        if self.menu_in == "avail":
+            self.menu_in = None
         self.clear(self.avail_list)
         if not wifi_on:
             self.empty(self.avail_list, "Wi-Fi apagado")
@@ -330,7 +625,9 @@ class Panel:
         dev = (ac.get_devices() or [None])[0]
         icon_text = TYPE_ICONS[ctype]
         sub = [TYPE_NAMES[ctype]]
-        if ctype == "802-11-wireless" and isinstance(dev, NM.DeviceWifi) and dev.get_active_access_point():
+        if conn_is_ap(ac.get_connection()):
+            icon_text, sub = "󰀂", ["Compartiendo Wi-Fi"]
+        elif ctype == "802-11-wireless" and isinstance(dev, NM.DeviceWifi) and dev.get_active_access_point():
             strength = dev.get_active_access_point().get_strength()
             icon_text = SIGNAL_ICONS[min(4, strength // 20)]
             sub.append(f"{strength}%")
@@ -344,32 +641,127 @@ class Panel:
                 sub.append(addrs[0].get_address())
         return icon_text, " · ".join(sub)
 
-    def active_row(self, ac):
-        icon_text, sub = self.active_info(ac)
-        row = Gtk.ListBoxRow()
-        row.add_css_class("dev")
-        row.add_css_class("connected")
-        box = Gtk.Box()
-
-        icon = Gtk.Label(label=icon_text)
-        icon.add_css_class("dev-icon")
+    def text_box(self, name, sub):
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
-        nl = Gtk.Label(label=ac.get_id(), xalign=0, ellipsize=3)
+        nl = Gtk.Label(label=name, xalign=0, ellipsize=3)
         nl.add_css_class("dev-name")
         sl = Gtk.Label(label=sub, xalign=0)
         sl.add_css_class("dev-sub")
         text.append(nl)
         text.append(sl)
-        box.append(icon)
-        box.append(text)
+        return text
 
-        btn = Gtk.Button(label="Desconectar", valign=Gtk.Align.CENTER)
+    def menu_button(self, conn):
+        btn = Gtk.Button(label="󰇙", valign=Gtk.Align.CENTER, tooltip_text="Opciones de la red")
+        btn.add_css_class("icon")
+        btn.add_css_class("copy")
+        btn.connect("clicked", lambda b: self.toggle_menu(conn.get_uuid()))
+        return btn
+
+    def active_row(self, ac):
+        icon_text, sub = self.active_info(ac)
+        row = Gtk.ListBoxRow()
+        row.add_css_class("dev")
+        row.add_css_class("connected")
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box = Gtk.Box()
+
+        icon = Gtk.Label(label=icon_text)
+        icon.add_css_class("dev-icon")
+        box.append(icon)
+        box.append(self.text_box(ac.get_id(), sub))
+
+        btn = Gtk.Button(label="Desconectar" if not conn_is_ap(ac.get_connection()) else "Apagar",
+                         valign=Gtk.Align.CENTER)
         btn.add_css_class("act")
         btn.connect("clicked", lambda b: self.disconnect(ac))
         box.append(btn)
+        outer.append(box)
+        # la red Wi-Fi conectada también tiene su menú: es la que más se comparte
+        conn = ac.get_connection()
+        if conn and ac.get_connection_type() == "802-11-wireless" and not conn_is_ap(conn):
+            box.append(self.menu_button(conn))
+            if conn.get_uuid() == self.expanded:
+                outer.append(self.saved_menu(conn, conn_ssid(conn), forget=False))
+                self.menu_in = "active"
+                row.set_activatable(False)
         row.activate_action = lambda: None
+        row.set_child(outer)
+        return row
+
+    def vpn_row(self, conn):
+        ctype, name = conn.get_connection_type(), conn.get_id()
+        row = Gtk.ListBoxRow()
+        row.add_css_class("dev")
+        row.add_css_class("saved")
+        box = Gtk.Box()
+        icon = Gtk.Label(label=TYPE_ICONS[ctype])
+        icon.add_css_class("dev-icon")
+        box.append(icon)
+        box.append(self.text_box(name, TYPE_NAMES[ctype]))
+        if name in self.busy:
+            box.append(Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER, margin_end=6))
+            row.activate_action = lambda: None
+        else:
+            btn = Gtk.Button(label="Conectar", valign=Gtk.Align.CENTER)
+            btn.add_css_class("act")
+            btn.add_css_class("primary")
+            btn.connect("clicked", lambda b: self.connect_vpn(conn))
+            box.append(btn)
+            row.activate_action = lambda: self.connect_vpn(conn)
         row.set_child(box)
         return row
+
+    def saved_menu(self, conn, ssid, forget=True):
+        """Menú de una red guardada: conectar sola, preferida, ver la clave, QR, olvidar."""
+        menu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        menu.add_css_class("menu")
+        s_con = conn.get_setting_connection()
+        auto = self.menu_switch(menu, "Conectar automáticamente", s_con.get_autoconnect())
+        pref = self.menu_switch(menu, "Preferida", self.is_preferred(conn),
+                                "Si hay varias guardadas a la vista, se conecta a esta primero")
+        auto.connect("notify::active", lambda sw, _: self.quiet or self.on_auto(conn, ssid, auto, pref))
+        pref.connect("notify::active", lambda sw, _: self.quiet or self.on_pref(conn, ssid, auto, pref))
+
+        sec = conn.get_setting_wireless_security()
+        km = sec.get_key_mgmt() if sec else None
+        # empresarial (802.1X) no tiene una clave que mostrar ni un QR que sirva
+        shareable = sec is None or km in ("wpa-psk", "sae", "none")
+        btns = Gtk.Box(spacing=6, margin_top=6)
+        pass_line, entry = self.secret_line()
+        pass_line.set_visible(False)
+        if sec is not None and shareable:
+            show = Gtk.Button(label="Contraseña")
+            show.add_css_class("act")
+            show.connect("clicked", lambda b: self.reveal(conn, ssid, pass_line, entry))
+            btns.append(show)
+        if shareable:
+            qr = Gtk.Button(label="QR", tooltip_text="Compartir con un código QR")
+            qr.add_css_class("act")
+            qr.connect("clicked", lambda b: self.share(conn, ssid))
+            btns.append(qr)
+        if forget:
+            btns.append(Gtk.Box(hexpand=True))
+            fb = Gtk.Button(label="Olvidar")
+            fb.add_css_class("act")
+            fb.add_css_class("danger")
+            fb.connect("clicked", lambda b: self.forget(conn, ssid))
+            btns.append(fb)
+        if btns.get_first_child():
+            menu.append(btns)
+        menu.append(pass_line)
+        return menu
+
+    def menu_switch(self, menu, text, active, tooltip=None):
+        line = Gtk.Box()
+        line.add_css_class("menu-line")
+        lbl = Gtk.Label(label=text, xalign=0, hexpand=True, tooltip_text=tooltip)
+        lbl.add_css_class("menu-label")
+        sw = Gtk.Switch(active=active, valign=Gtk.Align.CENTER)
+        line.append(lbl)
+        line.append(sw)
+        menu.append(line)
+        return sw
 
     def ap_row(self, ap, saved_conn):
         ssid = ap_ssid(ap)
@@ -429,11 +821,13 @@ class Panel:
                 btn.connect("clicked", lambda b: action())
                 box.append(btn)
             if saved_conn:
-                forget = Gtk.Button(label="󰆴", valign=Gtk.Align.CENTER, tooltip_text="Olvidar red")
-                forget.add_css_class("icon")
-                forget.connect("clicked", lambda b: self.forget(saved_conn, ssid))
-                box.append(forget)
+                # un solo botón por red guardada: olvidar, la clave, el QR… van en su menú
+                box.append(self.menu_button(saved_conn))
         outer.append(box)
+        menu = bool(saved_conn) and not busy and saved_conn.get_uuid() == self.expanded
+        if menu:
+            outer.append(self.saved_menu(saved_conn, ssid))
+            self.menu_in = "avail"
 
         if asking and not busy:
             line = Gtk.Box()
@@ -455,7 +849,7 @@ class Panel:
             GLib.idle_add(lambda: entry.grab_focus() and False)
 
         row.activate_action = action or (lambda: None)
-        if asking:
+        if asking or menu:
             # un clic en el campo (borde, ojo) activaba la fila: cerraba el campo y borraba lo escrito
             row.set_activatable(False)
         row.set_child(outer)
@@ -464,10 +858,11 @@ class Panel:
     # ---------- acciones ----------
     def ask_password(self, ssid):
         self.asking = None if self.asking == ssid else ssid
+        self.expanded = None
         self.set_status("")
         self.refresh()
 
-    def watch(self, ac, ssid, new_conn=None, can_ask=True):
+    def watch(self, ac, ssid, new_conn=None, can_ask=True, ok_msg=None, on_ok=None):
         """Sigue la activación hasta que conecta o falla. Un perfil sin guardar pasa al disco solo al
         conectar; si falla, el perfil nuevo se borra (no queda guardado con la clave mala)."""
         conn = new_conn or ac.get_connection()
@@ -479,7 +874,9 @@ class Panel:
             if handler:
                 ac.disconnect(handler.pop())
             if state == ACState.ACTIVATED:
-                self.set_status(f"✔ Conectado a {ssid}", "ok")
+                self.set_status(ok_msg or f"✔ Conectado a {ssid}", "ok")
+                if on_ok:
+                    on_ok()
                 if conn and conn.get_unsaved():
                     conn.save_async(None, lambda c, res: self.settled(ssid, c.save_finish, res))
                     return
@@ -511,28 +908,27 @@ class Panel:
                 self.set_status(f"✘ {ssid}: {e.message}", "err")
         self.busy.discard(ssid)
         self.queue_refresh()
-        if self.closing and not self.busy:
-            self.app.quit()
+        self.quit_if_done()
 
     def fail(self, ssid, e):
         self.set_status(f"✘ No se pudo conectar a {ssid} ({e.message})", "err")
         self.settled(ssid)
 
-    def activated(self, ssid, can_ask=True):
+    def activated(self, ssid, can_ask=True, **kw):
         """Callback de activate_connection_async: sigue la activación del perfil guardado."""
         def done(client, res):
             try:
-                self.watch(client.activate_connection_finish(res), ssid, can_ask=can_ask)
+                self.watch(client.activate_connection_finish(res), ssid, can_ask=can_ask, **kw)
             except GLib.Error as e:
                 self.fail(ssid, e)
         return done
 
-    def added(self, ssid):
+    def added(self, ssid, **kw):
         """Callback de add_and_activate_connection2: sigue la activación del perfil nuevo (en memoria)."""
         def done(client, res):
             try:
                 ac, _ = client.add_and_activate_connection2_finish(res)
-                self.watch(ac, ssid, new_conn=ac.get_connection())
+                self.watch(ac, ssid, new_conn=ac.get_connection(), **kw)
             except GLib.Error as e:
                 self.fail(ssid, e)
         return done
@@ -541,7 +937,7 @@ class Panel:
         ssid = ap_ssid(ap)
         _, key_mgmt, supported = security(ap)
         self.busy.add(ssid)
-        self.asking = None
+        self.asking = self.expanded = None
         self.set_status(f"Conectando a {ssid}…")
         self.refresh()
         if saved_conn:
@@ -562,14 +958,7 @@ class Panel:
             self.set_status("Escribe la contraseña", "err")
             return
         conn = NM.SimpleConnection.new_clone(saved_conn) if saved_conn else NM.SimpleConnection.new()
-        sec = conn.get_setting_wireless_security()
-        if sec is None:
-            sec = NM.SettingWirelessSecurity.new()
-            conn.add_setting(sec)
-        sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, key_mgmt)
-        sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK, password)
-        # la clave la guarda NM (sin esto, un perfil con clave "del agente" la volvía a pedir y fallaba)
-        sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK_FLAGS, NM.SettingSecretFlags.NONE)
+        set_security(conn, key_mgmt, password)
         self.busy.add(ssid)
         self.asking = None
         self.set_status(f"Conectando a {ssid}…")
@@ -582,17 +971,322 @@ class Panel:
 
         # ya hay un perfil para esta red (falló su clave): se le cambia la clave, en memoria hasta que
         # conecte, en vez de crear un duplicado
+        self.update_and_activate(saved_conn, conn, ssid, ap.get_path())
+
+    def update_and_activate(self, saved_conn, conn, ssid, ap_path, **kw):
         def updated(c, res):
             try:
                 c.update2_finish(res)
             except GLib.Error as e:
                 self.fail(ssid, e)
                 return
-            self.client.activate_connection_async(c, self.wifi, ap.get_path(), None, self.activated(ssid))
+            self.client.activate_connection_async(c, self.wifi, ap_path, None, self.activated(ssid, **kw))
 
         saved_conn.update2(conn.to_dbus(NM.ConnectionSerializationFlags.ALL), NM.SettingsUpdate2Flags.IN_MEMORY,
                            None, None, updated)
 
+    # ---------- red guardada: menú ----------
+    def toggle_menu(self, uuid):
+        self.expanded = None if self.expanded == uuid else uuid
+        self.asking = None
+        self.set_status("")
+        self.refresh()
+
+    def quiet_set(self, sw, value):
+        self.quiet = True
+        sw.set_active(value)
+        self.quiet = False
+
+    def priority(self, conn):
+        return conn.get_setting_connection().get_autoconnect_priority()
+
+    def is_preferred(self, conn):
+        others = [self.priority(c) for c in self.wifi_conns() if c.get_uuid() != conn.get_uuid()]
+        return self.priority(conn) > 0 and self.priority(conn) >= max(others, default=0)
+
+    def on_auto(self, conn, ssid, auto, pref):
+        on = auto.get_active()
+        changes = {NM.SETTING_CONNECTION_AUTOCONNECT: on}
+        if not on and pref.get_active():
+            # sin conectarse sola, ser la preferida no significa nada
+            changes[NM.SETTING_CONNECTION_AUTOCONNECT_PRIORITY] = 0
+            self.quiet_set(pref, False)
+        self.commit(conn, ssid, changes, auto, pref)
+
+    def on_pref(self, conn, ssid, auto, pref):
+        on = pref.get_active()
+        others = [self.priority(c) for c in self.wifi_conns() if c.get_uuid() != conn.get_uuid()]
+        # preferida = la de prioridad más alta; quitarla la deja como las demás (0, lo normal en NM)
+        prio = min(999, max(others, default=0) + 1) if on else 0
+        changes = {NM.SETTING_CONNECTION_AUTOCONNECT_PRIORITY: prio}
+        if on and not auto.get_active():
+            changes[NM.SETTING_CONNECTION_AUTOCONNECT] = True
+            self.quiet_set(auto, True)
+        self.commit(conn, ssid, changes, auto, pref)
+
+    def commit(self, conn, ssid, changes, auto, pref):
+        """Guarda en disco el cambio del menú. NM conserva la clave guardada si el cambio no la trae."""
+        s_con = conn.get_setting_connection()
+        old = {k: s_con.get_property(k) for k in changes}
+        for k, v in changes.items():
+            s_con.set_property(k, v)
+
+        def done(c, res):
+            try:
+                c.commit_changes_finish(res)
+                self.set_status(f"✔ {ssid}: guardado", "ok")
+            except GLib.Error as e:
+                for k, v in old.items():
+                    s_con.set_property(k, v)
+                self.quiet_set(auto, s_con.get_autoconnect())      # los interruptores vuelven a lo real
+                self.quiet_set(pref, self.is_preferred(conn))
+                self.set_status(f"✘ No se pudo guardar {ssid} ({e.message})", "err")
+
+        conn.commit_changes_async(True, None, done)
+
+    def fetch_secrets(self, conn, ssid, done):
+        """done(secretos de Wi-Fi tal como los da NM, o None si la red es abierta). Si NM no los da, avisa."""
+        if conn.get_setting_wireless_security() is None:
+            done(None)
+            return
+
+        def got(c, res):
+            try:
+                found = c.get_secrets_finish(res)
+            except GLib.Error as e:
+                self.set_status(f"✘ No se pudo leer la clave de {ssid} ({e.message})", "err")
+                return
+            done(found)
+
+        conn.get_secrets_async(SEC, None, got)
+
+    def reveal(self, conn, ssid, line, entry):
+        if line.get_visible():
+            entry.set_text("")
+            line.set_visible(False)
+            return
+
+        def show(found):
+            pw = secret_text(found)
+            if not pw:
+                # clave "del agente" (llavero) o que se pide cada vez: NM no la tiene
+                self.set_status(f"NetworkManager no guarda la clave de {ssid}", "err")
+                return
+            entry.set_text(pw)
+            line.set_visible(True)
+            # una sola vez (ver ap_row) y sin seleccionar: así no se borra con la primera tecla
+            GLib.idle_add(lambda: entry.grab_focus_without_selecting() and False)
+
+        self.fetch_secrets(conn, ssid, show)
+
+    def share(self, conn, ssid):
+        if not shutil.which("qrencode"):
+            self.set_status("Instala qrencode para compartir con QR (sudo pacman -S qrencode)", "err")
+            return
+
+        def show(found):
+            pw = secret_text(found)
+            if found is not None and not pw:
+                self.set_status(f"NetworkManager no guarda la clave de {ssid}", "err")
+                return
+            if not self.set_qr(self.share_qr, wifi_qr_text(conn, ssid, pw)):
+                return
+            self.share_title.set_label(ssid)
+            self.share_pass.set_text(pw)
+            self.share_pass_line.set_visible(bool(pw))
+            self.set_status("")
+            self.open_page("share")
+
+        self.fetch_secrets(conn, ssid, show)
+
+    # ---------- VPN ----------
+    def connect_vpn(self, conn):
+        name = conn.get_id()
+        if name in self.busy:
+            return
+        self.busy.add(name)
+        self.set_status(f"Conectando a {name}…")
+        self.refresh()
+        # sin dispositivo: NM elige por dónde sale la VPN; las credenciales malas se arreglan en nmtui
+        self.client.activate_connection_async(conn, None, None, None, self.activated(name, can_ask=False))
+
+    # ---------- red oculta ----------
+    def connect_hidden(self):
+        ssid = self.hid_ssid.get_text().strip()
+        km = self.hid_kind
+        password = self.hid_pass.get_text() if km else ""
+        if not ssid:
+            self.set_status("Escribe el nombre de la red", "err")
+            return
+        if len(ssid.encode()) > 32:
+            self.set_status("El nombre de una red Wi-Fi tiene como mucho 32 bytes", "err")
+            return
+        if km == "wpa-psk" and len(password) < 8:
+            self.set_status("La contraseña Wi-Fi tiene al menos 8 caracteres", "err")
+            return
+        if km and not password:
+            self.set_status("Escribe la contraseña", "err")
+            return
+        if ssid in self.busy:
+            return
+
+        def done():
+            self.hid_ssid.set_text("")
+            self.hid_pass.set_text("")
+            if self.page == "hidden":
+                self.open_page(None)
+
+        saved = self.saved_wifi().get(ssid)
+        conn = NM.SimpleConnection.new_clone(saved) if saved else NM.SimpleConnection.new()
+        if not saved:
+            s_con = NM.SettingConnection.new()
+            s_con.set_property(NM.SETTING_CONNECTION_ID, ssid)
+            s_con.set_property(NM.SETTING_CONNECTION_UUID, NM.utils_uuid_generate())
+            s_con.set_property(NM.SETTING_CONNECTION_TYPE, "802-11-wireless")
+            conn.add_setting(s_con)
+            s_wifi = NM.SettingWireless.new()
+            s_wifi.set_property(NM.SETTING_WIRELESS_SSID, GLib.Bytes.new(ssid.encode()))
+            conn.add_setting(s_wifi)
+        # oculta: NM la busca por su nombre (no aparece en los escaneos)
+        conn.get_setting_wireless().set_property(NM.SETTING_WIRELESS_HIDDEN, True)
+        set_security(conn, km, password)
+        self.busy.add(ssid)
+        self.set_status(f"Conectando a {ssid}…")
+        if saved:
+            # ya estaba guardada (no sale en la lista por ser oculta): se le cambia la clave en vez de duplicarla
+            self.update_and_activate(saved, conn, ssid, None, on_ok=done)
+        else:
+            # igual que una red nueva de la lista: en memoria hasta que conecte
+            self.client.add_and_activate_connection2(conn, self.wifi, None, IN_MEMORY, None,
+                                                     self.added(ssid, on_ok=done))
+
+    # ---------- compartir Wi-Fi (punto de acceso) ----------
+    def hotspot_profile(self):
+        aps = [c for c in self.client.get_connections() if conn_is_ap(c)]
+        return next((c for c in aps if c.get_id() == HOTSPOT_ID), aps[0] if aps else None)
+
+    def hotspot_active(self):
+        return next((ac for ac in self.client.get_active_connections() if conn_is_ap(ac.get_connection())), None)
+
+    def update_hotspot(self):
+        """Pinta la tarjeta de compartir según el estado; solo cuando ese estado cambia."""
+        ac = self.hotspot_active()
+        prof = ac.get_connection() if ac else self.hotspot_profile()
+        ssid = conn_ssid(prof) if prof else self.hotspot_ssid()
+        on = ac is not None and ac.get_state() == ACState.ACTIVATED
+        station = next((a for a in self.client.get_active_connections()
+                        if a.get_connection_type() == "802-11-wireless" and not conn_is_ap(a.get_connection())
+                        and self.wifi in (a.get_devices() or [])), None)
+        wifi_on = self.client.wireless_get_enabled()
+        pw = self.hotspot_pw.get(prof.get_uuid()) if prof else None
+        key = (ac.get_path() if ac else None, on, ssid in self.busy, wifi_on, station and station.get_id(), pw)
+        if key == self.hotspot_key:
+            return
+        self.hotspot_key = key
+        self.hs_title.set_label(f"Compartiendo «{ssid}»" if on else "Compartir Wi-Fi")
+        self.hs_warn.set_visible(False)
+        self.hs_qr.set_visible(False)
+        self.hs_pass_line.set_visible(False)
+        self.hs_btn.remove_css_class("primary")
+        self.hs_btn.set_sensitive(True)
+
+        if on:
+            self.hs_info.set_label("Escanea el QR desde el móvil o escribe la clave.")
+            self.hs_btn.set_label("Apagar")
+            self.hs_action = lambda: self.disconnect(ac)
+            if pw is None:
+                # perfil que ya existía: la clave se lee una vez y queda para los repintados
+                def got(found):
+                    self.hotspot_pw[prof.get_uuid()] = secret_text(found)
+                    self.update_hotspot()
+                self.fetch_secrets(prof, ssid, got)
+                return
+            self.hs_pass.set_text(pw)
+            self.hs_pass_line.set_visible(bool(pw))
+            if shutil.which("qrencode"):
+                self.set_qr(self.hs_qr, wifi_qr_text(prof, ssid, pw))
+            return
+
+        self.hs_btn.set_label("Compartir")
+        self.hs_action = self.start_hotspot
+        problem = None
+        if ac or ssid in self.busy:
+            problem = f"Creando «{ssid}»…"
+        elif not wifi_on:
+            problem = "Enciende el Wi-Fi para compartirlo."
+        elif not self.wifi.get_capabilities() & NM.DeviceWifiCapabilities.AP:
+            problem = "Esta tarjeta Wi-Fi no puede crear un punto de acceso."
+        elif not shutil.which("dnsmasq"):
+            # el modo «compartido» de NM usa dnsmasq para dar dirección a quien se conecta
+            problem = "Instala dnsmasq para compartir Wi-Fi (sudo pacman -S dnsmasq)."
+        if problem:
+            self.hs_info.set_label(problem)
+            self.hs_btn.set_sensitive(False)
+            return
+        self.hs_info.set_label(f"Crea la red «{ssid}» (WPA2, 2,4 GHz) para que otros equipos usen tu conexión.")
+        self.hs_btn.add_css_class("primary")
+        if station:
+            # NM usa la tarjeta para una sola cosa a la vez: recibir Wi-Fi o darlo
+            self.hs_warn.set_label(f"Se desconectará de «{station.get_id()}»: esta tarjeta no puede recibir y "
+                                   "dar Wi-Fi a la vez. Solo se comparte Internet que llegue por cable u otra vía.")
+            self.hs_warn.set_visible(True)
+
+    def hotspot_ssid(self):
+        return (socket.gethostname() or "zen")[:32]
+
+    def start_hotspot(self):
+        prof = self.hotspot_profile()
+        if prof:
+            ssid = conn_ssid(prof)
+        else:
+            ssid = self.hotspot_ssid()
+        if ssid in self.busy:
+            return
+        self.busy.add(ssid)
+        self.set_status(f"Creando «{ssid}»…")
+        msg = f"✔ Compartiendo Wi-Fi como «{ssid}»"
+        if prof:
+            # se reutiliza el perfil (misma clave que ya conocen los demás equipos)
+            self.client.activate_connection_async(prof, self.wifi, None, None,
+                                                  self.activated(ssid, can_ask=False, ok_msg=msg))
+        else:
+            pw = "".join(secrets.choice(HOTSPOT_CHARS) for _ in range(12))
+            conn = self.hotspot_connection(ssid, pw)
+            self.hotspot_pw[conn.get_uuid()] = pw
+            # en memoria hasta que funcione, como las redes nuevas: si falla no queda un perfil roto
+            self.client.add_and_activate_connection2(conn, self.wifi, None, IN_MEMORY, None,
+                                                     self.added(ssid, can_ask=False, ok_msg=msg))
+        self.update_hotspot()
+
+    def hotspot_connection(self, ssid, password):
+        conn = NM.SimpleConnection.new()
+        s_con = NM.SettingConnection.new()
+        s_con.set_property(NM.SETTING_CONNECTION_ID, HOTSPOT_ID)
+        s_con.set_property(NM.SETTING_CONNECTION_UUID, NM.utils_uuid_generate())
+        s_con.set_property(NM.SETTING_CONNECTION_TYPE, "802-11-wireless")
+        s_con.set_property(NM.SETTING_CONNECTION_AUTOCONNECT, False)     # solo cuando se pide
+        s_wifi = NM.SettingWireless.new()
+        s_wifi.set_property(NM.SETTING_WIRELESS_SSID, GLib.Bytes.new(ssid.encode()))
+        s_wifi.set_property(NM.SETTING_WIRELESS_MODE, NM.SETTING_WIRELESS_MODE_AP)
+        # 2,4 GHz: cualquier equipo la ve, y muchas tarjetas (Intel) no pueden emitir en 5 GHz (no-IR)
+        s_wifi.set_property(NM.SETTING_WIRELESS_BAND, "bg")
+        sec = NM.SettingWirelessSecurity.new()
+        sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, "wpa-psk")
+        sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK, password)
+        sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK_FLAGS, NM.SettingSecretFlags.NONE)
+        # solo WPA2 (RSN + CCMP): WPA1/TKIP es inseguro y algunos móviles lo rechazan
+        sec.add_proto("rsn")
+        sec.add_pairwise("ccmp")
+        sec.add_group("ccmp")
+        ip4 = NM.SettingIP4Config.new()
+        ip4.set_property(NM.SETTING_IP_CONFIG_METHOD, NM.SETTING_IP4_CONFIG_METHOD_SHARED)
+        ip6 = NM.SettingIP6Config.new()
+        ip6.set_property(NM.SETTING_IP_CONFIG_METHOD, NM.SETTING_IP6_CONFIG_METHOD_IGNORE)
+        for s in (s_con, s_wifi, sec, ip4, ip6):
+            conn.add_setting(s)
+        return conn
+
+    # ---------- conexiones ----------
     def disconnect(self, ac):
         name = ac.get_id()
 
@@ -611,6 +1305,8 @@ class Panel:
             try:
                 c.delete_finish(res)
                 self.set_status(f"{ssid} olvidada")
+                if self.expanded == c.get_uuid():
+                    self.expanded = None
             except GLib.Error as e:
                 self.set_status(f"✘ No se pudo olvidar {ssid} ({e.message})", "err")
             self.queue_refresh()
@@ -684,15 +1380,25 @@ class Panel:
             self.closing = None
             zen_panel.write_pidfile(NAME)
         self.set_status("")
-        self.asking = None
+        self.asking = self.expanded = None
+        self.open_page(None)
         self.refresh()
         self.win.present()
         self.scan()
 
+    def holding_clipboard(self):
+        # en Wayland lo copiado lo sirve este proceso: si sale, la clave copiada ya no se puede pegar
+        return self.win.get_clipboard().is_local()
+
+    def quit_if_done(self):
+        if self.closing and not self.busy and not self.holding_clipboard():
+            self.app.quit()
+
     def hide(self):
         # Esc, Super+C u otro clic: se cierra, no queda oculto. Con una conexión en curso se espera a que
-        # termine (hasta 60 s) para guardar o borrar su perfil; sin pidfile, zen-toggle no lo ve abierto
-        if not self.busy:
+        # termine (hasta 60 s) para guardar o borrar su perfil, y con una clave copiada a que otro copie
+        # algo (o 60 s) para que se pueda pegar; sin pidfile, zen-toggle no lo ve abierto
+        if not self.busy and not self.holding_clipboard():
             self.app.quit()
             return
         if not self.closing:
