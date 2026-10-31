@@ -2,10 +2,13 @@
 """zen-audio — panel de sonido debajo de la barra (mismo estilo que zen-bluetooth y zen-calendar).
 
 Clic en el volumen de waybar lo abre; otro clic (o Esc) lo cierra.
-Volumen y silencio de la salida y del micrófono, elegir el dispositivo de cada uno
-y el volumen de cada aplicación. Habla con PipeWire a través de pactl.
+Volumen y silencio de la salida y del micrófono, elegir el dispositivo de cada uno, el perfil de
+cada tarjeta y el volumen y la salida de cada aplicación. Habla con PipeWire a través de pactl.
+Rueda sobre un slider: ±5 %. Clic en el icono o clic central en el slider: silenciar.
+Con el panel abierto, ↑/↓ cambian la salida por defecto un 5 % y M la silencia.
 """
 import json
+import re
 import os
 import subprocess
 import sys
@@ -89,9 +92,31 @@ row.dev.unplugged .dev-name { color: #616e88; }
 
 /* aplicaciones: una línea con icono, nombre y slider */
 .app { padding: 3px 0; }
-.app-icon { margin: 0 6px 0 6px; }
 .app-name { font-weight: 600; color: #d8dee9; font-size: 12px; min-width: 86px; }
+.app button.mute { padding: 2px 4px; margin-right: 4px; }
+.vol.app.muted button.mute image { opacity: 0.35; }
 scrolledwindow { background: transparent; }
+
+/* selectores (perfil de la tarjeta, salida de cada app): texto plano con flecha, sin caja */
+dropdown.choice > button {
+    background: transparent; border: none; box-shadow: none; border-radius: 6px;
+    padding: 1px 4px; min-height: 0; color: #88c0d0; font-size: 11px; font-weight: 600;
+}
+dropdown.choice > button:hover { background: #2e3440; }
+dropdown.choice > button:focus-visible { box-shadow: inset 0 0 0 1px #434c5e; outline: none; }
+dropdown.choice > button:disabled { color: #616e88; }
+dropdown.choice arrow { -gtk-icon-size: 10px; min-width: 10px; min-height: 10px; color: #616e88; margin-left: 2px; }
+.app dropdown.choice > button { color: #616e88; padding: 0 2px; }
+.app dropdown.choice > button:hover { color: #d8dee9; }
+dropdown.choice popover contents {
+    background: #1e222a; border: 1px solid #292e42; border-radius: 10px; padding: 4px; box-shadow: none;
+}
+dropdown.choice popover listview { background: transparent; }
+dropdown.choice popover row { border-radius: 6px; padding: 4px 8px; color: #d8dee9; font-size: 12px; }
+dropdown.choice popover row:hover, dropdown.choice popover row:selected { background: #2e3440; }
+row.profile { padding: 2px 8px; }
+row.profile:hover { background: transparent; }
+.profile .dev-name { font-size: 12px; }
 """
 
 
@@ -221,31 +246,174 @@ def choose_output(out, done):
     threading.Thread(target=run, daemon=True).start()
 
 
-class VolumeCard:
-    """Tarjeta con botón de silencio, slider y porcentaje. kind: 'sink', 'source' o 'sink-input'."""
+def pactl_then(args, done):
+    """pactl en un hilo y luego done() en el hilo de GTK (cambio de perfil, mover una app)."""
+    def run():
+        try:
+            pactl_run(*args)
+        finally:
+            GLib.idle_add(done)
+    threading.Thread(target=run, daemon=True).start()
 
-    def __init__(self, kind, icon_on, icon_off, extra_class=None, lead=None):
-        self.kind, self.icon_on, self.icon_off = kind, icon_on, icon_off
+
+CODECS = {"sbc": "SBC", "sbc_xq": "SBC-XQ", "aac": "AAC", "aac_eld": "AAC-ELD", "aptx": "aptX",
+          "aptx_hd": "aptX HD", "aptx_ll": "aptX LL", "ldac": "LDAC", "lc3": "LC3", "lc3plus_h3": "LC3plus",
+          "opus_05": "Opus", "opus_g": "Opus", "msbc": "mSBC", "cvsd": "CVSD", "lc3_swb": "LC3-SWB"}
+LAYOUTS = {"stereo": "estéreo", "mono": "mono", "surround": "5.1", "surround71": "7.1", "surround-21": "2.1",
+           "surround-40": "4.0", "surround-41": "4.1", "surround-50": "5.0", "surround-51": "5.1",
+           "surround-71": "7.1", "ac3-surround-51": "5.1 (AC3)", "dts-surround-51": "5.1 (DTS)"}
+
+
+def profile_label(key, desc):
+    """Nombre corto en español: "Alta calidad · AAC", "Con micrófono", "HDMI 5.1", "Analógico estéreo"…"""
+    for pre, name in (("a2dp-sink", "Alta calidad"), ("headset-head-unit", "Con micrófono"),
+                      ("bap-sink", "Alta calidad (LE)"), ("bap-duplex", "Con micrófono (LE)")):
+        if key == pre or key.startswith(pre + "-"):
+            codec = key[len(pre) + 1:]
+            return f"{name} · {CODECS.get(codec, codec.upper())}" if codec else name
+    if key == "off":
+        return "Apagado"
+    if key == "pro-audio":
+        return "Pro Audio"
+    out = key.split("+", 1)[0]
+    if out.startswith("input:"):
+        return "Solo micrófono"
+    if out.startswith("output:"):
+        name = out[len("output:"):]
+        extra = re.search(r"-extra(\d+)$", name)       # hdmi-stereo-extra1 es el segundo HDMI
+        base = name[:extra.start()] if extra else name
+        kind, _, layout = base.partition("-")
+        dev = {"analog": "Analógico", "hdmi": "HDMI", "iec958": "Digital S/PDIF"}.get(kind)
+        if dev:
+            return f"{dev}{f' {int(extra.group(1)) + 1}' if extra else ''} {LAYOUTS.get(layout, layout)}"
+    return desc or key
+
+
+def card_profiles(card):
+    """[(perfil, nombre)] que vale la pena ofrecer en el selector, el más prioritario primero.
+
+    Solo disponibles y con salida (el panel es de sonido: "solo micrófono" o "apagado" no se ofrecen),
+    sin pro-audio, y de "salida" y "salida+micrófono" de lo mismo queda la que conserva el micrófono.
+    El perfil activo siempre está, aunque no cumpla: el selector debe mostrar lo que hay.
+    """
+    profs = card.get("profiles", {})
+    active = card.get("active_profile", "")
+    ok = {k for k, p in profs.items() if p.get("available") and p.get("sinks", 0) > 0 and k != "pro-audio"}
+    ok = {k for k in ok if "+" in k or not any(o.startswith(k + "+") for o in ok)}
+    if active in profs:
+        ok.add(active)
+    order = sorted(ok, key=lambda k: -profs[k].get("priority", 0))
+    labels = [profile_label(k, profs[k].get("description", "")) for k in order]
+    # dos con el mismo nombre corto (p. ej. HDMI con distintas entradas): el de PipeWire los distingue
+    labels = [profs[k].get("description") or k if labels.count(lb) > 1 else lb for k, lb in zip(order, labels)]
+    return list(zip(order, labels)), active
+
+
+class Choice:
+    """Gtk.DropDown que el refresco actualiza sin recrearlo y sin disparar su acción.
+
+    on_pick(clave, done) se llama solo cuando elige el usuario; mientras no se llame a done()
+    el refresco no mueve la selección (lo leído aún es lo de antes del cambio).
+    """
+
+    def __init__(self, on_pick, tooltip=None, max_chars=16):
+        self.keys, self.labels, self.busy, self.on_pick = [], [], False, on_pick
+        self.model = Gtk.StringList()
+        self.dd = Gtk.DropDown(model=self.model, valign=Gtk.Align.CENTER, tooltip_text=tooltip)
+        self.dd.add_css_class("choice")
+        self.dd.set_factory(self.factory(max_chars))     # el botón, recortado
+        self.dd.set_list_factory(self.factory(None))      # la lista desplegada, entera
+        self.handler = self.dd.connect("notify::selected", self.on_selected)
+
+    @staticmethod
+    def factory(max_chars):
+        f = Gtk.SignalListItemFactory()
+
+        def setup(_, item):
+            lbl = Gtk.Label(xalign=0)
+            if max_chars:
+                lbl.set_ellipsize(3)
+                lbl.set_max_width_chars(max_chars)
+            item.set_child(lbl)
+        f.connect("setup", setup)
+        f.connect("bind", lambda _, item: item.get_child().set_label(item.get_item().get_string()))
+        return f
+
+    def set(self, options, current):
+        keys, labels = [k for k, _ in options], [lb for _, lb in options]
+        changed = keys != self.keys or labels != self.labels
+        if not changed and (self.busy or self.selected_key() == current):
+            return                       # nada que tocar: ni siquiera el modelo
+        self.dd.handler_block(self.handler)
+        try:
+            if changed:
+                self.model.splice(0, self.model.get_n_items(), labels)
+                self.keys, self.labels = keys, labels
+            pos = keys.index(current) if current in keys else Gtk.INVALID_LIST_POSITION
+            if self.dd.get_selected() != pos:
+                self.dd.set_selected(pos)
+        finally:
+            self.dd.handler_unblock(self.handler)
+
+    def selected_key(self):
+        pos = self.dd.get_selected()
+        return self.keys[pos] if pos < len(self.keys) else None
+
+    def on_selected(self, *_):
+        key = self.selected_key()
+        if key is None:
+            return
+        self.busy = True
+        self.dd.set_sensitive(False)
+        self.on_pick(key, self.done)
+
+    def done(self):
+        self.busy = False
+        self.dd.set_sensitive(True)
+        return False
+
+
+class VolumeCard:
+    """Tarjeta con botón de silencio, slider y porcentaje. kind: 'sink', 'source' o 'sink-input'.
+
+    El icono es el botón de silencio (icon: un widget propio, p. ej. el de la app, en vez del glifo);
+    lead va entre el icono y el slider. Rueda: ±5 %; clic central en el slider: silenciar.
+    """
+
+    STEP = 5
+
+    def __init__(self, kind, icon_on, icon_off, extra_class=None, lead=None, icon=None):
+        self.kind, self.icon_on, self.icon_off, self.icon = kind, icon_on, icon_off, icon
         self.target, self.muted, self.updating = None, False, False
         self.touched = 0.0       # último movimiento del usuario: no pisar su arrastre
         self.pending, self.busy = None, False
+        self.wheel = 0.0         # pasos de rueda a medias (touchpad, ruedas de alta resolución)
         self.box = row = Gtk.Box()
         self.box.add_css_class("vol")
         if extra_class:
             self.box.add_css_class(extra_class)
-        for w in lead or []:
-            row.append(w)
         self.mute_btn = Gtk.Button(valign=Gtk.Align.CENTER, tooltip_text="Silenciar")
         self.mute_btn.add_css_class("mute")
+        if icon:
+            self.mute_btn.set_child(icon)
         self.mute_btn.connect("clicked", self.on_mute)
         self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, MAX_VOL, 1)
         self.scale.set_hexpand(True)
         self.scale.set_draw_value(False)
         self.scale.connect("value-changed", self.on_scale)
+        # en captura: así GtkRange no aplica su propio paso de rueda ni salta con el clic central
+        wheel = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.VERTICAL,
+                                          propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        wheel.connect("scroll", self.on_wheel)
+        self.scale.add_controller(wheel)
+        middle = Gtk.GestureClick(button=Gdk.BUTTON_MIDDLE, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        middle.connect("pressed", self.on_middle)
+        self.scale.add_controller(middle)
         self.pct = Gtk.Label(xalign=1)
         self.pct.add_css_class("pct")
-        if not lead:
-            row.append(self.mute_btn)
+        row.append(self.mute_btn)
+        for w in lead or []:
+            row.append(w)
         row.append(self.scale)
         row.append(self.pct)
 
@@ -259,8 +427,29 @@ class VolumeCard:
         self.updating = False
         if idle:
             self.pct.set_label(f"{vol}%")
-        self.mute_btn.set_label(self.icon_off if muted else self.icon_on)
+        if self.icon is None:
+            self.mute_btn.set_label(self.icon_off if muted else self.icon_on)
+        self.mute_btn.set_tooltip_text("Activar sonido" if muted else "Silenciar")
         (self.box.add_css_class if muted else self.box.remove_css_class)("muted")
+
+    def nudge(self, delta):
+        """Sube o baja `delta` puntos (rueda, ↑/↓): mueve el slider y on_scale lo manda por flush."""
+        if self.target is not None:
+            self.scale.set_value(max(0, min(MAX_VOL, round(self.scale.get_value()) + delta)))
+
+    def on_wheel(self, ctl, _dx, dy):
+        if ctl.get_unit() == Gdk.ScrollUnit.SURFACE:
+            dy /= 20                     # touchpad: píxeles, ~20 por paso
+        self.wheel -= dy                 # hacia arriba (dy < 0) sube
+        steps = int(self.wheel)
+        self.wheel -= steps
+        if steps:
+            self.nudge(steps * self.STEP)
+        return True                      # la rueda sobre el slider no desplaza la lista de apps
+
+    def on_middle(self, gesture, *_):
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self.on_mute(None)
 
     def on_scale(self, scale):
         vol = int(scale.get_value())
@@ -301,6 +490,7 @@ class Panel:
         self.dirty = False               # llegó un evento durante la consulta: repetirla
         self.layout_key = None
         self.app_cards = {}
+        self.profile_rows = {}           # tarjeta -> (fila, nombre, Choice)
         self.build_window()
         self.refresh()
         self.watch()
@@ -309,6 +499,10 @@ class Panel:
     def build_window(self):
         zen_panel.load_css(CSS)
         win = zen_panel.layer_window(self.app, "zen-audio", "zen-audio", on_escape=self.close)
+        # en captura: ↑/↓ no deben mover solo el slider o la pestaña que tenga el foco
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self.on_key)
+        win.add_controller(keys)
 
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         panel.add_css_class("panel")
@@ -340,6 +534,11 @@ class Panel:
         out.append(self.out_card.box)
         self.sink_list = self.listbox()
         out.append(self.sink_list)
+        # perfil de cada tarjeta que tenga más de uno útil (A2DP / con micrófono, HDMI 5.1…)
+        self.profile_head = self.section("PERFIL")
+        self.profile_list = self.listbox()
+        out.append(self.profile_head)
+        out.append(self.profile_list)
         out.append(self.section("APLICACIONES"))
         self.apps_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=200,
@@ -451,11 +650,15 @@ class Panel:
             self.layout_key = key
             self.fill_outputs(outputs, def_sink)
             self.fill_devices(self.source_list, sources, def_source, "set-default-source", True)
+        self.sync_profiles(cards)
         self.sync_apps(inputs)
+        sink_opts = [(str(s["index"]), s.get("description") or s["name"]) for s in sinks]
         for i in inputs:
             card = self.app_cards.get(i["index"])
             if card:
                 card.set(i["index"], volume(i), i.get("mute", False))
+                card.out_choice.set(sink_opts, str(i.get("sink")))
+                card.out_choice.dd.set_visible(len(sinks) > 1)   # con una sola salida no hay a dónde mover
 
     def fill_outputs(self, outputs, default):
         lb = self.sink_list
@@ -526,6 +729,44 @@ class Panel:
             row.activate_action = (lambda n=dev["name"]: pactl(command, n))
             lb.append(row)
 
+    def sync_profiles(self, cards):
+        """Una fila por tarjeta con más de un perfil útil, por diferencia: el selector no se recrea."""
+        want = {}
+        for card in cards:
+            opts, active = card_profiles(card)
+            if len(opts) > 1:
+                want[card["name"]] = (card, opts, active)
+        for name in [n for n in self.profile_rows if n not in want]:
+            self.profile_list.remove(self.profile_rows.pop(name)[0])
+        for name, (card, opts, active) in want.items():
+            if name not in self.profile_rows:
+                row = Gtk.ListBoxRow(activatable=False, focusable=False)
+                row.add_css_class("dev")
+                row.add_css_class("profile")
+                box = Gtk.Box()
+                icon = Gtk.Label(label=port_icon(name))
+                icon.add_css_class("dev-icon")
+                label = Gtk.Label(xalign=0, hexpand=True, ellipsize=3)
+                label.add_css_class("dev-name")
+                choice = Choice(lambda key, done, c=name: self.set_profile(c, key, done), "Perfil de la tarjeta")
+                box.append(icon)
+                box.append(label)
+                box.append(choice.dd)
+                row.set_child(box)
+                self.profile_list.append(row)
+                self.profile_rows[name] = (row, label, choice)
+            _, label, choice = self.profile_rows[name]
+            label.set_label(card.get("properties", {}).get("device.description") or name)
+            choice.set(opts, active)
+        self.profile_head.set_visible(bool(want))
+        self.profile_list.set_visible(bool(want))
+
+    def set_profile(self, card, profile, done):
+        pactl_then(("set-card-profile", card, profile), lambda: done() or self.queue_refresh())
+
+    def move_app(self, idx, sink, done):
+        pactl_then(("move-sink-input", str(idx), sink), lambda: done() or self.queue_refresh())
+
     def sync_apps(self, inputs):
         """Quita las tarjetas de apps que dejaron de sonar y añade las nuevas; las demás no se tocan."""
         alive = {i["index"] for i in inputs}
@@ -545,13 +786,40 @@ class Panel:
                 icon_name = "audio-x-generic"
             img = Gtk.Image.new_from_icon_name(icon_name)
             img.set_pixel_size(18)
-            img.add_css_class("app-icon")
             nl = Gtk.Label(label=app, xalign=0, ellipsize=3, max_width_chars=12,
                            tooltip_text=f"{app} · {media}" if media and media != app else app)
             nl.add_css_class("app-name")
-            card = VolumeCard("sink-input", "󰕾", "󰝟", "app", lead=[img, nl])
+            # debajo del nombre, la salida por la que suena (y a cuál moverla)
+            out_choice = Choice(lambda key, done, idx=i["index"]: self.move_app(idx, key, done),
+                                "Salida de esta aplicación", max_chars=10)
+            out_choice.dd.set_halign(Gtk.Align.START)
+            out_choice.dd.set_visible(False)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+            col.set_size_request(104, -1)    # ancho fijo: los sliders de todas las apps quedan alineados
+            col.append(nl)
+            col.append(out_choice.dd)
+            card = VolumeCard("sink-input", "󰕾", "󰝟", "app", lead=[col], icon=img)
+            card.out_choice = out_choice
             self.app_cards[i["index"]] = card
             self.apps_box.append(card.box)
+
+    def on_key(self, ctl, keyval, _code, state):
+        """↑/↓: salida por defecto ±5 %; M: silenciarla."""
+        if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.SUPER_MASK):
+            return False
+        # con un desplegable abierto la tecla llega desde su popover: que la use él para elegir
+        event = ctl.get_current_event()
+        if event is not None and event.get_surface() != self.win.get_surface():
+            return False
+        if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            self.out_card.nudge(VolumeCard.STEP)
+        elif keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            self.out_card.nudge(-VolumeCard.STEP)
+        elif keyval in (Gdk.KEY_m, Gdk.KEY_M):
+            self.out_card.on_mute(None)
+        else:
+            return False
+        return True
 
     def toggle(self):
         self.hide() if self.win.get_visible() else self.show()
