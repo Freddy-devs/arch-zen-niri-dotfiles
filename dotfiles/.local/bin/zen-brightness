@@ -3,8 +3,11 @@
 
 Un slider por pantalla: la de la laptop (brightnessctl) y los monitores externos por DDC/CI
 (ddcutil, el monitor cambia su propio brillo). Clic en el brillo de waybar o Super+I lo abre;
-otro clic, Super+I o Esc lo cierra. Queda residente: zen-toggle brightness lo muestra al instante.
+otro clic, Super+I, Super+C o Esc lo cierra y el proceso termina. Lo que encuentra `ddcutil detect`
+(lento: 1-5 s) se guarda en $XDG_RUNTIME_DIR y se reusa mientras no cambien las pantallas conectadas.
 """
+import glob
+import json
 import os
 import re
 import shutil
@@ -12,6 +15,8 @@ import signal
 import subprocess
 import sys
 import threading
+import time
+import traceback
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
 # dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
@@ -57,6 +62,8 @@ scale:hover slider { background: #eceff4; }
 """
 
 MIN_LAPTOP = 1     # 0 % apaga la pantalla de la laptop: no dejar llegar ahí
+DDC_CACHE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-brightness-ddc.json")
+INTERNAL = ("eDP", "LVDS", "DSI")     # conectores de la pantalla propia de la laptop
 
 
 def run(*cmd, timeout=6):
@@ -87,24 +94,77 @@ class Monitor:
 
     def __init__(self, bus, name):
         self.bus, self.name = bus, name
+        self.max = None          # máximo que informa el monitor (no siempre 100)
 
     def get(self):
         # "VCP 10 C 50 100" = brillo actual 50 de máximo 100
         out = run("ddcutil", "--bus", self.bus, "--brief", "getvcp", "10").split()
         try:
-            return round(int(out[3]) * 100 / int(out[4]))
+            cur, self.max = int(out[3]), int(out[4])
+            return round(cur * 100 / self.max)
         except (IndexError, ValueError, ZeroDivisionError):
             return None
 
     def set(self, pct):
-        run("ddcutil", "--bus", self.bus, "--noverify", "setvcp", "10", str(pct))
+        # se lee escalado por el máximo: se escribe igual, si no un monitor de 0-50 queda al doble
+        value = round(pct * self.max / 100) if self.max else pct
+        run("ddcutil", "--bus", self.bus, "--noverify", "setvcp", "10", str(value))
 
 
-def detect():
+def connected_outputs():
+    """Conectores DRM con algo enchufado, p. ej. ["eDP-1", "HDMI-A-1"]."""
+    outs = []
+    for path in sorted(glob.glob("/sys/class/drm/card*-*/status")):
+        try:
+            with open(path) as f:
+                if f.read().strip() == "connected":
+                    outs.append(os.path.basename(os.path.dirname(path)).split("-", 1)[1])
+        except OSError:
+            pass
+    return outs
+
+
+def has_external(outputs):
+    return any(not o.startswith(INTERNAL) for o in outputs)
+
+
+def laptops():
+    """Pantallas con backlight (brightnessctl responde al instante)."""
+    return [Laptop(line.split(",")[0])
+            for line in run("brightnessctl", "-l", "-m", "-c", "backlight").splitlines() if line]
+
+
+def monitors(outputs):
+    """Monitores DDC/CI; `ddcutil detect` tarda segundos, así que se cachea por lista de conectores."""
+    if not shutil.which("ddcutil") or not has_external(outputs):
+        return []          # sin monitor externo no hay a quién preguntar
+    try:
+        with open(DDC_CACHE) as f:
+            cache = json.load(f)
+        if cache.get("outputs") == outputs:
+            return [Monitor(m["bus"], m["name"]) for m in cache["monitors"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    found = ddc_detect()
+    if found:              # vacío no se guarda: quizá el DDC/CI se activa luego en el OSD
+        try:
+            with open(DDC_CACHE + ".part", "w") as f:
+                json.dump({"outputs": outputs, "monitors": [{"bus": m.bus, "name": m.name} for m in found]}, f)
+            os.replace(DDC_CACHE + ".part", DDC_CACHE)
+        except OSError:
+            pass
+    return found
+
+
+def forget_monitors():
+    try:
+        os.unlink(DDC_CACHE)
+    except OSError:
+        pass
+
+
+def ddc_detect():
     screens = []
-    for line in run("brightnessctl", "-l", "-m", "-c", "backlight").splitlines():
-        if line:
-            screens.append(Laptop(line.split(",")[0]))
     if shutil.which("ddcutil"):
         # solo bloques "Display N": "Invalid display" es la pantalla de la laptop (sin DDC/CI)
         valid = False
@@ -134,6 +194,7 @@ class Row:
 
     def __init__(self, screen):
         self.screen, self.updating, self.pending, self.busy = screen, False, None, False
+        self.touched = 0.0       # último movimiento del usuario: una lectura vieja no lo pisa
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.box.add_css_class("screen")
         head = Gtk.Box()
@@ -153,6 +214,7 @@ class Row:
         self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
         self.scale.set_hexpand(True)
         self.scale.set_draw_value(False)
+        self.scale.set_sensitive(False)      # hasta la primera lectura no se sabe el valor real
         self.scale.connect("value-changed", self.on_change)
         self.pct = Gtk.Label(xalign=1)
         self.pct.add_css_class("pct")
@@ -172,9 +234,12 @@ class Row:
         if pct is None:
             self.scale.set_sensitive(False)
             self.pct.set_label("—")
+            if self.screen.kind == "ddc":
+                forget_monitors()    # quizá cambió el bus: la próxima apertura vuelve a detectar
             return False
         self.scale.set_sensitive(True)
-        if self.pending is None:
+        # con un setvcp en vuelo o un toque reciente lo leído ya es viejo: no devolver el slider
+        if self.pending is None and not self.busy and time.monotonic() - self.touched > 1.5:
             self.updating = True
             self.scale.set_value(pct)
             self.updating = False
@@ -186,6 +251,7 @@ class Row:
         self.pct.set_label(f"{pct}%")
         if self.updating:
             return
+        self.touched = time.monotonic()
         self.pending = pct
         if not self.busy:
             self.flush()
@@ -208,7 +274,18 @@ class Panel:
         self.app = app
         self.rows = []
         self.build()
-        threading.Thread(target=lambda: GLib.idle_add(self.fill, detect()), daemon=True).start()
+        # la laptop aparece ya; los monitores DDC llegan después (detect puede tardar segundos)
+        self.fill(laptops())
+        outputs = connected_outputs()
+
+        def work():
+            try:
+                found = monitors(outputs)
+            except Exception:
+                traceback.print_exc()
+                found = []
+            GLib.idle_add(self.fill, found, outputs)
+        threading.Thread(target=work, daemon=True).start()
 
     def build(self):
         provider = Gtk.CssProvider()
@@ -252,20 +329,22 @@ class Panel:
         self.win = win
         win.realize()                    # prepara el renderizador ahora y no en el primer clic
 
-    def fill(self, screens):
+    def fill(self, screens, outputs=None):
+        """Añade filas; con `outputs` es la tanda de monitores y decide la nota."""
         for s in screens:
             row = Row(s)
             self.rows.append(row)
             self.list.append(row.box)
+            if self.win.get_visible():
+                row.load()
+        if outputs is None or not has_external(outputs):
+            return False     # la nota solo tiene sentido si hay un monitor externo enchufado
         if not shutil.which("ddcutil"):
             self.note.set_label("Para el brillo del monitor externo instala ddcutil (ver README).")
             self.note.set_visible(True)
-        elif not any(s.kind == "ddc" for s in screens):
+        elif not screens:
             self.note.set_label("El monitor externo no responde por DDC/CI: actívalo en su menú (OSD).")
             self.note.set_visible(True)
-        if self.win.get_visible():
-            for row in self.rows:
-                row.load()
         return False
 
     def toggle(self):
@@ -289,14 +368,20 @@ def main():
         if "panel" in state:          # otra llamada a zen-brightness: abrir/cerrar
             state["panel"].toggle()
             return
-        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
-        a.hold()
-        state["panel"] = Panel(a)
-        state["panel"].show()
-        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-brightness.pid"), "w") as f:
-            f.write(str(os.getpid()))
+        # el pidfile va primero: zen-toggle lo usa para cerrarlo aunque el panel tarde en armarse
         pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-brightness.pid")
+        with open(pidfile, "w") as f:
+            f.write(str(os.getpid()))
         a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
+        a.hold()
+        try:
+            state["panel"] = Panel(a)
+            state["panel"].show()
+        except Exception:
+            traceback.print_exc()     # sin panel no debe quedar un proceso vivo e invisible
+            a.quit()
+            return
+        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
         GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
