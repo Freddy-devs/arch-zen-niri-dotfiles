@@ -37,6 +37,8 @@ SIGNAL_ICONS = ["󰤯", "󰤟", "󰤢", "󰤥", "󰤨"]
 TYPE_ICONS = {"802-3-ethernet": "󰈀", "802-11-wireless": "󰖩", "wireguard": "󰒃", "vpn": "󰒃"}
 TYPE_NAMES = {"802-3-ethernet": "Cable", "802-11-wireless": "Wi-Fi", "wireguard": "WireGuard", "vpn": "VPN"}
 
+ROWS_VISIBLE, ROW_HEIGHT = 5, 51     # filas de la lista sin scroll y alto de cada una (con su margen)
+
 CSS = """
 window.zen-net { background: transparent; }
 .panel {
@@ -208,7 +210,10 @@ class Panel:
         panel.append(avail_head)
 
         self.avail_list = self.listbox()
-        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=340,
+        # alto fijo de 5 filas (51 px cada una): desde la sexta, scroll. Con alto según el contenido, el panel
+        # se abría con los pocos elementos ya conocidos y no crecía cuando la búsqueda traía más
+        alto = ROWS_VISIBLE * ROW_HEIGHT
+        scroller = Gtk.ScrolledWindow(min_content_height=alto, max_content_height=alto,
                                       hscrollbar_policy=Gtk.PolicyType.NEVER)
         scroller.set_child(self.avail_list)
         scroller.set_visible(self.wifi is not None)
