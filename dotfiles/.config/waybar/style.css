@@ -182,10 +182,11 @@ tooltip label {
     font-size: 17px;
 }
 
-/* pide atención: fantasma asustado (azul) parpadeando */
+/* pide atención: fantasma asustado (azul); parpadea 5 veces y queda azul fijo
+   (una animación infinita obliga a GTK a redibujar la barra a 60 fps) */
 #workspaces button.urgent {
     color: @blue;
-    animation: asustado 0.6s steps(2) infinite;
+    animation: asustado 0.6s steps(2) 5;
 }
 
 @keyframes asustado {
@@ -214,14 +215,8 @@ tooltip label {
 #battery.not-charging,
 #battery.full                    { color: @green; }
 #battery.warning:not(.charging)  { color: @yellow; }
-#battery.critical:not(.charging) {
-    color: @red;
-    animation: parpadeo 1s ease-in-out infinite alternate;
-}
-
-@keyframes parpadeo {
-    to { color: @fg; }
-}
+/* rojo fijo: un parpadeo infinito redibuja la barra a 60 fps justo cuando queda poca batería */
+#battery.critical:not(.charging) { color: @red; }
 
 #pulseaudio.muted { color: @red; }
 

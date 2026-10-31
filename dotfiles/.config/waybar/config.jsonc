@@ -38,12 +38,12 @@
         }
     },
 
-    // clic: abre/cierra el calendario (feriados del Perú, agenda y alarmas).
-    // Sin "format-alt" ni "mode": el clic nunca cambia lo que muestra el reloj.
+    // clic: abre/cierra el calendario (feriados del Perú, agenda y alarmas); por zen-toggle para
+    // que cierre el panel que esté abierto. Sin "format-alt" ni "mode": el clic nunca cambia el reloj.
     "clock": {
         "format": "{:%I:%M %p}",
         "tooltip-format": "{:%A %d de %B de %Y}",
-        "on-click": "zen-calendar"
+        "on-click": "~/.local/bin/zen-toggle calendar"
     },
 
     // ---------- sistema ----------

@@ -1,19 +1,36 @@
 #!/bin/sh
-# zen-toggle audio|media|bluetooth|network|brightness|ram — abre o cierra un panel de la barra.
+# zen-toggle audio|media|bluetooth|network|brightness|ram|calendar — abre o cierra un panel de la barra.
 # Si el panel está abierto se le manda SIGUSR1 y se cierra (termina, no queda oculto); si no, se abre
 # y se cierra cualquier otro panel abierto (se encimaban en la misma esquina).
-# El pid se comprueba contra /proc: un pid viejo podría ser ya de otro proceso.
-alive() {
-    pid=$(cat "${XDG_RUNTIME_DIR:-/tmp}/$1.pid" 2>/dev/null)
-    [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "$1"
+# El calendario no termina con SIGUSR1: se oculta y queda residente si tiene alarmas; su pidfile solo
+# existe mientras se ve, así que sin pidfile se lanza y él mismo se muestra.
+
+# es_panel NOMBRE PID: el pid es de verdad el panel. Un pidfile viejo puede apuntar a un pid ya
+# reutilizado (nvim ~/.local/bin/zen-audio, rg zen-ram, zen-media --waybar…) y SIGUSR1 lo mataría:
+# el script ejecutado (argv[1] si es python, si no argv[0]) debe llamarse NOMBRE, sin --waybar.
+es_panel() {
+    [ -n "$2" ] && [ -r "/proc/$2/cmdline" ] || return 1
+    tr '\0' '\n' < "/proc/$2/cmdline" | awk -v n="$1" '
+        NR == 1 { s = $0; sub(/.*\//, "", s); if (s ~ /^python[0-9.]*$/) s = "" }
+        NR == 2 && s == "" { s = $0; sub(/.*\//, "", s) }
+        $0 == "--waybar" { w = 1 }
+        END { exit !(s == n && !w) }'
 }
-if alive "zen-$1"; then
+pid_de() { cat "${XDG_RUNTIME_DIR:-/tmp}/$1.pid" 2>/dev/null; }
+
+case $1 in ''|*/*) echo "uso: zen-toggle PANEL" >&2; exit 2 ;; esac
+pid=$(pid_de "zen-$1")
+if es_panel "zen-$1" "$pid"; then
     kill -USR1 "$pid"
     exit 0
 fi
 for f in "${XDG_RUNTIME_DIR:-/tmp}"/zen-*.pid; do
     [ -e "$f" ] || continue
     name=$(basename "$f" .pid)
-    alive "$name" && kill -USR1 "$pid"
+    pid=$(pid_de "$name")
+    es_panel "$name" "$pid" && kill -USR1 "$pid"
 done
-exec "$HOME/.local/bin/zen-$1"
+# los paneles viven en ~/.local/bin; el calendario es un paquete (/usr/bin)
+panel="$HOME/.local/bin/zen-$1"
+[ -x "$panel" ] || panel=$(command -v "zen-$1") || exit 1
+exec "$panel"
