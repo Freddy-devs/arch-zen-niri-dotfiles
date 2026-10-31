@@ -1,12 +1,25 @@
 #!/bin/sh
 # zen-close — Super+C: si hay un panel de la barra abierto lo cierra; si no, cierra la ventana enfocada.
 # Los paneles son capas (layer-shell), no ventanas: close-window de niri no los alcanza.
+
+# es_panel NOMBRE PID: igual que en zen-toggle. El pid de un pidfile viejo puede ser ya de otro
+# proceso (nvim ~/.local/bin/zen-audio, zen-media --waybar…): solo vale si el script ejecutado
+# (argv[1] si es python, si no argv[0]) se llama NOMBRE y no lleva --waybar.
+es_panel() {
+    [ -n "$2" ] && [ -r "/proc/$2/cmdline" ] || return 1
+    tr '\0' '\n' < "/proc/$2/cmdline" | awk -v n="$1" '
+        NR == 1 { s = $0; sub(/.*\//, "", s); if (s ~ /^python[0-9.]*$/) s = "" }
+        NR == 2 && s == "" { s = $0; sub(/.*\//, "", s) }
+        $0 == "--waybar" { w = 1 }
+        END { exit !(s == n && !w) }'
+}
+
 closed=0
 for f in "${XDG_RUNTIME_DIR:-/tmp}"/zen-*.pid; do
     [ -e "$f" ] || continue
     name=$(basename "$f" .pid)
     pid=$(cat "$f" 2>/dev/null)
-    if [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "$name"; then
+    if es_panel "$name" "$pid"; then
         kill -USR1 "$pid" && closed=1
     fi
 done
