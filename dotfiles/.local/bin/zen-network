@@ -9,6 +9,7 @@ Wi-Fi y conecta (la contraseña se escribe en la misma fila). Lo avanzado (red o
 import os
 import signal
 import sys
+import traceback
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
 # dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
@@ -38,6 +39,24 @@ TYPE_ICONS = {"802-3-ethernet": "󰈀", "802-11-wireless": "󰖩", "wireguard": 
 TYPE_NAMES = {"802-3-ethernet": "Cable", "802-11-wireless": "Wi-Fi", "wireguard": "WireGuard", "vpn": "VPN"}
 
 ROWS_VISIBLE, ROW_HEIGHT = 5, 51     # filas de la lista sin scroll y alto de cada una (con su margen)
+
+# un perfil nuevo vive solo en memoria hasta que conecta: así una clave mala nunca llega al disco
+IN_MEMORY = GLib.Variant("a{sv}", {"persist": GLib.Variant("s", "memory")})
+FINAL_STATES = (ACState.ACTIVATED, ACState.DEACTIVATED)
+
+PIDFILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-network.pid")
+
+
+def write_pidfile():
+    with open(PIDFILE, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def remove_pidfile():
+    try:
+        os.unlink(PIDFILE)
+    except FileNotFoundError:
+        pass
 
 CSS = """
 window.zen-net { background: transparent; }
@@ -139,10 +158,13 @@ class Panel:
         self.updating_switch = False
         self.scanning = False
         self.stopped = False       # se pulsó Detener: la lista queda quieta hasta el próximo Buscar
+        self.scan_timer = None     # tope de espera del escaneo en curso (uno solo, no uno por cada Buscar)
+        self.hw_on = True          # Wi-Fi no bloqueado por hardware (tecla o interruptor del equipo)
+        self.closing = None        # cerrado con una conexión en curso: id del tope de espera antes de salir
         self.active_key = self.avail_key = None   # lo que muestra cada lista: si no cambia, no se rearma
 
         c = self.client
-        for sig in ("notify::wireless-enabled", "notify::active-connections",
+        for sig in ("notify::wireless-enabled", "notify::wireless-hardware-enabled", "notify::active-connections",
                     "connection-added", "connection-removed"):
             c.connect(sig, lambda *a: self.queue_refresh())
         if self.wifi:
@@ -274,6 +296,15 @@ class Panel:
         self.updating_switch = True
         self.power.set_active(wifi_on)
         self.updating_switch = False
+        # con rfkill por hardware NM ignora el interruptor: se bloquea y se avisa (antes mentía)
+        hw_on = self.client.wireless_hardware_get_enabled()
+        self.power.set_sensitive(hw_on)
+        if hw_on != self.hw_on:
+            self.hw_on = hw_on
+            if not hw_on:
+                self.set_status("Wi-Fi bloqueado por hardware: actívalo con la tecla o el interruptor del equipo", "err")
+        if not wifi_on and self.scanning:
+            self.scan_done()
 
         # conexiones activas: cable, Wi-Fi, VPN/WireGuard (no las internas como lo o puentes)
         active_ssid = None
@@ -282,7 +313,8 @@ class Panel:
         for ac in actives:
             if ac.get_connection_type() == "802-11-wireless" and ac.get_connection():
                 active_ssid = conn_ssid(ac.get_connection())
-        key = tuple((ac.get_path(), ac.get_id(), ac.get_state(), bool(ac.get_ip4_config())) for ac in actives)
+        # la clave lleva lo mismo que se pinta (ícono de señal, %, IP): si no, la fila quedaba con datos viejos
+        key = tuple((ac.get_path(), ac.get_id(), self.active_info(ac)) for ac in actives)
         if key != self.active_key:
             self.active_key = key
             self.clear(self.active_list)
@@ -328,14 +360,10 @@ class Panel:
             self.empty(self.avail_list, "Buscando redes…" if self.scanning else "No se encontraron redes")
         return False
 
-    def active_row(self, ac):
+    def active_info(self, ac):
+        """(ícono, subtítulo) de una conexión activa."""
         ctype = ac.get_connection_type()
         dev = (ac.get_devices() or [None])[0]
-        row = Gtk.ListBoxRow()
-        row.add_css_class("dev")
-        row.add_css_class("connected")
-        box = Gtk.Box()
-
         icon_text = TYPE_ICONS[ctype]
         sub = [TYPE_NAMES[ctype]]
         if ctype == "802-11-wireless" and isinstance(dev, NM.DeviceWifi) and dev.get_active_access_point():
@@ -350,13 +378,21 @@ class Panel:
             addrs = ip4.get_addresses() if ip4 else []
             if addrs:
                 sub.append(addrs[0].get_address())
+        return icon_text, " · ".join(sub)
+
+    def active_row(self, ac):
+        icon_text, sub = self.active_info(ac)
+        row = Gtk.ListBoxRow()
+        row.add_css_class("dev")
+        row.add_css_class("connected")
+        box = Gtk.Box()
 
         icon = Gtk.Label(label=icon_text)
         icon.add_css_class("dev-icon")
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
         nl = Gtk.Label(label=ac.get_id(), xalign=0, ellipsize=3)
         nl.add_css_class("dev-name")
-        sl = Gtk.Label(label=" · ".join(sub), xalign=0)
+        sl = Gtk.Label(label=sub, xalign=0)
         sl.add_css_class("dev-sub")
         text.append(nl)
         text.append(sl)
@@ -409,7 +445,7 @@ class Panel:
         if busy:
             box.append(Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER, margin_end=6))
             action = None
-        elif not supported:
+        elif not supported and not saved_conn:
             action = lambda: self.set_status(  # noqa: E731
                 f"«{ssid}» es una red {label.lower()}: configúrala con clic derecho en el ícono de red (nmtui)")
             btn = Gtk.Button(label="Avanzado", valign=Gtk.Align.CENTER)
@@ -417,6 +453,7 @@ class Panel:
             btn.connect("clicked", lambda b: action())
             box.append(btn)
         else:
+            # una red empresarial o WEP ya configurada en nmtui se conecta (y se olvida) con su perfil
             if saved_conn or not key_mgmt:
                 action = lambda: self.connect_ap(ap, saved_conn)  # noqa: E731
             else:
@@ -442,7 +479,7 @@ class Panel:
             ok.add_css_class("act")
             ok.add_css_class("primary")
             ok.add_css_class("pass-ok")
-            go = lambda *a: self.connect_new(ap, key_mgmt, entry.get_text())  # noqa: E731
+            go = lambda *a: self.connect_new(ap, key_mgmt, entry.get_text(), saved_conn)  # noqa: E731
             entry.connect("activate", go)
             ok.connect("clicked", go)
             line.append(entry)
@@ -466,82 +503,131 @@ class Panel:
         self.set_status("")
         self.refresh()
 
-    def watch(self, ac, ssid, new_conn=None):
-        """Sigue la activación hasta que conecta o falla; si una red nueva falla, no la deja guardada."""
-        def on_state(ac, state, reason, watching=True):
+    def watch(self, ac, ssid, new_conn=None, can_ask=True):
+        """Sigue la activación hasta que conecta o falla. Un perfil sin guardar pasa al disco solo al
+        conectar; si falla, el perfil nuevo se borra (no queda guardado con la clave mala)."""
+        conn = new_conn or ac.get_connection()
+        handler = []
+
+        def on_state(ac, state, reason):
+            if state not in FINAL_STATES:
+                return
+            if handler:
+                ac.disconnect(handler.pop())
             if state == ACState.ACTIVATED:
-                self.busy.discard(ssid)
                 self.set_status(f"✔ Conectado a {ssid}", "ok")
-            elif state == ACState.DEACTIVATED:
-                self.busy.discard(ssid)
-                if reason in BAD_PASSWORD:
+                if conn and conn.get_unsaved():
+                    conn.save_async(None, lambda c, res: self.settled(ssid, c.save_finish, res))
+                    return
+            else:
+                if reason in BAD_PASSWORD and can_ask:
                     self.set_status(f"✘ Contraseña incorrecta para {ssid}", "err")
                     self.asking = ssid
+                elif reason in BAD_PASSWORD:
+                    self.set_status(f"✘ {ssid} rechazó las credenciales: revísalas en nmtui", "err")
                 else:
                     self.set_status(f"✘ No se pudo conectar a {ssid}", "err")
                 if new_conn:
-                    new_conn.delete_async(None, None)
-            else:
-                return
-            if watching:
-                ac.disconnect_by_func(on_state)
-            self.queue_refresh()
+                    new_conn.delete_async(None, lambda c, res: self.settled(ssid, c.delete_finish, res))
+                    return
+            self.settled(ssid)
 
-        if ac.get_state() == ACState.ACTIVATED:
-            on_state(ac, ac.get_state(), 0, watching=False)
+        # si ya terminó (bien o mal) cuando volvió la llamada, la señal no llega nunca: se trata ahora
+        if ac.get_state() in FINAL_STATES:
+            on_state(ac, ac.get_state(), ac.get_state_reason())
         else:
-            ac.connect("state-changed", on_state)
+            handler.append(ac.connect("state-changed", on_state))
+
+    def settled(self, ssid, finish=None, res=None):
+        """Fin de una conexión (y de guardar o borrar su perfil); si el panel ya se cerró, sale."""
+        if finish:
+            try:
+                finish(res)
+            except GLib.Error as e:
+                self.set_status(f"✘ {ssid}: {e.message}", "err")
+        self.busy.discard(ssid)
+        self.queue_refresh()
+        if self.closing and not self.busy:
+            self.app.quit()
 
     def fail(self, ssid, e):
-        self.busy.discard(ssid)
         self.set_status(f"✘ No se pudo conectar a {ssid} ({e.message})", "err")
-        self.queue_refresh()
+        self.settled(ssid)
+
+    def activated(self, ssid, can_ask=True):
+        """Callback de activate_connection_async: sigue la activación del perfil guardado."""
+        def done(client, res):
+            try:
+                self.watch(client.activate_connection_finish(res), ssid, can_ask=can_ask)
+            except GLib.Error as e:
+                self.fail(ssid, e)
+        return done
+
+    def added(self, ssid):
+        """Callback de add_and_activate_connection2: sigue la activación del perfil nuevo (en memoria)."""
+        def done(client, res):
+            try:
+                ac, _ = client.add_and_activate_connection2_finish(res)
+                self.watch(ac, ssid, new_conn=ac.get_connection())
+            except GLib.Error as e:
+                self.fail(ssid, e)
+        return done
 
     def connect_ap(self, ap, saved_conn):
         ssid = ap_ssid(ap)
+        _, key_mgmt, supported = security(ap)
         self.busy.add(ssid)
         self.asking = None
         self.set_status(f"Conectando a {ssid}…")
         self.refresh()
-
-        def done(client, res):
-            try:
-                if saved_conn:
-                    self.watch(client.activate_connection_finish(res), ssid)
-                else:
-                    ac = client.add_and_activate_connection_finish(res)
-                    self.watch(ac, ssid, ac.get_connection())
-            except GLib.Error as e:
-                self.fail(ssid, e)
-
         if saved_conn:
-            self.client.activate_connection_async(saved_conn, self.wifi, ap.get_path(), None, done)
+            # solo WPA/WPA3 pide la clave en el panel; empresarial o WEP se corrige en nmtui
+            self.client.activate_connection_async(saved_conn, self.wifi, ap.get_path(), None,
+                                                  self.activated(ssid, can_ask=bool(key_mgmt and supported)))
         else:
-            self.client.add_and_activate_connection_async(None, self.wifi, ap.get_path(), None, done)
+            self.client.add_and_activate_connection2(None, self.wifi, ap.get_path(), IN_MEMORY, None,
+                                                     self.added(ssid))
 
-    def connect_new(self, ap, key_mgmt, password):
+    def connect_new(self, ap, key_mgmt, password, saved_conn=None):
         ssid = ap_ssid(ap)
-        if len(password) < 8:
+        # WPA2 exige de 8 a 63 caracteres; WPA3 (SAE) no tiene mínimo
+        if key_mgmt == "wpa-psk" and len(password) < 8:
             self.set_status("La contraseña Wi-Fi tiene al menos 8 caracteres", "err")
             return
-        conn = NM.SimpleConnection.new()
-        sec = NM.SettingWirelessSecurity.new()
+        if not password:
+            self.set_status("Escribe la contraseña", "err")
+            return
+        conn = NM.SimpleConnection.new_clone(saved_conn) if saved_conn else NM.SimpleConnection.new()
+        sec = conn.get_setting_wireless_security()
+        if sec is None:
+            sec = NM.SettingWirelessSecurity.new()
+            conn.add_setting(sec)
         sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, key_mgmt)
         sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK, password)
-        conn.add_setting(sec)
+        # la clave la guarda NM (sin esto, un perfil con clave "del agente" la volvía a pedir y fallaba)
+        sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK_FLAGS, NM.SettingSecretFlags.NONE)
         self.busy.add(ssid)
         self.asking = None
         self.set_status(f"Conectando a {ssid}…")
         self.refresh()
 
-        def done(client, res):
+        if not saved_conn:
+            self.client.add_and_activate_connection2(conn, self.wifi, ap.get_path(), IN_MEMORY, None,
+                                                     self.added(ssid))
+            return
+
+        # ya hay un perfil para esta red (falló su clave): se le cambia la clave, en memoria hasta que
+        # conecte, en vez de crear un duplicado
+        def updated(c, res):
             try:
-                ac = client.add_and_activate_connection_finish(res)
-                self.watch(ac, ssid, ac.get_connection())
+                c.update2_finish(res)
             except GLib.Error as e:
                 self.fail(ssid, e)
+                return
+            self.client.activate_connection_async(c, self.wifi, ap.get_path(), None, self.activated(ssid))
 
-        self.client.add_and_activate_connection_async(conn, self.wifi, ap.get_path(), None, done)
+        saved_conn.update2(conn.to_dbus(NM.ConnectionSerializationFlags.ALL), NM.SettingsUpdate2Flags.IN_MEMORY,
+                           None, None, updated)
 
     def disconnect(self, ac):
         name = ac.get_id()
@@ -571,11 +657,22 @@ class Panel:
         if self.updating_switch:
             return
         on = sw.get_active()
+
+        def done(client, res):
+            try:
+                client.dbus_set_property_finish(res)
+            except GLib.Error as e:
+                self.set_status(f"✘ No se pudo {'encender' if on else 'apagar'} el Wi-Fi ({e.message})", "err")
+                self.queue_refresh()     # el interruptor vuelve a mostrar el estado real
+                return
+            if on:
+                GLib.timeout_add(1500, lambda: self.scan() or False)
+
         self.client.dbus_set_property(NM.DBUS_PATH, NM.DBUS_INTERFACE, "WirelessEnabled",
-                                      GLib.Variant("b", on), -1, None, None)
+                                      GLib.Variant("b", on), -1, None, done)
         self.set_status("")
-        if on:
-            GLib.timeout_add(1500, lambda: self.scan() or False)
+        if not on and self.scanning:
+            self.scan_done()             # apagado no hay escaneo que esperar: el spinner seguía girando
 
     def scan(self):
         if not self.wifi or not self.client.wireless_get_enabled():
@@ -590,10 +687,22 @@ class Panel:
         self.scanning = True
         self.stopped = False
         self.wifi.request_scan_async(None, done)
-        GLib.timeout_add_seconds(15, lambda: self.scanning and self.scan_done() or False)
+        # un solo tope por vez: cada Buscar sumaba otro y uno viejo cortaba el escaneo nuevo
+        if self.scan_timer:
+            GLib.source_remove(self.scan_timer)
+        self.scan_timer = GLib.timeout_add_seconds(15, self.scan_timeout)
         self.queue_refresh()
 
+    def scan_timeout(self):
+        self.scan_timer = None
+        if self.scanning:
+            self.scan_done()
+        return False
+
     def scan_done(self):
+        if self.scan_timer:
+            GLib.source_remove(self.scan_timer)
+            self.scan_timer = None
         self.scanning = False
         self.queue_refresh()
 
@@ -606,6 +715,10 @@ class Panel:
         self.hide() if self.win.get_visible() else self.show()
 
     def show(self):
+        if self.closing:                 # se volvió a abrir mientras esperaba una conexión: sigue vivo
+            GLib.source_remove(self.closing)
+            self.closing = None
+            write_pidfile()
         self.set_status("")
         self.asking = None
         self.refresh()
@@ -613,7 +726,15 @@ class Panel:
         self.scan()
 
     def hide(self):
-        self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
+        # Esc, Super+C u otro clic: se cierra, no queda oculto. Con una conexión en curso se espera a que
+        # termine (hasta 60 s) para guardar o borrar su perfil; sin pidfile, zen-toggle no lo ve abierto
+        if not self.busy:
+            self.app.quit()
+            return
+        if not self.closing:
+            self.win.set_visible(False)
+            remove_pidfile()
+            self.closing = GLib.timeout_add_seconds(60, lambda: self.app.quit() or False)
 
     def close(self):
         self.hide()
@@ -628,17 +749,22 @@ def main():
         if "panel" in state:          # otra llamada a zen-network: abrir/cerrar
             state["panel"].toggle()
             return
+        # el pidfile va primero: mientras se arma el panel, Super+C y zen-toggle ya lo encuentran
+        write_pidfile()
+        a.connect("shutdown", lambda *_: remove_pidfile())
         # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
-        a.hold()
-        state["panel"] = Panel(a)
-        state["panel"].show()
-        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-network.pid"), "w") as f:
-            f.write(str(os.getpid()))
-        pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-network.pid")
-        a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
-        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1,
+                            lambda: ("panel" in state and state["panel"].toggle()) or True)
+        a.hold()
+        try:
+            state["panel"] = Panel(a)
+            state["panel"].show()
+        except Exception:
+            # NM caído, sin pantalla…: sin esto quedaba vivo por el hold(), invisible y sin pidfile
+            traceback.print_exc()
+            a.quit()
 
     app.connect("activate", activate)
     app.run(None)

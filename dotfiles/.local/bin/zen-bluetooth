@@ -3,11 +3,13 @@
 
 Clic en el ícono de Bluetooth de waybar lo abre; otro clic (o Esc) lo cierra.
 Habla directo con BlueZ por D-Bus y registra su propio agente, así que el
-emparejamiento acepta solo la confirmación del código.
+emparejamiento acepta solo la confirmación del código de lo que se empareja desde el panel.
 """
 import os
+import secrets
 import signal
 import sys
+import traceback
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
 # dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
@@ -43,6 +45,20 @@ ICONS = {
 }
 
 ROWS_VISIBLE, ROW_HEIGHT = 5, 51     # filas de la lista sin scroll y alto de cada una (con su margen)
+
+PIDFILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid")
+
+
+def write_pidfile():
+    with open(PIDFILE, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def remove_pidfile():
+    try:
+        os.unlink(PIDFILE)
+    except FileNotFoundError:
+        pass
 
 CSS = """
 window.zen-bt { background: transparent; }
@@ -96,12 +112,21 @@ scrolledwindow { background: transparent; }
 """
 
 
+def rejected(msg):
+    return dbus.DBusException(msg, name="org.bluez.Error.Rejected")
+
+
 class Agent(dbus.service.Object):
-    """Agente de emparejamiento: acepta confirmaciones y muestra códigos en el panel."""
+    """Agente de emparejamiento: solo responde por los dispositivos que el usuario empareja desde el
+    panel (antes aceptaba todo y cualquier equipo cercano podía emparejarse con el panel abierto)."""
 
     def __init__(self, bus, panel):
         super().__init__(bus, AGENT_PATH)
         self.panel = panel
+
+    def check(self, device):
+        if str(device) not in self.panel.busy:
+            raise rejected("Emparejamiento no iniciado desde el panel")
 
     @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
     def Release(self):
@@ -109,15 +134,24 @@ class Agent(dbus.service.Object):
 
     @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
     def AuthorizeService(self, device, uuid):
-        pass
+        self.check(device)
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="s")
     def RequestPinCode(self, device):
-        return "0000"
+        self.check(device)
+        # PIN al azar (no "0000" fijo): el usuario lo escribe en el teclado del dispositivo
+        pin = f"{secrets.randbelow(10 ** 6):06d}"
+        self.panel.set_status(f"Escribe {pin} en el dispositivo y presiona Enter", "code")
+        return pin
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="u")
     def RequestPasskey(self, device):
-        return dbus.UInt32(0)
+        self.check(device)
+        # habría que escribir aquí el código que muestra el dispositivo; el panel no tiene ese campo
+        # y mandar 0 solo hacía fallar el emparejamiento sin decir por qué
+        self.panel.set_status("✘ El dispositivo pide escribir el código que muestra: emparéjalo con "
+                              "bluetoothctl en una terminal", "err")
+        raise rejected("El panel no puede pedir el código")
 
     @dbus.service.method("org.bluez.Agent1", in_signature="ouq", out_signature="")
     def DisplayPasskey(self, device, passkey, entered):
@@ -129,11 +163,12 @@ class Agent(dbus.service.Object):
 
     @dbus.service.method("org.bluez.Agent1", in_signature="ou", out_signature="")
     def RequestConfirmation(self, device, passkey):
+        self.check(device)
         self.panel.set_status(f"Código {passkey:06d} confirmado")
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="")
     def RequestAuthorization(self, device):
-        pass
+        self.check(device)
 
     @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
     def Cancel(self):
@@ -150,6 +185,7 @@ class Panel:
         self.shown = {}            # lo que muestra cada lista: si no cambia, no se rearma (parpadeo, clics perdidos)
         self.refresh_pending = False
         self.updating_switch = False
+        self.blocked = False       # adaptador bloqueado por rfkill: el interruptor no puede encenderlo
 
         self.agent = Agent(self.bus, self)
         agent_mgr = dbus.Interface(self.bus.get_object(BLUEZ, "/org/bluez"), "org.bluez.AgentManager1")
@@ -261,13 +297,19 @@ class Panel:
 
     # ---------- BlueZ ----------
     def objects(self):
-        return self.manager.GetManagedObjects()
+        try:
+            return self.manager.GetManagedObjects()
+        except dbus.DBusException as e:
+            # bluetoothd reiniciándose o caído: el panel sigue abierto y lo dice
+            self.set_status(f"✘ BlueZ no responde ({e.get_dbus_message() or e.get_dbus_name()})", "err")
+            return {}
 
     def adapter(self, objs):
         for path, ifaces in objs.items():
             if ADAPTER in ifaces:
                 self.adapter_path = path
                 return ifaces[ADAPTER]
+        self.adapter_path = None     # el adaptador desapareció (USB quitado, bluetoothd caído)
         return None
 
     def adapter_props(self):
@@ -295,6 +337,13 @@ class Panel:
         self.updating_switch = True
         self.power.set_active(powered)
         self.updating_switch = False
+        # sin adaptador o con rfkill el interruptor no hace nada: se bloquea y se avisa
+        blocked = bool(ad and ad.get("PowerState") == "off-blocked")
+        self.power.set_sensitive(bool(ad) and not blocked)
+        if blocked != self.blocked:
+            self.blocked = blocked
+            if blocked:
+                self.set_status("Bluetooth bloqueado por rfkill: desbloquéalo con «rfkill unblock bluetooth»", "err")
         self.spinner.set_spinning(discovering)
         self.scan_btn.set_label("Detener" if discovering else "Buscar")
         self.scan_btn.set_sensitive(powered)
@@ -313,7 +362,8 @@ class Panel:
         paired.sort(key=lambda i: (not i[1].get("Connected"), str(i[1].get("Alias", ""))))
         avail.sort(key=lambda i: -int(i[1].get("RSSI", -200)))
 
-        self.fill(self.paired_list, paired, "Ningún dispositivo emparejado" if powered else "Bluetooth apagado")
+        self.fill(self.paired_list, paired, "Sin adaptador Bluetooth" if not ad else
+                  "Ningún dispositivo emparejado" if powered else "Bluetooth apagado")
         self.fill(self.avail_list, avail,
                   "Buscando… pon tu dispositivo en modo emparejamiento" if discovering
                   else "Presiona Buscar para encontrar dispositivos" if powered else "")
@@ -391,20 +441,22 @@ class Panel:
         return row
 
     # ---------- acciones ----------
-    def call(self, path, method, name, ok_msg, err_msg, then=None, iface=DEVICE, args=()):
-        self.busy.add(path)
+    def call(self, path, method, name, ok_msg, err_msg, then=None, iface=DEVICE, args=(), device=None):
+        """device: el dispositivo que se marca ocupado si la llamada va a otro objeto (olvidar va al adaptador)."""
+        mark = str(device or path)
+        self.busy.add(mark)
         self.queue_refresh()
 
         def done(*_):
             if then:
                 then()
                 return
-            self.busy.discard(path)
+            self.busy.discard(mark)
             self.set_status(ok_msg, "ok")
             self.queue_refresh()
 
         def fail(e):
-            self.busy.discard(path)
+            self.busy.discard(mark)
             msg = e.get_dbus_message() or e.get_dbus_name().split(".")[-1]
             self.set_status(f"{err_msg} ({msg})", "err")
             self.queue_refresh()
@@ -435,10 +487,13 @@ class Panel:
 
     def forget(self, path, name):
         self.call(self.adapter_path, "RemoveDevice", name, f"{name} olvidado",
-                  f"✘ No se pudo olvidar {name}", iface=ADAPTER, args=(dbus.ObjectPath(path),))
+                  f"✘ No se pudo olvidar {name}", iface=ADAPTER, args=(dbus.ObjectPath(path),), device=path)
 
     def on_power(self, sw, _):
-        if self.updating_switch or not self.adapter_path:
+        if self.updating_switch:
+            return
+        if not self.adapter_path:
+            self.queue_refresh()
             return
         on = sw.get_active()
         try:
@@ -448,7 +503,10 @@ class Panel:
                 GLib.timeout_add(800, lambda: self.start_scan() or False)
             self.set_status("")
         except dbus.DBusException as e:
-            self.set_status(f"✘ {e.get_dbus_message()}", "err")
+            name = e.get_dbus_name() or ""
+            why = "bloqueado por rfkill" if name.endswith("Blocked") else e.get_dbus_message() or name
+            self.set_status(f"✘ No se pudo {'encender' if on else 'apagar'} el Bluetooth ({why})", "err")
+            self.queue_refresh()     # el interruptor vuelve a mostrar el estado real
 
     def start_scan(self):
         if not self.adapter_path:
@@ -480,10 +538,12 @@ class Panel:
         self.start_scan()
 
     def hide(self):
-        # el agente sigue registrado (emparejar funciona siempre); solo se deja de buscar
+        # se deja de buscar y de aceptar emparejamientos: Pairable quedaba encendido tras cerrar
         try:
-            if self.adapter_path and self.adapter_props().Get(ADAPTER, "Discovering"):
-                self.dev_iface(self.adapter_path, ADAPTER).StopDiscovery()
+            if self.adapter_path:
+                if self.adapter_props().Get(ADAPTER, "Discovering"):
+                    self.dev_iface(self.adapter_path, ADAPTER).StopDiscovery()
+                self.adapter_props().Set(ADAPTER, "Pairable", dbus.Boolean(False))
         except dbus.DBusException:
             pass
         self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
@@ -502,20 +562,26 @@ def main():
         if "panel" in state:          # otra llamada a zen-bluetooth: abrir/cerrar
             state["panel"].toggle()
             return
+        # el pidfile va primero: mientras se arma el panel, Super+C y zen-toggle ya lo encuentran
+        write_pidfile()
+        a.connect("shutdown", lambda *_: remove_pidfile())
         # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
-        a.hold()
-        state["panel"] = Panel(a)
-        state["panel"].show()
-        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid"), "w") as f:
-            f.write(str(os.getpid()))
-        pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid")
-        a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
-        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1,
+                            lambda: ("panel" in state and state["panel"].toggle()) or True)
+        a.hold()
+        try:
+            state["panel"] = Panel(a)
+            state["panel"].show()
+        except Exception:
+            # bluetoothd caído, sin pantalla…: sin esto quedaba vivo por el hold(), invisible y sin pidfile
+            traceback.print_exc()
+            a.quit()
 
     app.connect("activate", activate)
     app.run(None)
+
 
 if __name__ == "__main__":
     main()
