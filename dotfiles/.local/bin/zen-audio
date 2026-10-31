@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 
 # gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
 # dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
@@ -100,23 +101,30 @@ scrolledwindow { background: transparent; }
 
 
 def pactl(*args):
-    """Comando de pactl sin esperar (los sliders llaman muy seguido)."""
-    subprocess.Popen(["pactl", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Comando de pactl sin esperar (clics sueltos: silencio, dispositivo por defecto)."""
+    try:
+        subprocess.Popen(["pactl", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def pactl_run(*args, timeout=5):
+    """Comando de pactl esperando, con tope: un pactl colgado no debe trabar el panel."""
+    try:
+        return subprocess.run(["pactl", *args], capture_output=True, text=True, timeout=timeout).stdout
+    except (subprocess.SubprocessError, OSError):
+        return ""
 
 
 def pactl_json(what):
     try:
-        out = subprocess.run(["pactl", "-f", "json", "list", what], capture_output=True, text=True, timeout=3).stdout
-        return json.loads(out or "[]")
-    except (subprocess.SubprocessError, json.JSONDecodeError):
+        return json.loads(pactl_run("-f", "json", "list", what, timeout=3) or "[]")
+    except ValueError:
         return []
 
 
 def pactl_get(what):
-    try:
-        return subprocess.run(["pactl", what], capture_output=True, text=True, timeout=3).stdout.strip()
-    except subprocess.SubprocessError:
-        return ""
+    return pactl_run(what, timeout=3).strip()
 
 
 def volume(obj):
@@ -133,6 +141,19 @@ def port_icon(text):
     return "󰓃"
 
 
+def is_input_port(name, port, profiles):
+    """Puerto de micrófono: está en algún perfil solo de entrada (sin sinks) o se llama así.
+
+    No basta con mirar el prefijo: los perfiles Bluetooth (a2dp-sink, headset-head-unit…) no empiezan
+    por "output:", y los mixtos "output:…+input:…" también contienen al micrófono analógico.
+    """
+    for pp in port.get("profiles", []):
+        prof = profiles.get(pp, {})
+        if pp.startswith("input:") or (prof.get("sinks") == 0 and prof.get("sources", 0) > 0):
+            return True
+    return "input" in name or port.get("type", "").lower() in ("mic", "line-in")
+
+
 def output_ports(cards, sinks):
     """Todas las salidas físicas: cada puerto de cada tarjeta, aunque su perfil no esté activo.
 
@@ -145,8 +166,8 @@ def output_ports(cards, sinks):
         profiles = card.get("profiles", {})
         sink = by_card.get(card["name"])
         for pname, port in card.get("ports", {}).items():
-            pprofs = port.get("profiles", [])
-            if not pprofs or not all(pp.startswith("output:") or pp == "pro-audio" for pp in pprofs):
+            pprofs = [pp for pp in port.get("profiles", []) if pp != "off"]
+            if not pprofs or is_input_port(pname, port, profiles):
                 continue     # puerto de entrada (micrófono)
             usable = [pp for pp in pprofs if profiles.get(pp, {}).get("available")]
             plugged = port.get("availability") != "not available"
@@ -183,23 +204,25 @@ def pick_profile(card, usable):
 def choose_output(out, done):
     """Cambia el perfil de la tarjeta si hace falta, espera a que aparezca el sink y lo deja por defecto."""
     def run():
-        card_now = next((c for c in pactl_json("cards") if c["name"] == out["card"]), None) if out["card"] else None
-        if card_now and card_now.get("active_profile") != out["profile"]:
-            subprocess.run(["pactl", "set-card-profile", out["card"], out["profile"]], capture_output=True)
-        sink = out["sink"] if not out["card"] else None
-        for _ in range(30):
+        try:
+            card_now = next((c for c in pactl_json("cards") if c["name"] == out["card"]), None) if out["card"] else None
+            if card_now and card_now.get("active_profile") != out["profile"]:
+                pactl_run("set-card-profile", out["card"], out["profile"])
+            sink = out["sink"] if not out["card"] else None
+            for _ in range(30):
+                if sink:
+                    break
+                for s in pactl_json("sinks"):
+                    if (s.get("properties", {}).get("device.name") == out["card"]
+                            and any(p["name"] == out["port"] for p in s.get("ports", []))):
+                        sink = s["name"]
+                time.sleep(0.1)
             if sink:
-                break
-            for s in pactl_json("sinks"):
-                if (s.get("properties", {}).get("device.name") == out["card"]
-                        and any(p["name"] == out["port"] for p in s.get("ports", []))):
-                    sink = s["name"]
-            time.sleep(0.1)
-        if sink:
-            if out["port"]:
-                subprocess.run(["pactl", "set-sink-port", sink, out["port"]], capture_output=True)
-            subprocess.run(["pactl", "set-default-sink", sink], capture_output=True)
-        GLib.idle_add(done)
+                if out["port"]:
+                    pactl_run("set-sink-port", sink, out["port"])
+                pactl_run("set-default-sink", sink)
+        finally:
+            GLib.idle_add(done)      # pase lo que pase, la lista vuelve a estar activa
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -210,6 +233,7 @@ class VolumeCard:
         self.kind, self.icon_on, self.icon_off = kind, icon_on, icon_off
         self.target, self.muted, self.updating = None, False, False
         self.touched = 0.0       # último movimiento del usuario: no pisar su arrastre
+        self.pending, self.busy = None, False
         self.box = row = Gtk.Box()
         self.box.add_css_class("vol")
         if extra_class:
@@ -232,11 +256,13 @@ class VolumeCard:
 
     def set(self, target, vol, muted):
         self.target, self.muted = target, muted
+        # con un comando en vuelo el valor leído ya es viejo: no devolver el slider atrás
+        idle = not self.busy and self.pending is None and time.monotonic() - self.touched > 0.6
         self.updating = True
-        if time.monotonic() - self.touched > 0.6 and abs(self.scale.get_value() - vol) >= 1:
+        if idle and abs(self.scale.get_value() - vol) >= 1:
             self.scale.set_value(vol)
         self.updating = False
-        if time.monotonic() - self.touched > 0.6:
+        if idle:
             self.pct.set_label(f"{vol}%")
         self.mute_btn.set_label(self.icon_off if muted else self.icon_on)
         (self.box.add_css_class if muted else self.box.remove_css_class)("muted")
@@ -247,9 +273,25 @@ class VolumeCard:
         if self.updating or self.target is None:
             return
         self.touched = time.monotonic()
-        pactl(f"set-{self.kind}-volume", str(self.target), f"{vol}%")
-        if self.muted and vol > 0:
-            pactl(f"set-{self.kind}-mute", str(self.target), "0")
+        self.pending = vol
+        if not self.busy:
+            self.flush()
+
+    def flush(self):
+        """Un solo pactl a la vez; al terminar manda el último valor pedido (en orden, sin cola)."""
+        if self.pending is None:
+            self.busy = False
+            return False
+        vol, self.pending, self.busy = self.pending, None, True
+        kind, target, unmute = self.kind, str(self.target), self.muted and vol > 0
+
+        def work():
+            pactl_run(f"set-{kind}-volume", target, f"{vol}%")
+            if unmute:
+                pactl_run(f"set-{kind}-mute", target, "0")
+            GLib.idle_add(self.flush)
+        threading.Thread(target=work, daemon=True).start()
+        return False
 
     def on_mute(self, _):
         if self.target is not None:
@@ -259,7 +301,9 @@ class VolumeCard:
 class Panel:
     def __init__(self, app):
         self.app = app
-        self.refresh_pending = False
+        self.refresh_pending = False     # hay un refresh programado
+        self.fetching = False            # hay una consulta en curso
+        self.dirty = False               # llegó un evento durante la consulta: repetirla
         self.layout_key = None
         self.app_cards = {}
         self.build_window()
@@ -371,21 +415,46 @@ class Panel:
         stream.read_line_async(GLib.PRIORITY_DEFAULT, None, self.on_event)
 
     def queue_refresh(self):
-        if not self.refresh_pending:     # también oculto: así al abrir ya está al día
+        if self.fetching:
+            self.dirty = True            # lo leído ya puede ser viejo: otra vuelta al terminar
+        elif not self.refresh_pending:
             self.refresh_pending = True
             GLib.timeout_add(120, self.refresh)
 
     def refresh(self):
         """Consulta PipeWire en un hilo (unos 130 ms) para no congelar la ventana; luego aplica."""
+        self.refresh_pending = False
+        if self.fetching:
+            self.dirty = True
+            return False
+        self.fetching, self.dirty = True, False
+
         def fetch():
-            data = (pactl_json("sinks"), pactl_json("cards"), pactl_json("sources"), pactl_json("sink-inputs"),
-                    pactl_get("get-default-sink"), pactl_get("get-default-source"))
-            GLib.idle_add(self.apply, *data)
+            try:
+                data = (pactl_json("sinks"), pactl_json("cards"), pactl_json("sources"), pactl_json("sink-inputs"),
+                        pactl_get("get-default-sink"), pactl_get("get-default-source"))
+                GLib.idle_add(self.apply, *data)
+            except Exception:
+                traceback.print_exc()
+                GLib.idle_add(self.fetched)
         threading.Thread(target=fetch, daemon=True).start()
         return False
 
-    def apply(self, sinks, cards, sources, inputs, def_sink, def_source):
-        self.refresh_pending = False
+    def fetched(self):
+        self.fetching = False
+        if self.dirty:
+            self.dirty = False
+            self.queue_refresh()
+        return False
+
+    def apply(self, *data):
+        try:
+            self.apply_data(*data)
+        finally:
+            self.fetched()
+        return False
+
+    def apply_data(self, sinks, cards, sources, inputs, def_sink, def_source):
         outputs = output_ports(cards, sinks)
         sources = [s for s in sources if not s.get("name", "").endswith(".monitor")]
 
@@ -396,20 +465,19 @@ class Panel:
         if source:
             self.in_card.set(source["name"], volume(source), source.get("mute", False))
 
-        # las listas solo se rehacen si cambian los dispositivos o las apps, así no se corta un arrastre
+        # las listas solo se rehacen si cambian los dispositivos, así no se corta un arrastre;
+        # las apps van aparte y por diferencia (una app que empieza a sonar no toca las demás)
         key = (tuple((o["card"], o["port"], o["plugged"], o["sink"], o["active_port"]) for o in outputs), def_sink,
-               tuple((s["name"], s["description"]) for s in sources), def_source,
-               tuple(i["index"] for i in inputs))
+               tuple((s["name"], s["description"]) for s in sources), def_source)
         if key != self.layout_key:
             self.layout_key = key
             self.fill_outputs(outputs, def_sink)
             self.fill_devices(self.source_list, sources, def_source, "set-default-source", True)
-            self.fill_apps(inputs)
+        self.sync_apps(inputs)
         for i in inputs:
             card = self.app_cards.get(i["index"])
             if card:
                 card.set(i["index"], volume(i), i.get("mute", False))
-        return False
 
     def fill_outputs(self, outputs, default):
         lb = self.sink_list
@@ -466,7 +534,7 @@ class Panel:
             if active:
                 row.add_css_class("active")
             box = Gtk.Box()
-            icon = Gtk.Label(label="󰍬" if mic else sink_icon(dev))
+            icon = Gtk.Label(label="󰍬" if mic else port_icon(dev["name"]))
             icon.add_css_class("dev-icon")
             name = Gtk.Label(label=dev.get("description") or dev["name"], xalign=0, hexpand=True, ellipsize=3)
             name.add_css_class("dev-name")
@@ -480,16 +548,17 @@ class Panel:
             row.activate_action = (lambda n=dev["name"]: pactl(command, n))
             lb.append(row)
 
-    def fill_apps(self, inputs):
-        while (child := self.apps_box.get_first_child()) is not None:
-            self.apps_box.remove(child)
-        self.app_cards = {}
+    def sync_apps(self, inputs):
+        """Quita las tarjetas de apps que dejaron de sonar y añade las nuevas; las demás no se tocan."""
+        alive = {i["index"] for i in inputs}
+        for idx in [k for k in self.app_cards if k not in alive]:
+            self.apps_box.remove(self.app_cards.pop(idx).box)
         self.apps_empty.set_visible(not inputs)
         self.apps_scroller.set_visible(bool(inputs))   # vacío, el scroller igual reserva alto
-        if not inputs:
-            return
         theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
         for i in inputs:
+            if i["index"] in self.app_cards:
+                continue
             props = i.get("properties", {})
             app = props.get("application.name") or props.get("application.process.binary") or "Aplicación"
             media = props.get("media.name", "")
@@ -530,14 +599,20 @@ def main():
         if "panel" in state:          # otra llamada a zen-audio: abrir/cerrar
             state["panel"].toggle()
             return
-        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
-        a.hold()
-        state["panel"] = Panel(a)
-        state["panel"].show()
-        with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-audio.pid"), "w") as f:
-            f.write(str(os.getpid()))
+        # el pidfile va primero: zen-toggle lo usa para cerrarlo aunque el panel tarde en armarse
         pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-audio.pid")
+        with open(pidfile, "w") as f:
+            f.write(str(os.getpid()))
         a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
+        a.hold()
+        try:
+            state["panel"] = Panel(a)
+            state["panel"].show()
+        except Exception:
+            traceback.print_exc()     # sin panel no debe quedar un proceso vivo e invisible
+            a.quit()
+            return
+        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
         GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)
