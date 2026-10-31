@@ -1,8 +1,8 @@
-/* zen-calendar — paleta Nord, igual que la barra */
+/* zen-calendar — fondo #1a1b26, igual que la barra */
 window.zen-cal { background: transparent; }
 .panel {
-    background: #242933;
-    border: 1px solid #3b4252;
+    background: #1a1b26;
+    border: 1px solid #292e42;
     border-radius: 14px;
     padding: 14px;
     color: #eceff4;
