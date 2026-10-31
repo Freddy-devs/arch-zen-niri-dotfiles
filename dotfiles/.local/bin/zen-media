@@ -7,7 +7,8 @@ VLC, mpv… Muestra la miniatura, título, artista, progreso (con salto) y los c
   zen-media            abre/cierra la ventanita (clic en el icono de la barra)
   zen-media --waybar   salida para waybar (custom/media): icono y estado en vivo
 
-Teclas: Espacio reproducir/pausar · ← → anterior/siguiente · Tab cambia de reproductor · Esc cierra.
+Teclas: Espacio reproducir/pausar · ← → anterior/siguiente · ↑ ↓ volumen · S aleatorio · R repetir ·
+Tab cambia de reproductor · Esc cierra. La rueda sobre la barra salta ±5 s y sobre el volumen, ±5 %.
 """
 import hashlib
 import json
@@ -54,6 +55,21 @@ def meta(player, key, default=""):
     return value if value else default
 
 
+def mpris_props(player):
+    """Propiedades que el reproductor publica de verdad: Playerctl rellena las que faltan (volumen 0,
+    aleatorio apagado…) y no se distinguiría un reproductor sin volumen de uno en silencio."""
+    from gi.repository import Gio
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+        reply = bus.call_sync("org.mpris.MediaPlayer2." + player.props.player_instance,
+                              "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "GetAll",
+                              GLib.Variant("(s)", ("org.mpris.MediaPlayer2.Player",)),
+                              GLib.VariantType("(a{sv})"), Gio.DBusCallFlags.NONE, 500, None)
+        return set(reply.unpack()[0])
+    except GLib.Error:
+        return set()
+
+
 def status(player):
     try:
         return player.props.playback_status
@@ -64,8 +80,10 @@ def status(player):
 class Players:
     """Lleva la lista de reproductores MPRIS vivos y avisa de cualquier cambio."""
 
-    def __init__(self, on_change):
+    def __init__(self, on_change, extra=()):
         self.on_change = on_change
+        # el panel también sigue volumen, aleatorio y repetir; waybar solo título y estado
+        self.signals = ("metadata", "playback-status") + tuple(extra)
         self.ready = False          # no avisar mientras se arma la lista inicial
         self.manager = Playerctl.PlayerManager()
         self.manager.connect("name-appeared", lambda m, name: self.add(name))
@@ -79,7 +97,7 @@ class Players:
             player = Playerctl.Player.new_from_name(name)
         except GLib.Error:
             return
-        for sig in ("metadata", "playback-status"):
+        for sig in self.signals:
             player.connect(sig, lambda *a: self.ready and self.on_change())
         self.manager.manage_player(player)
         if self.ready:
@@ -109,10 +127,12 @@ def run_waybar():
             st = status(p)
             title, artist = meta(p, "xesam:title"), meta(p, "xesam:artist")
             line = " — ".join(x for x in (artist, title) if x) or nice_name(p)
+            state = {Playerctl.PlaybackStatus.PLAYING: "Reproduciendo",
+                     Playerctl.PlaybackStatus.PAUSED: "En pausa"}.get(st, "Detenido")
             out = {
                 "text": "󰝚",
                 "class": "playing" if st == Playerctl.PlaybackStatus.PLAYING else "paused",
-                "tooltip": GLib.markup_escape_text(f"{nice_name(p)} · {line}"),
+                "tooltip": GLib.markup_escape_text(f"{line}\n{nice_name(p)} · {state}"),
             }
         js = json.dumps(out, ensure_ascii=False)
         if js != last[0]:
@@ -172,6 +192,16 @@ def run_window():
     button.ctl:disabled { color: #434c5e; }
     button.play { background: #88c0d0; color: #242933; font-size: 18px; min-width: 40px; min-height: 40px; }
     button.play:hover { background: #81a1c1; color: #242933; }
+    button.ctl.state { font-size: 15px; min-width: 30px; min-height: 30px; color: #616e88; }
+    button.ctl.state:hover { color: #d8dee9; }
+    button.ctl.state.on { color: #88c0d0; }
+    .vol { margin-top: 8px; }
+    .vol-icon { font-family: "Symbols Nerd Font", "JetBrainsMono Nerd Font"; font-size: 13px; color: #616e88; }
+    .vol scale { margin: 0; }
+    .vol scale trough { min-height: 2px; }
+    .vol scale highlight { background: #616e88; }
+    .vol:hover scale highlight { background: #88c0d0; }
+    .vol scale slider { min-width: 8px; min-height: 8px; margin: -3px; }
     button:focus, button:focus-visible { outline: none; }
     .chips { margin-bottom: 10px; }
     button.chip {
@@ -192,9 +222,13 @@ def run_window():
             self.seek_to = None         # adónde saltar al soltar
             self.seeked = 0.0           # último salto: el reproductor tarda en informar la posición nueva
             self.updating = False
+            self.vol_drag = False       # igual que la barra: mientras se arrastra no manda el reproductor
+            self.vol_set = 0.0          # último cambio de volumen propio
+            self.caps_for, self.caps = None, set()
             self.chips_key = None
             self.build()
-            self.players = Players(lambda: self.win.get_visible() and GLib.idle_add(self.refresh))
+            self.players = Players(lambda: self.win.get_visible() and GLib.idle_add(self.refresh),
+                                   extra=("volume", "shuffle", "loop-status"))
             GLib.timeout_add(500, lambda: not self.win.get_visible() or self.tick())
 
         def toggle(self):
@@ -239,7 +273,23 @@ def run_window():
             placeholder.add_css_class("art-empty")
             self.art_stack.add_named(self.art, "art")
             self.art_stack.add_named(placeholder, "none")
-            body.append(self.art_stack)
+            # volumen del reproductor bajo la carátula: ahí sobra alto y no estira el panel
+            side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.START)
+            side.append(self.art_stack)
+            self.vol_box = Gtk.Box(spacing=4)
+            self.vol_box.add_css_class("vol")
+            self.vol_icon = Gtk.Label(label="󰕾")
+            self.vol_icon.add_css_class("vol-icon")
+            self.vol = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 0.05)
+            self.vol.set_draw_value(False)
+            self.vol.set_hexpand(True)
+            self.vol_hid = self.vol.connect("change-value", self.on_volume)
+            self.vol.add_controller(self.raw_press(self.on_vol_event))
+            self.vol.add_controller(self.wheel(lambda d: self.step_volume(0.05 * d)))
+            self.vol_box.append(self.vol_icon)
+            self.vol_box.append(self.vol)
+            side.append(self.vol_box)
+            body.append(side)
 
             info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
             self.source = Gtk.Label(xalign=0)
@@ -255,11 +305,8 @@ def run_window():
             self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 1)
             self.scale.set_draw_value(False)
             self.scale.connect("change-value", self.on_seek)
-            # apretar/soltar en crudo: un GestureClick lo cancelaría el arrastre propio del slider
-            press = Gtk.EventControllerLegacy()
-            press.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-            press.connect("event", self.on_scale_event)
-            self.scale.add_controller(press)
+            self.scale.add_controller(self.raw_press(self.on_scale_event))
+            self.scale.add_controller(self.wheel(lambda d: self.seek_by(5 * d)))
             info.append(self.scale)
             times = Gtk.Box()
             self.pos_lbl = Gtk.Label(xalign=0, hexpand=True)
@@ -269,11 +316,13 @@ def run_window():
                 times.append(lbl)
             info.append(times)
 
-            ctl = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=4)
+            ctl = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER, margin_top=4)
+            self.shuf_btn = self.button("󰒝", "state", self.toggle_shuffle)
             self.prev_btn = self.button("󰒮", "ctl", lambda: self.player and self.player.previous())
             self.play_btn = self.button("󰐊", "play", lambda: self.player and self.player.play_pause())
             self.next_btn = self.button("󰒭", "ctl", lambda: self.player and self.player.next())
-            for b in (self.prev_btn, self.play_btn, self.next_btn):
+            self.loop_btn = self.button("󰑖", "state", self.cycle_loop)
+            for b in (self.shuf_btn, self.prev_btn, self.play_btn, self.next_btn, self.loop_btn):
                 ctl.append(b)
             info.append(ctl)
             body.append(info)
@@ -296,6 +345,22 @@ def run_window():
                 b.add_css_class(cls)
             b.connect("clicked", lambda _b: self.safe(action))
             return b
+
+        def raw_press(self, handler):
+            # apretar/soltar en crudo: un GestureClick lo cancelaría el arrastre propio del slider
+            press = Gtk.EventControllerLegacy()
+            press.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            press.connect("event", handler)
+            return press
+
+        def wheel(self, step):
+            # rueda con pasos fijos (step(+1) arriba, step(-1) abajo) en vez del salto propio de GtkRange;
+            # DISCRETE junta el desplazamiento fino del touchpad en pasos enteros
+            wheel = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL
+                                                  | Gtk.EventControllerScrollFlags.DISCRETE)
+            wheel.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            wheel.connect("scroll", lambda _c, _dx, dy: (dy and step(-1 if dy > 0 else 1), True)[1])
+            return wheel
 
         def safe(self, action):
             try:
@@ -344,8 +409,74 @@ def run_window():
             self.prev_btn.set_sensitive(bool(p.props.can_go_previous))
             self.next_btn.set_sensitive(bool(p.props.can_go_next))
             self.load_art(meta(p, "mpris:artUrl"))
+            if p.props.player_instance != self.caps_for:
+                # qué controles mostrar: solo se pregunta al cambiar de reproductor
+                self.caps_for, self.caps = p.props.player_instance, mpris_props(p)
             self.tick()
             return False
+
+        # ---------- volumen, aleatorio y repetir ----------
+        def has(self, prop):
+            return prop in self.caps and bool(self.player and self.player.props.can_control)
+
+        def sync_extras(self):
+            p = self.player
+            self.vol_box.set_visible(self.has("Volume"))
+            self.shuf_btn.set_visible(self.has("Shuffle"))
+            self.loop_btn.set_visible(self.has("LoopStatus"))
+            if self.has("Volume") and not self.vol_drag and time.monotonic() - self.vol_set > 1.0:
+                # set_value no emite change-value, pero bloqueada no hay forma de reenviar el cambio
+                self.vol.handler_block(self.vol_hid)
+                self.vol.set_value(p.props.volume)
+                self.vol.handler_unblock(self.vol_hid)
+                self.vol_icon.set_label(vol_icon(p.props.volume))
+            if self.has("Shuffle"):
+                set_class(self.shuf_btn, "on", bool(p.props.shuffle))
+            if self.has("LoopStatus"):
+                loop = p.props.loop_status
+                self.loop_btn.set_label("󰑘" if loop == Playerctl.LoopStatus.TRACK else "󰑖")
+                set_class(self.loop_btn, "on", loop != Playerctl.LoopStatus.NONE)
+
+        def set_volume(self, value):
+            value = min(1.0, max(0.0, value))
+            self.vol_set = time.monotonic()
+            self.vol_icon.set_label(vol_icon(value))
+            self.safe(lambda: self.player.set_volume(value))
+            return value
+
+        def on_volume(self, _scale, _scroll, value):
+            if self.player:
+                self.set_volume(value)       # en vivo también al arrastrar: se oye mientras se busca
+            return False
+
+        def on_vol_event(self, _c, event):
+            kind = event.get_event_type()
+            if kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.TOUCH_BEGIN):
+                self.vol_drag = True
+            elif kind in (Gdk.EventType.BUTTON_RELEASE, Gdk.EventType.TOUCH_END, Gdk.EventType.TOUCH_CANCEL):
+                self.vol_drag = False
+                self.vol_set = time.monotonic()
+            return False
+
+        def step_volume(self, delta):
+            if self.player and self.has("Volume"):
+                # desde lo que muestra el slider: varios pasos seguidos no esperan al reproductor
+                value = self.set_volume(round(self.vol.get_value() + delta, 2))
+                self.vol.handler_block(self.vol_hid)
+                self.vol.set_value(value)
+                self.vol.handler_unblock(self.vol_hid)
+
+        def toggle_shuffle(self):
+            p = self.player
+            if p and self.has("Shuffle"):
+                self.safe(lambda: p.set_shuffle(not p.props.shuffle))
+
+        def cycle_loop(self):
+            p = self.player
+            if p and self.has("LoopStatus"):
+                LS = Playerctl.LoopStatus
+                nxt = {LS.NONE: LS.PLAYLIST, LS.PLAYLIST: LS.TRACK}.get(p.props.loop_status, LS.NONE)
+                self.safe(lambda: p.set_loop_status(nxt))
 
         def select(self, player):
             self.player = player
@@ -353,6 +484,8 @@ def run_window():
 
         def tick(self):
             p = self.player
+            if p is not None:
+                self.sync_extras()
             if p is None or self.dragging or time.monotonic() - self.seeked < 1.5:
                 return True
             try:
@@ -379,7 +512,7 @@ def run_window():
                 if self.dragging:
                     self.seek_to = value     # arrastrando: un solo salto al soltar
                 else:
-                    self.seek(value)         # rueda o teclado: salto directo
+                    self.seek(value)         # teclado: salto directo
             return False
 
         def on_scale_event(self, _c, event):
@@ -397,6 +530,19 @@ def run_window():
             if p:
                 self.seeked = time.monotonic()
                 self.safe(lambda: p.set_position(int(max(0, value) * 1e6)))
+
+        def seek_by(self, delta):
+            p = self.player
+            if p is None or not (self.scale.get_visible() and self.scale.get_sensitive()) or self.dragging:
+                return
+            # salto relativo (Seek de MPRIS) y la barra se adelanta sin esperar al reproductor
+            value = min(max(0.0, self.scale.get_value() + delta), self.scale.get_adjustment().get_upper())
+            self.seeked = time.monotonic()
+            self.safe(lambda: p.seek(int(delta * 1e6)))
+            self.updating = True
+            self.scale.set_value(value)
+            self.updating = False
+            self.pos_lbl.set_label(fmt(value))
 
         # ---------- miniatura ----------
         def load_art(self, url):
@@ -470,6 +616,12 @@ def run_window():
                 self.safe(self.player.previous)
             elif key == Gdk.KEY_Right and self.player:
                 self.safe(self.player.next)
+            elif key in (Gdk.KEY_Up, Gdk.KEY_Down):
+                self.step_volume(0.05 if key == Gdk.KEY_Up else -0.05)
+            elif key in (Gdk.KEY_s, Gdk.KEY_S):
+                self.toggle_shuffle()
+            elif key in (Gdk.KEY_r, Gdk.KEY_R):
+                self.cycle_loop()
             elif key == Gdk.KEY_Tab:
                 players = self.players.all
                 if len(players) > 1:
@@ -491,6 +643,14 @@ def prune_cache():
             os.unlink(e.path)
     except OSError:
         pass
+
+
+def vol_icon(value):
+    return "󰝟" if value <= 0 else "󰕿" if value < 0.34 else "󰖀" if value < 0.67 else "󰕾"
+
+
+def set_class(widget, cls, on):
+    widget.add_css_class(cls) if on else widget.remove_css_class(cls)
 
 
 def fmt(seconds):
