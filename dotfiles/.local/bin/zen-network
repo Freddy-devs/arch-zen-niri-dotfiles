@@ -40,7 +40,7 @@ TYPE_NAMES = {"802-3-ethernet": "Cable", "802-11-wireless": "Wi-Fi", "wireguard"
 CSS = """
 window.zen-net { background: transparent; }
 .panel {
-    background: #242933; border-radius: 14px; padding: 14px;
+    background: #1a1b26; border: 1px solid #292e42; border-radius: 14px; padding: 14px;
     color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
 }
 .title { font-size: 15px; font-weight: 800; color: #eceff4; }
@@ -132,18 +132,22 @@ class Panel:
         self.wifi = next((d for d in self.client.get_devices() if isinstance(d, NM.DeviceWifi)), None)
         self.busy = set()          # SSID con una conexión en curso
         self.asking = None         # SSID que muestra el campo de contraseña
+        self.pass_ssid = None      # SSID cuyo campo de contraseña ya está armado en la lista
         self.refresh_pending = False
         self.updating_switch = False
         self.scanning = False
+        self.stopped = False       # se pulsó Detener: la lista queda quieta hasta el próximo Buscar
+        self.active_key = self.avail_key = None   # lo que muestra cada lista: si no cambia, no se rearma
 
         c = self.client
         for sig in ("notify::wireless-enabled", "notify::active-connections",
                     "connection-added", "connection-removed"):
             c.connect(sig, lambda *a: self.queue_refresh())
         if self.wifi:
-            for sig in ("access-point-added", "access-point-removed", "notify::active-access-point"):
-                self.wifi.connect(sig, lambda *a: self.queue_refresh())
-            self.wifi.connect("notify::last-scan", lambda *a: self.scan_done())
+            # las redes que aparecen o desaparecen mientras se busca no rearman la lista (parpadeaba y los
+            # clics caían en botones que se destruían): se rearma una sola vez, al terminar la búsqueda
+            self.wifi.connect("notify::active-access-point", lambda *a: self.queue_refresh())
+            self.wifi.connect("notify::last-scan", lambda *a: self.stopped or self.scan_done())
 
         self.build_window()
 
@@ -163,7 +167,7 @@ class Panel:
         Layer.set_anchor(win, Layer.Edge.RIGHT, True)
         Layer.set_margin(win, Layer.Edge.TOP, 8)
         Layer.set_margin(win, Layer.Edge.RIGHT, 12)
-        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.EXCLUSIVE)
 
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.close())
@@ -196,7 +200,7 @@ class Panel:
         self.spinner = Gtk.Spinner(valign=Gtk.Align.CENTER, margin_end=6)
         self.scan_btn = Gtk.Button(label="Buscar", valign=Gtk.Align.CENTER)
         self.scan_btn.add_css_class("scan")
-        self.scan_btn.connect("clicked", lambda b: self.scan())
+        self.scan_btn.connect("clicked", lambda b: self.stop_scan() if self.scanning else self.scan())
         avail_head.append(sec)
         avail_head.append(self.spinner)
         avail_head.append(self.scan_btn)
@@ -261,46 +265,58 @@ class Panel:
 
     def refresh(self):
         self.refresh_pending = False
-        # con el campo de contraseña abierto el panel retiene el teclado: con focus-follows-mouse
-        # de niri, mover el ratón fuera mandaba lo que se escribía a la ventana de debajo
-        Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.EXCLUSIVE if self.asking
-                                else Layer.KeyboardMode.ON_DEMAND)
         wifi_on = self.client.wireless_get_enabled()
         self.updating_switch = True
         self.power.set_active(wifi_on)
         self.updating_switch = False
 
         # conexiones activas: cable, Wi-Fi, VPN/WireGuard (no las internas como lo o puentes)
-        self.clear(self.active_list)
         active_ssid = None
         actives = [ac for ac in self.client.get_active_connections()
                    if ac.get_connection_type() in TYPE_ICONS]
         for ac in actives:
-            self.active_list.append(self.active_row(ac))
             if ac.get_connection_type() == "802-11-wireless" and ac.get_connection():
                 active_ssid = conn_ssid(ac.get_connection())
-        if not actives:
-            self.empty(self.active_list, "Sin conexión")
+        key = tuple((ac.get_path(), ac.get_id(), ac.get_state(), bool(ac.get_ip4_config())) for ac in actives)
+        if key != self.active_key:
+            self.active_key = key
+            self.clear(self.active_list)
+            for ac in actives:
+                self.active_list.append(self.active_row(ac))
+            if not actives:
+                self.empty(self.active_list, "Sin conexión")
 
         if not self.wifi:
             return False
         self.spinner.set_spinning(self.scanning)
-        self.scan_btn.set_label("Buscando…" if self.scanning else "Buscar")
-        self.scan_btn.set_sensitive(wifi_on and not self.scanning)
+        self.scan_btn.set_label("Detener" if self.scanning else "Buscar")
+        self.scan_btn.set_sensitive(wifi_on)
 
-        self.clear(self.avail_list)
-        if not wifi_on:
-            self.empty(self.avail_list, "Wi-Fi apagado")
+        # mientras se escribe la contraseña no se rearma la lista: cada señal de NM (redes que
+        # aparecen, escaneos) creaba un campo nuevo, se perdía lo escrito y el foco lo seleccionaba todo
+        if wifi_on and self.asking and self.asking == self.pass_ssid:
             return False
 
         # una fila por red (el punto de acceso con mejor señal), sin redes ocultas ni la conectada
         best = {}
-        for ap in self.wifi.get_access_points():
+        for ap in self.wifi.get_access_points() if wifi_on else []:
             ssid = ap_ssid(ap)
             if ssid and ssid != active_ssid and (ssid not in best or ap.get_strength() > best[ssid].get_strength()):
                 best[ssid] = ap
         saved = self.saved_wifi()
         aps = sorted(best.values(), key=lambda a: (ap_ssid(a) not in saved, -a.get_strength()))
+        key = (wifi_on, self.scanning and not aps, self.asking, tuple(sorted(self.busy)), tuple(sorted(saved)),
+               tuple((ap_ssid(a), a.get_strength(), a.get_frequency()) for a in aps))
+        # buscando, las redes que aparecen no rearman la lista (se rearma una vez al terminar);
+        # sí lo hace lo que pide el usuario: abrir el campo de contraseña, conectar, olvidar
+        if key == self.avail_key or (self.scanning and self.avail_key and key[:5] == self.avail_key[:5]):
+            return False
+        self.avail_key = key
+        self.pass_ssid = None
+        self.clear(self.avail_list)
+        if not wifi_on:
+            self.empty(self.avail_list, "Wi-Fi apagado")
+            return False
         for ap in aps:
             self.avail_list.append(self.ap_row(ap, saved.get(ap_ssid(ap))))
         if not aps:
@@ -427,9 +443,15 @@ class Panel:
             line.append(entry)
             line.append(ok)
             outer.append(line)
-            GLib.idle_add(entry.grab_focus)
+            self.pass_ssid = ssid
+            # una sola vez: idle_add repite mientras la función devuelva True, y grab_focus() devuelve True;
+            # el campo se re-enfocaba sin parar, seleccionaba todo y cada tecla reemplazaba lo escrito
+            GLib.idle_add(lambda: entry.grab_focus() and False)
 
         row.activate_action = action or (lambda: None)
+        if asking:
+            # un clic en el campo (borde, ojo) activaba la fila: cerraba el campo y borraba lo escrito
+            row.set_activatable(False)
         row.set_child(outer)
         return row
 
@@ -561,6 +583,7 @@ class Panel:
                 self.scan_done()
 
         self.scanning = True
+        self.stopped = False
         self.wifi.request_scan_async(None, done)
         GLib.timeout_add_seconds(15, lambda: self.scanning and self.scan_done() or False)
         self.queue_refresh()
@@ -568,6 +591,11 @@ class Panel:
     def scan_done(self):
         self.scanning = False
         self.queue_refresh()
+
+    def stop_scan(self):
+        """NM no deja cancelar un escaneo: se deja de esperar y la lista queda con lo encontrado hasta ahora."""
+        self.stopped = True
+        self.scan_done()
 
     def toggle(self):
         self.hide() if self.win.get_visible() else self.show()
@@ -580,7 +608,7 @@ class Panel:
         self.scan()
 
     def hide(self):
-        self.win.set_visible(False)
+        self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
 
     def close(self):
         self.hide()
@@ -595,13 +623,14 @@ def main():
         if "panel" in state:          # otra llamada a zen-network: abrir/cerrar
             state["panel"].toggle()
             return
-        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
         a.hold()
         state["panel"] = Panel(a)
-        if "--daemon" not in sys.argv:
-            state["panel"].show()
+        state["panel"].show()
         with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-network.pid"), "w") as f:
             f.write(str(os.getpid()))
+        pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-network.pid")
+        a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
         GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)

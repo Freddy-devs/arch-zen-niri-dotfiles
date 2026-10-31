@@ -1,7 +1,19 @@
 #!/bin/sh
-# zen-toggle audio|media|bluetooth|network|brightness — abre/cierra un panel de la barra al instante.
-# Los paneles quedan residentes (niri los lanza con --daemon); aquí solo se les manda SIGUSR1.
-# Si el panel no está corriendo (se cerró o falló), lo arranca y se muestra.
-pid=$(cat "${XDG_RUNTIME_DIR:-/tmp}/zen-$1.pid" 2>/dev/null)
-[ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null && exit 0
+# zen-toggle audio|media|bluetooth|network|brightness|ram — abre o cierra un panel de la barra.
+# Si el panel está abierto se le manda SIGUSR1 y se cierra (termina, no queda oculto); si no, se abre
+# y se cierra cualquier otro panel abierto (se encimaban en la misma esquina).
+# El pid se comprueba contra /proc: un pid viejo podría ser ya de otro proceso.
+alive() {
+    pid=$(cat "${XDG_RUNTIME_DIR:-/tmp}/$1.pid" 2>/dev/null)
+    [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "$1"
+}
+if alive "zen-$1"; then
+    kill -USR1 "$pid"
+    exit 0
+fi
+for f in "${XDG_RUNTIME_DIR:-/tmp}"/zen-*.pid; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .pid)
+    alive "$name" && kill -USR1 "$pid"
+done
 exec "$HOME/.local/bin/zen-$1"
