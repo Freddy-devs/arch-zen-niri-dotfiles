@@ -138,8 +138,7 @@ def run_window():
     CSS = """
     window.zen-media { background: transparent; }
     .panel {
-        background: #242933; border-radius: 14px; padding: 14px;
-        border: 1px solid alpha(#88c0d0, 0.18);
+        background: #1a1b26; border: 1px solid #292e42; border-radius: 14px; padding: 14px;
         color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
     }
     .art { border-radius: 10px; background: #2e3440; }
@@ -193,7 +192,7 @@ def run_window():
             self.win.present()
 
         def hide(self):
-            self.win.set_visible(False)
+            self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
 
         def build(self):
             provider = Gtk.CssProvider()
@@ -207,7 +206,7 @@ def run_window():
             Layer.set_layer(win, Layer.Layer.OVERLAY)
             Layer.set_anchor(win, Layer.Edge.BOTTOM, True)    # solo abajo: queda centrado en horizontal
             Layer.set_margin(win, Layer.Edge.BOTTOM, 24)
-            Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+            Layer.set_keyboard_mode(win, Layer.KeyboardMode.EXCLUSIVE)
 
             keys = Gtk.EventControllerKey()
             keys.connect("key-pressed", self.on_key)
@@ -432,13 +431,14 @@ def run_window():
         if "panel" in state:          # otra llamada a zen-media: abrir/cerrar
             state["panel"].toggle()
             return
-        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
         a.hold()
         state["panel"] = Window(a)
-        if "--daemon" not in sys.argv:
-            state["panel"].show()
+        state["panel"].show()
         with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-media.pid"), "w") as f:
             f.write(str(os.getpid()))
+        pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-media.pid")
+        a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
         GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)

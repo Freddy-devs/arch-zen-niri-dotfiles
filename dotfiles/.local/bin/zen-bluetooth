@@ -45,7 +45,7 @@ ICONS = {
 CSS = """
 window.zen-bt { background: transparent; }
 .panel {
-    background: #242933; border-radius: 14px; padding: 14px;
+    background: #1a1b26; border: 1px solid #292e42; border-radius: 14px; padding: 14px;
     color: #eceff4; font-family: Inter, sans-serif; font-size: 13px;
 }
 .title { font-size: 15px; font-weight: 800; color: #eceff4; }
@@ -145,6 +145,7 @@ class Panel:
         self.manager = dbus.Interface(self.bus.get_object(BLUEZ, "/"), "org.freedesktop.DBus.ObjectManager")
         self.adapter_path = None
         self.busy = set()          # dispositivos con una operación en curso
+        self.shown = {}            # lo que muestra cada lista: si no cambia, no se rearma (parpadeo, clics perdidos)
         self.refresh_pending = False
         self.updating_switch = False
 
@@ -181,7 +182,7 @@ class Panel:
         Layer.set_anchor(win, Layer.Edge.RIGHT, True)
         Layer.set_margin(win, Layer.Edge.TOP, 8)
         Layer.set_margin(win, Layer.Edge.RIGHT, 12)
-        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.EXCLUSIVE)
 
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.close())
@@ -314,6 +315,12 @@ class Panel:
         return False
 
     def fill(self, lb, items, empty_text):
+        key = (empty_text, tuple((str(p), str(d.get("Alias") or d.get("Name") or d.get("Address")), str(d.get("Icon", "")),
+                                  bool(d.get("Connected")), bool(d.get("Paired")), b, p in self.busy)
+                                 for p, d, b in items))
+        if self.shown.get(lb) == key:
+            return
+        self.shown[lb] = key
         while (child := lb.get_first_child()) is not None:
             lb.remove(child)
         if not items:
@@ -474,7 +481,7 @@ class Panel:
                 self.dev_iface(self.adapter_path, ADAPTER).StopDiscovery()
         except dbus.DBusException:
             pass
-        self.win.set_visible(False)
+        self.app.quit()          # Esc, Super+C u otro clic: se cierra, no queda oculto
 
     def close(self):
         self.hide()
@@ -490,13 +497,14 @@ def main():
         if "panel" in state:          # otra llamada a zen-bluetooth: abrir/cerrar
             state["panel"].toggle()
             return
-        # queda residente con la ventana ya armada: abrir/cerrar es instantáneo (zen-toggle manda SIGUSR1)
+        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
         a.hold()
         state["panel"] = Panel(a)
-        if "--daemon" not in sys.argv:
-            state["panel"].show()
+        state["panel"].show()
         with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid"), "w") as f:
             f.write(str(os.getpid()))
+        pidfile = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid")
+        a.connect("shutdown", lambda *_: os.path.exists(pidfile) and os.unlink(pidfile))
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import GLibUnix
         GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: state["panel"].toggle() or True)

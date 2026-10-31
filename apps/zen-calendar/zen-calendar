@@ -15,6 +15,7 @@ cada 5 min hasta marcarla hecha. Clic en el aviso: abre el día · clic central:
 import ctypes
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -42,6 +43,7 @@ from tareas import ALLDAY, REMIND_EVERY, SNOOZE_MIN  # noqa: E402
 
 APP_ID = "pe.zen.Calendar"
 CHECK_EVERY = 30
+PIDFILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-calendar.pid")
 SOUND_ALARM = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 SOUND_PRE = "/usr/share/sounds/freedesktop/stereo/message.oga"
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -144,8 +146,6 @@ class App:
         self.today = date.today()
         self.view = self.today.replace(day=1)
         self.selected = self.today
-        self.was_active = False
-        self.hovered = False   # el ratón entró al panel desde que se abrió
         self.held = False
         self.notif = None
         self.notif_by_task = {}
@@ -170,17 +170,14 @@ class App:
         Layer.set_anchor(win, Layer.Edge.RIGHT, True)
         Layer.set_margin(win, Layer.Edge.TOP, 4)
         Layer.set_margin(win, Layer.Edge.RIGHT, 4)
-        Layer.set_keyboard_mode(win, Layer.KeyboardMode.ON_DEMAND)
+        # teclado exclusivo mientras está abierto: con focus-follows-mouse de niri, al salir el ratón
+        # lo que se escribía iba a la ventana de debajo
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.EXCLUSIVE)
         self.win = win
 
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self.on_key)
         win.add_controller(keys)
-        # se cierra al hacer clic fuera (pierde el foco), igual que un menú
-        win.connect("notify::is-active", self.on_active)
-        motion = Gtk.EventControllerMotion()
-        motion.connect("enter", lambda *_: setattr(self, "hovered", True))
-        win.add_controller(motion)
         win.connect("close-request", lambda _w: (self.hide(), True)[1])
 
         # ---- columna izquierda: reloj + mes
@@ -275,7 +272,6 @@ class App:
         self.entry_title.connect("activate", lambda _e: self.add_task())
         # al escribir, el panel retiene el teclado: con focus-follows-mouse de niri, sacar el
         # ratón del panel le quitaba el foco y lo cerraba a media tarea (Esc o el reloj lo cierran)
-        self.entry_title.connect("changed", self.on_typing)
         add_btn.connect("clicked", lambda _b: self.add_task())
         add.append(self.entry_title)
         add.append(self.time_btn)
@@ -296,18 +292,6 @@ class App:
             self.hide()
             return True
         return False
-
-    def on_active(self, win, _pspec):
-        if win.is_active():
-            self.was_active = True
-        # solo si el ratón ya pasó por el panel: abierto desde una notificación (o con el ratón en
-        # otra pantalla), focus-follows-mouse de niri le quitaba el foco al instante y se cerraba solo
-        elif self.was_active and self.hovered and win.get_visible():
-            self.hide()
-
-    def on_typing(self, entry):
-        if entry.get_text():
-            Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.EXCLUSIVE)
 
     @staticmethod
     def focused_monitor():
@@ -391,7 +375,7 @@ class App:
         def on_minute(_b, m):
             self.set_time(f"{self.pick_hour:02}:{m:02}")
             picker.set_reveal_child(False)
-            self.entry_title.grab_focus()
+            self.entry_title.grab_focus_without_selecting()
 
         for h in range(1, 13):
             b = Gtk.Button(label=str(h))
@@ -409,7 +393,7 @@ class App:
         def on_none(_b):
             self.set_time("")
             picker.set_reveal_child(False)
-            self.entry_title.grab_focus()
+            self.entry_title.grab_focus_without_selecting()
 
         none.connect("clicked", on_none)
 
@@ -426,7 +410,6 @@ class App:
             (pm if h >= 12 else am).set_active(True)
             stack.set_visible_child_name("hours")
             picker.set_reveal_child(True)
-            Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.EXCLUSIVE)
 
         self.time_btn.connect("clicked", on_time_btn)
         return picker
@@ -445,20 +428,21 @@ class App:
             Layer.set_monitor(self.win, self.focused_monitor())
         except TypeError:
             pass
-        self.was_active = False
-        self.hovered = False
-        Layer.set_keyboard_mode(self.win, Layer.KeyboardMode.ON_DEMAND)
         self.close_picker()
         self.entry_title.set_text("")
         self.set_time("")
         self.refresh()
         self.win.present()
+        with open(PIDFILE, "w") as f:   # mientras se ve: Super+C (zen-close) y los otros paneles lo cierran
+            f.write(str(os.getpid()))
         self.entry_title.grab_focus()   # listo para escribir (si no, el foco caía en el ✓ de la primera tarea)
         self.tick()   # después de present: tick no pinta con la ventana oculta (el reloj salía vacío 1 s)
 
     def hide(self):
         if self.win is not None:
             self.win.set_visible(False)
+        if os.path.exists(PIDFILE):
+            os.unlink(PIDFILE)
         self.residency()
 
     def residency(self):
@@ -639,7 +623,8 @@ class App:
         if (d.year, d.month) != (self.view.year, self.view.month):
             self.view = d.replace(day=1)
         self.refresh()
-        self.entry_title.grab_focus()
+        # sin seleccionar: grab_focus() seleccionaba el título ya escrito y la siguiente tecla lo borraba
+        self.entry_title.grab_focus_without_selecting()
 
     def add_task(self):
         title = self.entry_title.get_text().strip()
@@ -817,6 +802,9 @@ class App:
     # ---------- arranque
 
     def on_startup(self, _app):
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, lambda: (self.visible() and self.hide(), True)[1])
         provider = Gtk.CssProvider()
         provider.load_from_path(os.path.join(HERE, "style.css"))
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,

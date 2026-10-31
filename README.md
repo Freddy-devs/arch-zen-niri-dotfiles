@@ -51,8 +51,9 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 ## Rendimiento
 - **Nada corre en segundo plano sin motivo.** Residentes: niri, waybar, swaybg, swayidle, el agente
   polkit y el historial del portapapeles. mako arranca por D-Bus con la primera notificación; el
-  calendario (Python) solo queda en memoria si hay tareas pendientes; Bluetooth, audio y red se
-  abren en terminal y se cierran al salir. Los servicios que instala `zen-apps` quedan apagados.
+  calendario (Python) solo queda en memoria si hay tareas pendientes; los paneles de la barra
+  (red, Bluetooth, audio, multimedia, brillo, RAM) arrancan al hacer clic y terminan al cerrarlos
+  con Esc, Super+C u otro clic en su ícono. Los servicios que instala `zen-apps` quedan apagados.
 - SDDM solo durante el login; grub-btrfs sin demonio (systemd vigila `/.snapshots`).
 - **zram** (zstd, hasta la mitad de la RAM / 8 GB) en vez de zswap; `systemd-oomd` evita que el
   equipo se congele cuando falta memoria.

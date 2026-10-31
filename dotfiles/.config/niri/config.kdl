@@ -139,13 +139,6 @@ spawn-at-startup "alacritty" "--daemon"
 // mako no se lanza: D-Bus lo arranca solo con la primera notificación
 // calendario: solo queda en memoria si hay tareas pendientes (clic en el reloj o Super+A)
 spawn-at-startup "zen-calendar" "--daemon"
-// paneles de la barra residentes y ocultos: abren al instante con zen-toggle
-spawn-at-startup "sh" "-c" "~/.local/bin/zen-audio --daemon"
-spawn-at-startup "sh" "-c" "~/.local/bin/zen-media --daemon"
-spawn-at-startup "sh" "-c" "~/.local/bin/zen-bluetooth --daemon"
-spawn-at-startup "sh" "-c" "~/.local/bin/zen-network --daemon"
-spawn-at-startup "sh" "-c" "~/.local/bin/zen-brightness --daemon"
-spawn-at-startup "sh" "-c" "~/.local/bin/zen-ram --daemon"
 spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
@@ -279,7 +272,8 @@ binds {
     Mod+Alt+Space hotkey-overlay-title="Idioma del teclado (latam / inglés)" { switch-layout "next"; }
 
     // cerrar / salir / apagar
-    Mod+C hotkey-overlay-title="Cerrar ventana" repeat=false { close-window; }
+    // Super+C cierra primero un panel abierto de la barra (son capas, no ventanas); si no hay, la ventana
+    Mod+C hotkey-overlay-title="Cerrar ventana o panel" repeat=false { spawn-sh "~/.local/bin/zen-close"; }
     Mod+W repeat=false { close-window; }
     Mod+Shift+C hotkey-overlay-title="Menú de energía" { spawn "zen-power"; }
     Mod+Alt+Q { quit; }
