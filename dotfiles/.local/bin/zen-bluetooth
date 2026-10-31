@@ -7,18 +7,13 @@ emparejamiento acepta solo la confirmación del código de lo que se empareja de
 """
 import os
 import secrets
-import signal
 import sys
-import traceback
 
-# gtk4-layer-shell debe cargarse antes que libwayland; en Python solo se logra con LD_PRELOAD
-# dibujo por CPU (cairo): para un panel chico basta y usa la mitad de RAM que el renderizador GL
-os.environ.setdefault("GSK_RENDERER", "cairo")
+# lo común de los paneles vive en zen_panel.py, junto al script real (~/.local/bin o el repo)
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import zen_panel  # noqa: E402
 
-LAYER_LIB = "/usr/lib/libgtk4-layer-shell.so"
-if LAYER_LIB not in os.environ.get("LD_PRELOAD", ""):
-    os.environ["LD_PRELOAD"] = ":".join(filter(None, [LAYER_LIB, os.environ.get("LD_PRELOAD")]))
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+zen_panel.preload_layer_shell()     # re-exec con gtk4-layer-shell, antes de importar Gtk
 
 import dbus  # noqa: E402
 import dbus.service  # noqa: E402
@@ -26,9 +21,7 @@ from dbus.mainloop.glib import DBusGMainLoop  # noqa: E402
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Gdk", "4.0")
-gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell as Layer  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
 BLUEZ = "org.bluez"
 ADAPTER = "org.bluez.Adapter1"
@@ -45,20 +38,6 @@ ICONS = {
 }
 
 ROWS_VISIBLE, ROW_HEIGHT = 5, 51     # filas de la lista sin scroll y alto de cada una (con su margen)
-
-PIDFILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zen-bluetooth.pid")
-
-
-def write_pidfile():
-    with open(PIDFILE, "w") as f:
-        f.write(str(os.getpid()))
-
-
-def remove_pidfile():
-    try:
-        os.unlink(PIDFILE)
-    except FileNotFoundError:
-        pass
 
 CSS = """
 window.zen-bt { background: transparent; }
@@ -206,25 +185,8 @@ class Panel:
 
     # ---------- ventana ----------
     def build_window(self):
-        provider = Gtk.CssProvider()
-        provider.load_from_string(CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-
-        win = Gtk.ApplicationWindow(application=self.app)
-        win.add_css_class("zen-bt")
-        Layer.init_for_window(win)
-        Layer.set_namespace(win, "zen-bluetooth")
-        Layer.set_layer(win, Layer.Layer.TOP)
-        Layer.set_anchor(win, Layer.Edge.TOP, True)
-        Layer.set_anchor(win, Layer.Edge.RIGHT, True)
-        Layer.set_margin(win, Layer.Edge.TOP, 8)
-        Layer.set_margin(win, Layer.Edge.RIGHT, 12)
-        Layer.set_keyboard_mode(win, Layer.KeyboardMode.EXCLUSIVE)
-
-        keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", lambda c, k, *a: k == Gdk.KEY_Escape and self.close())
-        win.add_controller(keys)
+        zen_panel.load_css(CSS)
+        win = zen_panel.layer_window(self.app, "zen-bluetooth", "zen-bt", on_escape=self.close)
 
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         panel.add_css_class("panel")
@@ -555,32 +517,7 @@ class Panel:
 
 def main():
     DBusGMainLoop(set_as_default=True)
-    app = Gtk.Application(application_id="pe.zen.Bluetooth")
-    state = {}
-
-    def activate(a):
-        if "panel" in state:          # otra llamada a zen-bluetooth: abrir/cerrar
-            state["panel"].toggle()
-            return
-        # el pidfile va primero: mientras se arma el panel, Super+C y zen-toggle ya lo encuentran
-        write_pidfile()
-        a.connect("shutdown", lambda *_: remove_pidfile())
-        # zen-toggle manda SIGUSR1 para cerrarlo; Esc o Super+C también
-        gi.require_version("GLibUnix", "2.0")
-        from gi.repository import GLibUnix
-        GLibUnix.signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1,
-                            lambda: ("panel" in state and state["panel"].toggle()) or True)
-        a.hold()
-        try:
-            state["panel"] = Panel(a)
-            state["panel"].show()
-        except Exception:
-            # bluetoothd caído, sin pantalla…: sin esto quedaba vivo por el hold(), invisible y sin pidfile
-            traceback.print_exc()
-            a.quit()
-
-    app.connect("activate", activate)
-    app.run(None)
+    zen_panel.run("pe.zen.Bluetooth", "zen-bluetooth", Panel)
 
 
 if __name__ == "__main__":

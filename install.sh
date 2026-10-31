@@ -401,12 +401,15 @@ step_dotfiles() {
     local layouts="$XKB,us"
     [[ $XKB == us ]] && layouts="us,latam"
     cp -rT "$ROOT/dotfiles" /etc/skel
+    # las pruebas de los paneles y los restos de Python no van a las carpetas personales
+    rm -rf /etc/skel/.local/bin/tests; find /etc/skel -name __pycache__ -type d -prune -exec rm -rf {} +
     sed -i -E "s/^( *)layout \"[a-z,]+\"/\1layout \"$layouts\"/" /etc/skel/.config/niri/config.kdl
     # en la carpeta personal se copia como el usuario (sin chown de todo el home: no toca podman ni
     # nada más). Solo cambia lo distinto; lo que el usuario ya tenía queda como archivo.~1~
     local src rel dst tmp n=0
     tmp=$(mktemp -d); chmod 755 "$tmp"
     cp -rT "$ROOT/dotfiles" "$tmp"
+    rm -rf "$tmp/.local/bin/tests"; find "$tmp" -name __pycache__ -type d -prune -exec rm -rf {} +
     sed -i -E "s/^( *)layout \"[a-z,]+\"/\1layout \"$layouts\"/" "$tmp/.config/niri/config.kdl"
     while IFS= read -r -d '' src; do
         rel=${src#"$tmp/"}; dst=$HOME_USR/$rel
