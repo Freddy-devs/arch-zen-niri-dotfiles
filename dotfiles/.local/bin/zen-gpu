@@ -2,7 +2,7 @@
 """zen-gpu — supervisor de las dos gráficas (Intel UHD 620 + NVIDIA MX150).
 
   zen-gpu --daemon   lo corre zen-gpu.service: cada 2 s mide la Intel (tiempo por motor en
-                     /proc/<pid>/fdinfo, sin root) y la NVIDIA (nvidia-smi, si el driver está),
+                     /proc/<pid>/fdinfo, sin root) y la NVIDIA (nvidia-smi solo si ya está despierta),
                      anota qué apps usa cada una y lo deja en $XDG_RUNTIME_DIR/zen-gpu.json.
                      zen-run lee ese archivo para decidir en qué gráfica abre cada app.
   zen-gpu            para waybar (custom/gpu): una línea JSON cada 2 s a partir de ese archivo.
@@ -23,6 +23,7 @@ NOMBRES = {"render": "dibujo", "video": "video", "video-enhance": "video (escala
 NVIDIA_PCI = "/sys/bus/pci/devices/0000:01:00.0"
 MOTOR = re.compile(r"^drm-engine-([\w-]+):\s*(\d+) ns", re.M)
 CLIENTE = re.compile(r"^drm-client-id:\s*(\d+)", re.M)
+NVIDIA_DEV = re.compile(r"/dev/nvidia\d+")
 
 
 # ---------------------------------------------------------------- Intel
@@ -35,7 +36,7 @@ def buscar():
                 destino = os.readlink(f"/proc/{pid}/fd/{fd}")
                 if destino.startswith("/dev/dri/"):
                     dri.append((pid, fd))
-                elif re.fullmatch(r"/dev/nvidia\d+", destino):
+                elif NVIDIA_DEV.fullmatch(destino):
                     nv[pid] = open(f"/proc/{pid}/comm").read().strip()
         except OSError:
             pass
@@ -64,32 +65,35 @@ def leer_intel(fds):
 
 # ---------------------------------------------------------------- NVIDIA
 class Nvidia:
-    """Lee la NVIDIA con un solo nvidia-smi que queda corriendo (no uno por medición)."""
+    """Lee la NVIDIA sin despertarla: nvidia-smi enciende la tarjeta, así que solo se le pregunta
+    cuando ya está despierta (runtime_status en sysfs, que se lee sin tocarla) y nunca seguido:
+    tras cada consulta se espera CALMA s para que, si nadie la usa, alcance a apagarse sola.
+    Si pasada la calma sigue despierta, es que otra app la tiene ocupada."""
+
+    CALMA = 20
 
     def __init__(self):
-        self.proc = None
         self.ultimo = None
+        self.cuando = -self.CALMA
 
     def driver(self):
         return os.path.exists("/proc/driver/nvidia/version")
 
-    def leer(self):
-        if not self.driver():
+    def leer(self, energia):
+        if not self.driver() or energia != "active":
+            self.ultimo = None            # apagada: lo último que se midió ya no vale
             return None
-        if self.proc is None or self.proc.poll() is not None:
+        if time.monotonic() - self.cuando >= self.CALMA:
+            self.cuando = time.monotonic()
             try:
-                self.proc = subprocess.Popen(
+                salida = subprocess.run(
                     ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.decoder,temperature.gpu,power.draw,memory.used",
-                     "--format=csv,noheader,nounits", f"--loop-ms={INTERVALO * 1000}"],
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-                os.set_blocking(self.proc.stdout.fileno(), False)
-            except OSError:
-                return None
-        try:
-            for linea in self.proc.stdout:
-                self.ultimo = linea
-        except (BlockingIOError, TypeError):
-            pass
+                     "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=5).stdout.strip()
+                if salida:
+                    self.ultimo = salida.splitlines()[0]
+            except (OSError, subprocess.SubprocessError):
+                pass
         if not self.ultimo:
             return None
         def num(x):
@@ -124,12 +128,13 @@ def daemon():
         dt = (t1 - t0) * 1e9
         motores = {m: max(0.0, min(100.0, (ns - antes.get(m, ns)) / dt * 100)) for m, ns in ahora.items()}
         antes, t0 = ahora, t1
+        energia = estado_pci()
         estado = {
             "hora": time.time(),
             "intel": {"uso": round(max(motores.values(), default=0)),
                       "motores": {NOMBRES[m]: round(u) for m, u in motores.items() if m in NOMBRES}},
-            "nvidia": {"driver": nvidia.driver(), "energia": estado_pci(),
-                       "apps": sorted(set(apps_nv.values()) - {"nvidia-smi"}), **(nvidia.leer() or {})},
+            "nvidia": {"driver": nvidia.driver(), "energia": energia,
+                       "apps": sorted(set(apps_nv.values()) - {"nvidia-smi"}), **(nvidia.leer(energia) or {})},
         }
         tmp = ESTADO + ".tmp"
         with open(tmp, "w") as f:
@@ -157,7 +162,10 @@ def waybar():
         texto = f"<span color='{color(i['uso'], CELESTE)}' rise='0pt'>{ICONO}</span>  {i['uso']}%"
         tip = ["Intel UHD 620 (escritorio, Brave, video)"]
         tip += [f"  {m}: {u}%" for m, u in sorted(i["motores"].items())]
-        if n["driver"]:
+        if n["driver"] and n.get("energia") == "suspended":
+            texto += f"  <span color='{GRIS}' rise='0pt'>{ICONO}</span>"
+            tip.append("NVIDIA MX150: apagada (se enciende sola cuando una app la pide)")
+        elif n["driver"]:
             uso = round(n.get("uso", 0))
             texto += f"  <span color='{color(uso, VERDE)}' rise='0pt'>{ICONO}</span>  {uso}%"
             tip.append("NVIDIA MX150 (apps pesadas y desborde)")

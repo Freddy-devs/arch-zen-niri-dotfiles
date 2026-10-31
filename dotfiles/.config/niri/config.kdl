@@ -213,14 +213,9 @@ layer-rule {
     shadow { off; }
 }
 
+// paneles de la barra (zen-audio, zen-network, zen-calendar…): todos usan el namespace zen-<nombre>
 layer-rule {
-    match namespace="^zen-bluetooth$"
-    match namespace="^zen-network$"
-    match namespace="^zen-audio$"
-    match namespace="^zen-media$"
-    match namespace="^zen-brightness$"
-    match namespace="^zen-ram$"
-    match namespace="^zen-calendar$"
+    match namespace="^zen-"
     geometry-corner-radius 14
     // sombra muy suave y difusa para los popups
     shadow {
@@ -256,7 +251,7 @@ binds {
     Mod+Space hotkey-overlay-title="Lanzador" { spawn "rofi" "-show" "drun"; }
     Mod+D { spawn "rofi" "-show" "drun"; }
     Mod+B hotkey-overlay-title="Lanzador de apps" { spawn "rofi" "-show" "drun"; }
-    Mod+A hotkey-overlay-title="Calendario y tareas" { spawn "zen-calendar"; }
+    Mod+A hotkey-overlay-title="Calendario y tareas" { spawn-sh "~/.local/bin/zen-toggle calendar"; }
     // paneles de la barra sin mouse: la misma tecla abre y cierra (Esc también cierra)
     Mod+M hotkey-overlay-title="Reproductor de música" { spawn-sh "~/.local/bin/zen-toggle media"; }
     Mod+S hotkey-overlay-title="Sonido (volumen, salidas, micrófono)" { spawn-sh "~/.local/bin/zen-toggle audio"; }
