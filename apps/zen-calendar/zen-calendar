@@ -147,6 +147,8 @@ class App:
         self.view = self.today.replace(day=1)
         self.selected = self.today
         self.held = False
+        self.tick_id = 0      # timer del reloj: solo existe con el panel a la vista
+        self.warned = None    # copia del tasks.json dañado ya avisada por notificación
         self.notif = None
         self.notif_by_task = {}
         self.task_by_notif = {}
@@ -249,6 +251,12 @@ class App:
         # ---- columna derecha: día elegido, agenda, alta rápida, próximos feriados
         right = vbox("col-right")
         right.set_size_request(300, -1)
+        # aviso de tasks.json dañado: mientras se vea no se guarda nada (se perderían las tareas)
+        self.warn = label("", "warn")   # el color va en el markup: style.css no tiene clase para avisos
+        self.warn.set_wrap(True)
+        self.warn.set_max_width_chars(38)
+        self.warn.set_visible(False)
+        right.append(self.warn)
         self.day_title = label("", "day-title")
         self.day_sub = label("", "day-sub")
         right.append(self.day_title)
@@ -437,8 +445,13 @@ class App:
             f.write(str(os.getpid()))
         self.entry_title.grab_focus()   # listo para escribir (si no, el foco caía en el ✓ de la primera tarea)
         self.tick()   # después de present: tick no pinta con la ventana oculta (el reloj salía vacío 1 s)
+        if not self.tick_id:   # el reloj solo corre a la vista: oculto, el daemon no despierta cada segundo
+            self.tick_id = GLib.timeout_add_seconds(1, self.tick)
 
     def hide(self):
+        if self.tick_id:
+            GLib.source_remove(self.tick_id)
+            self.tick_id = 0
         if self.win is not None:
             self.win.set_visible(False)
         if os.path.exists(PIDFILE):
@@ -446,8 +459,12 @@ class App:
         self.residency()
 
     def residency(self):
-        """Residente solo con tareas pendientes (hay alarmas que vigilar); si no, sale con el panel cerrado."""
-        if any(not t.get("done") for t in self.store.load()):
+        """Residente solo con tareas pendientes (hay alarmas que vigilar); si no, sale con el panel cerrado.
+        Con tasks.json dañado no se sabe si las hay: se queda (y avisa) hasta que se pueda leer."""
+        tasks = self.store.load()
+        if self.store.error:
+            self.warn_corrupt()
+        if self.store.error or any(not t.get("done") for t in tasks):
             if not self.held:
                 self.app.hold()
                 self.held = True
@@ -471,6 +488,7 @@ class App:
             return
         self.today = today = date.today()
         tasks = self.store.load()
+        self.show_warning()
         self.cal.extra = feriados.load_extra(self.extra_path)
         view, selected = self.view, self.selected
 
@@ -606,6 +624,38 @@ class App:
             self.refresh()
         return True
 
+    # ---------- tasks.json dañado
+
+    def write(self, f):
+        """store.update() sin escribir encima de un archivo dañado: devuelve (ok, resultado de f)."""
+        try:
+            return True, self.store.update(f)
+        except tareas.Corrupt:
+            self.warn_corrupt()
+            self.show_warning()
+            return False, None
+
+    def corrupt_text(self):
+        copy = f" Copia en {self.store.backup}." if self.store.backup else ""
+        return (f"No se puede leer {self.store.db} ({self.store.error}). No se guardan cambios hasta "
+                f"repararlo o borrarlo.{copy}")
+
+    def show_warning(self):
+        if self.win is None:
+            return
+        text = GLib.markup_escape_text(self.corrupt_text()) if self.store.error else ""
+        self.warn.set_markup(f'<span foreground="#bf616a">{text}</span>')
+        self.warn.set_visible(bool(self.store.error))
+
+    def warn_corrupt(self):
+        """Notificación una sola vez por cada versión dañada del archivo."""
+        key = self.store.backup or self.store.error
+        if self.warned == key:
+            return
+        self.warned = key
+        self.notify("corrupt", "Tareas: archivo dañado", GLib.markup_escape_text(self.corrupt_text()),
+                    ["default", "Abrir calendario"])
+
     # ---------- acciones
 
     def nav(self, step):
@@ -638,7 +688,8 @@ class App:
             ids = [i for i in (tareas._int(t.get("id")) for t in data) if i is not None]
             data.append({"id": max(ids, default=0) + 1, **task})
 
-        self.store.update(add)
+        if not self.write(add)[0]:
+            return   # el título queda escrito: no se pierde
         self.entry_title.set_text("")
         self.set_time("")
         self.close_picker()
@@ -653,7 +704,7 @@ class App:
                 if t.get("id") == tid:
                     f(t)
 
-        self.store.update(apply)
+        self.write(apply)
         if self.visible():
             self.refresh()
         self.residency()
@@ -678,7 +729,7 @@ class App:
         self.edit(tid, f)
 
     def delete(self, tid):
-        self.store.update(lambda data: data.__setitem__(slice(None), [t for t in data if t.get("id") != tid]))
+        self.write(lambda data: data.__setitem__(slice(None), [t for t in data if t.get("id") != tid]))
         self.close_notification(tid)
         self.refresh()
         self.residency()
@@ -699,6 +750,8 @@ class App:
         now, epoch = now_min(), int(time.time())
         # lectura sin lock primero: solo se escribe si de verdad hay algo que avisar
         if not any(tareas.due_alert(t, now, epoch) for t in self.store.load()):
+            if self.store.error:
+                self.warn_corrupt()
             return
 
         def mark(data):
@@ -716,7 +769,7 @@ class App:
                     fire.append((dict(t), None))
             return fire
 
-        fire = self.store.update(mark)
+        fire = self.write(mark)[1] or []
         for t, pre in fire:
             self.alert(t, pre, now)
         if fire and self.visible():
@@ -818,7 +871,6 @@ class App:
             return True
 
         GLib.timeout_add_seconds(CHECK_EVERY, every_check)
-        GLib.timeout_add_seconds(1, self.tick)
         GLib.idle_add(lambda: (self.check_alarms(), False)[1])
 
     def on_command_line(self, _app, cmd):
