@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "zen-brave-tema",
+  "description": "Los colores Nord del escritorio, con la barra de direcciones más oscura para que se distinga de la barra de herramientas.",
+  "version": "1.0",
+  "theme": {
+    "colors": {
+      "frame": [30, 34, 42],
+      "frame_inactive": [30, 34, 42],
+      "toolbar": [51, 58, 71],
+      "tab_text": [255, 255, 255],
+      "tab_background_text": [216, 222, 233],
+      "bookmark_text": [216, 222, 233],
+      "toolbar_button_icon": [229, 233, 240],
+      "omnibox_background": [36, 41, 51],
+      "omnibox_text": [236, 239, 244],
+      "ntp_background": [30, 34, 42],
+      "ntp_text": [216, 222, 233]
+    }
+  }
+}
