@@ -86,7 +86,7 @@ tooltip label {
     border-top-color: @nordic3;
     border-radius: 10px;
     margin: 7px 3px;
-    padding: 0 12px;
+    padding: 0 7px;
     box-shadow: none;
     transition: all 200ms ease;
 }
@@ -111,14 +111,19 @@ tooltip label {
 #cpu, #custom-gpu, #memory, #disk,
 #bluetooth, #custom-btbattery, #custom-media, #network,
 #pulseaudio, #backlight {
-    padding: 0 6px;
+    padding: 0 4px;
+}
+
+/* los grupos ya suman el aire de sus módulos: así su borde queda igual que el de las islas sueltas */
+#stats, #storage, #bt, #netbat, #controls {
+    padding: 0 3px;
 }
 
 /* ---------- izquierda: logo + [CPU · GPU] + [RAM · disco] ---------- */
 #custom-arch {
     color: @arch;
     font-size: 17px;
-    padding: 0 12px 0 11px;
+    padding: 0 7px;
     margin-left: 0;
 }
 
@@ -136,7 +141,7 @@ tooltip label {
 /* ---------- centro: Pac-Man ---------- */
 /* 󰮯 pacman = escritorio actual · 󰊠 fantasma = con ventanas · 󰝥 bolita = vacío */
 #workspaces {
-    padding: 0 6px;
+    padding: 0 3px;
 }
 
 /* el tamaño va en el label: la regla "*" de arriba le pone 13 px y no lo hereda del botón */
@@ -223,7 +228,7 @@ tooltip label {
 #custom-updates { color: @fg; }
 
 #tray {
-    padding: 0 8px;
+    padding: 0 6px;
 }
 
 #tray > .needs-attention {
@@ -234,7 +239,7 @@ tooltip label {
 #custom-power {
     color: @red;
     font-size: 14px;
-    padding: 0 9px;
+    padding: 0 7px;
     margin-right: 0;
 }
 
@@ -248,6 +253,6 @@ tooltip label {
 #clock {
     color: @fg;
     font-weight: 700;
-    padding: 0 14px;
+    padding: 0 8px;
     border-color: @nordic3;
 }
