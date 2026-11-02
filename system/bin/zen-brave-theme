@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Personaliza Brave Origin (brave-origin-bin) para que combine con el escritorio:
-#   - toma los colores del tema GTK del sistema (Colloid-Dark-Nord) y sigue su modo oscuro
+#   - zen-brave-tema (~/.local/share/zen-brave-tema): los colores Nord del escritorio con la barra de
+#     direcciones más oscura; con el tema GTK quedaba plana, igual que la barra de herramientas
 #   - pestañas verticales a la izquierda, colapsadas (solo iconos, no se abren al pasar el
 #     cursor; se despliegan con el botón de arriba), sin barra de título
 #   - al abrir, continúa donde lo dejaste (ventanas y pestañas)
@@ -13,7 +14,7 @@
 # Brave debe estar cerrado: si está abierto sobrescribe las preferencias al salir.
 # Uso: zen-brave-theme [--wait]   (--wait espera a que cierres Brave y luego aplica)
 
-import glob, json, os, subprocess, sys, time
+import glob, hashlib, json, os, subprocess, sys, time
 
 # sitios que nunca se duermen (notificaciones en tiempo real)
 SIEMPRE_ACTIVOS = [
@@ -29,7 +30,13 @@ PREFS = os.path.join(BASE, "Default", "Preferences")
 FLAGS = os.path.expanduser("~/.config/brave-origin-flags.conf")
 TAB_SLEEP = os.path.expanduser("~/.local/share/zen-tab-sleep")
 YOUTUBE_VP9 = os.path.expanduser("~/.local/share/zen-youtube-vp9")
+TEMA = os.path.expanduser("~/.local/share/zen-brave-tema")
 STATE = os.path.join(BASE, "Local State")
+
+
+def extension_id(path):
+    # el id de una extensión descomprimida sale del sha256 de su ruta
+    return "".join(chr(97 + int(c, 16)) for c in hashlib.sha256(path.encode()).hexdigest()[:32])
 
 
 def running():
@@ -60,7 +67,7 @@ def add_tab_sleep_flag():
         return
     lines = open(FLAGS).read().splitlines() if os.path.exists(FLAGS) else []
     lines = [l for l in lines if not l.startswith("--load-extension=")]
-    lines.append("--load-extension=" + ",".join(e for e in (TAB_SLEEP, YOUTUBE_VP9) if os.path.isdir(e)))
+    lines.append("--load-extension=" + ",".join(e for e in (TAB_SLEEP, YOUTUBE_VP9, TEMA) if os.path.isdir(e)))
     with open(FLAGS, "w") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -76,8 +83,8 @@ if running():
     time.sleep(1)
 
 patch(PREFS, {
-    "extensions.theme.id": "",
-    "extensions.theme.system_theme": 1,                 # 1 = colores del tema GTK
+    "extensions.theme.id": extension_id(TEMA) if os.path.isdir(TEMA) else "",
+    "extensions.theme.system_theme": 0 if os.path.isdir(TEMA) else 1,   # 1 = colores del tema GTK
     "browser.custom_chrome_frame": True,                # sin barra de título del sistema
     "brave.tabs.vertical_tabs_enabled": True,
     "brave.tabs.vertical_tabs_on_right": False,
@@ -94,4 +101,4 @@ patch(STATE, {
     "performance_tuning.high_efficiency_mode.state": 2,         # 2 = ahorro de memoria activado
     "performance_tuning.high_efficiency_mode.aggressiveness": 1,  # 1 = equilibrado
 })
-print("Listo: abre Brave Origin para ver el tema del sistema y las pestañas a la izquierda.")
+print("Listo: abre Brave Origin para ver el tema y las pestañas a la izquierda.")
