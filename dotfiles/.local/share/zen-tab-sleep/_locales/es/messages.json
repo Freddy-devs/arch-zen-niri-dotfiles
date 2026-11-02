@@ -1,0 +1,291 @@
+{
+ "nombreExt": {
+  "message": "Zen Tab Sleep: dormir pestañas y ahorrar memoria"
+ },
+ "descExt": {
+  "message": "Duerme pestañas sin usar y libera RAM. Elige el tiempo o excluye cada página, sitio o ventana. Sin rastreo ni acceso a tus datos."
+ },
+ "activa": {
+  "message": "Activa"
+ },
+ "enPausa": {
+  "message": "En pausa"
+ },
+ "pausarReanudar": {
+  "message": "Pausar o reanudar"
+ },
+ "ningunaDuerme": {
+  "message": "No se duerme ninguna pestaña."
+ },
+ "porRegla": {
+  "message": "Por la regla $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "porVentana": {
+  "message": "Por la regla de esta ventana"
+ },
+ "valorGeneral": {
+  "message": "Valor general"
+ },
+ "paginaInterna": {
+  "message": "Página interna del navegador: valor general"
+ },
+ "nuncaDuerme": {
+  "message": "Esta pestaña nunca se duerme"
+ },
+ "seDuerme": {
+  "message": "Se duerme a los $V1$ sin usarla",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "ahoraNoSuena": {
+  "message": "Ahora no: está sonando."
+ },
+ "ahoraNoFijada": {
+  "message": "Ahora no: está fijada."
+ },
+ "reglaPara": {
+  "message": "Regla para"
+ },
+ "pagina": {
+  "message": "Página"
+ },
+ "sitio": {
+  "message": "Sitio"
+ },
+ "ventana": {
+  "message": "Ventana"
+ },
+ "destinoVentana": {
+  "message": "Todas las pestañas de esta ventana, salvo las que tengan regla de página o sitio."
+ },
+ "sinReglaPropia": {
+  "message": "Sin regla propia ($V1$)",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "nuncaDormir": {
+  "message": "Nunca dormir"
+ },
+ "dormirALos": {
+  "message": "Dormir a los"
+ },
+ "dormirALosOpcion": {
+  "message": "Dormir a los…"
+ },
+ "min": {
+  "message": "min"
+ },
+ "minutosRegla": {
+  "message": "Minutos de esta regla"
+ },
+ "lasDemas": {
+  "message": "Las demás pestañas, a los"
+ },
+ "dormirDemas": {
+  "message": "Dormir las demás"
+ },
+ "dormirDemasAyuda": {
+  "message": "Duerme las pestañas no protegidas de esta ventana"
+ },
+ "todasReglas": {
+  "message": "Todas las reglas"
+ },
+ "dormidas": {
+  "message": "$V1$ dormidas",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "errorMinutos": {
+  "message": "Escribe un tiempo entre 0.5 y 10080 minutos."
+ },
+ "errorGuardar": {
+  "message": "No se pudo guardar."
+ },
+ "errorDireccion": {
+  "message": "Esa dirección no es válida."
+ },
+ "errorMaxReglas": {
+  "message": "Máximo $V1$ reglas.",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "errorCopia": {
+  "message": "Ese archivo no es una copia de Zen Tab Sleep."
+ },
+ "errorJson": {
+  "message": "Ese archivo no es JSON válido."
+ },
+ "tituloMinutos": {
+  "message": "Zen Tab Sleep: esta pestaña se duerme a los $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "tituloNunca": {
+  "message": "Zen Tab Sleep: esta pestaña nunca se duerme"
+ },
+ "tituloPausa": {
+  "message": "Zen Tab Sleep: en pausa"
+ },
+ "menuSitio": {
+  "message": "Nunca dormir este sitio"
+ },
+ "menuVentana": {
+  "message": "Nunca dormir esta ventana"
+ },
+ "menuOtras": {
+  "message": "Dormir ya las demás pestañas"
+ },
+ "menuPausa": {
+  "message": "Pausar"
+ },
+ "menuAjustes": {
+  "message": "Todas las reglas…"
+ },
+ "autoDormir": {
+  "message": "Dormir pestañas automáticamente"
+ },
+ "generalAntes": {
+  "message": "Tiempo general: dormir a los"
+ },
+ "generalDespues": {
+  "message": "minutos sin usar"
+ },
+ "noFijadas": {
+  "message": "No dormir las pestañas fijadas"
+ },
+ "paginasSitios": {
+  "message": "Páginas y sitios"
+ },
+ "masEspecifica": {
+  "message": "Cuando varias reglas aplican, gana la más específica."
+ },
+ "phPatron": {
+  "message": "ejemplo.com o ejemplo.com/ruta"
+ },
+ "direccion": {
+  "message": "Dirección"
+ },
+ "queHacer": {
+  "message": "Qué hacer"
+ },
+ "minutos": {
+  "message": "Minutos"
+ },
+ "agregar": {
+  "message": "Agregar"
+ },
+ "ayudaSitio": {
+  "message": "abarca también sus subdominios."
+ },
+ "ayudaPagina": {
+  "message": "abarca esa página y las que cuelgan de ella."
+ },
+ "ayudaComodin": {
+  "message": "es un comodín:"
+ },
+ "ventanas": {
+  "message": "Ventanas"
+ },
+ "ventanasAyuda": {
+  "message": "Se crean desde el icono de la extensión y sobreviven al reinicio. Las reglas de páginas y sitios tienen prioridad sobre las de ventana."
+ },
+ "copia": {
+  "message": "Copia de seguridad"
+ },
+ "copiaAyuda": {
+  "message": "Las reglas de ventana no se incluyen: dependen de las ventanas de este navegador."
+ },
+ "exportar": {
+  "message": "Exportar"
+ },
+ "importar": {
+  "message": "Importar"
+ },
+ "restablecer": {
+  "message": "Restablecer"
+ },
+ "sinReglas": {
+  "message": "Sin reglas: todas usan el tiempo general."
+ },
+ "sinVentanas": {
+  "message": "Sin reglas de ventana."
+ },
+ "ventanaSinTitulo": {
+  "message": "Ventana sin título"
+ },
+ "quitar": {
+  "message": "Quitar"
+ },
+ "quitarNombre": {
+  "message": "Quitar $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "queHacerCon": {
+  "message": "Qué hacer con $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "minutosDe": {
+  "message": "Minutos de $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "unaPestana": {
+  "message": "1 pestaña"
+ },
+ "nPestanas": {
+  "message": "$V1$ pestañas",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "abierta": {
+  "message": "abierta"
+ },
+ "cerrada": {
+  "message": "cerrada ahora"
+ },
+ "importado": {
+  "message": "Importado: $V1$ reglas.",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "confirmarReset": {
+  "message": "¿Volver al tiempo y las reglas iniciales? Las reglas de ventana se conservan."
+ }
+}

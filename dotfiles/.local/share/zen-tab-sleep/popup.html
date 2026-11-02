@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Zen Tab Sleep</title>
+  <link rel="stylesheet" href="estilos.css">
+  <style>
+    body { width: 320px; padding: 12px; display: grid; gap: 12px; }
+    h1 { font-size: 14px; }
+    h2 { font-size: 12px; color: var(--tenue); margin-bottom: 6px; }
+    #estado { background: var(--panel); border-radius: var(--radio); padding: 8px 10px; }
+    #estado b { display: block; }
+    #estado span { color: var(--tenue); word-break: break-word; }
+    .pestanas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+    .pestanas button { padding: 4px 0; }
+    .pestanas button[aria-pressed="true"] { background: var(--acento); border-color: var(--acento); color: var(--sobre-acento); font-weight: 600; }
+    #destino { color: var(--tenue); margin: 0 0 8px; overflow-wrap: anywhere; }
+    .modos { display: grid; gap: 6px; }
+    .modos label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .modos input[type="radio"] { margin: 0; accent-color: var(--acento); }
+    .sep { border: 0; border-top: 1px solid var(--borde); margin: 0; }
+    .acciones { display: flex; gap: 6px; }
+    .acciones button { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="fila separa">
+    <h1>Zen Tab Sleep</h1>
+    <label class="interruptor" data-i18n-title="pausarReanudar">
+      <span id="activoTexto" class="tenue"></span>
+      <input type="checkbox" id="activo"><i></i>
+    </label>
+  </div>
+
+  <div id="estado" aria-live="polite"><b id="estadoTitulo"></b><span id="estadoDetalle"></span></div>
+
+  <section>
+    <h2 data-i18n="reglaPara"></h2>
+    <div class="pestanas" id="alcances">
+      <button data-alcance="pagina" aria-pressed="false" data-i18n="pagina"></button>
+      <button data-alcance="sitio" aria-pressed="false" data-i18n="sitio"></button>
+      <button data-alcance="ventana" aria-pressed="false" data-i18n="ventana"></button>
+    </div>
+    <p id="destino"></p>
+    <div class="modos">
+      <label><input type="radio" name="modo" value="heredar"> <span id="modoHeredar"></span></label>
+      <label><input type="radio" name="modo" value="nunca"> <span data-i18n="nuncaDormir"></span></label>
+      <label>
+        <input type="radio" name="modo" value="minutos"> <span data-i18n="dormirALos"></span>
+        <input type="number" id="minutosRegla" min="0.5" max="10080" step="0.5" data-i18n-aria="minutosRegla"> <span data-i18n="min"></span>
+      </label>
+    </div>
+  </section>
+
+  <hr class="sep">
+
+  <div class="fila separa">
+    <label for="minutos" data-i18n="lasDemas"></label>
+    <span class="fila"><input type="number" id="minutos" min="0.5" max="10080" step="0.5"> <span data-i18n="min"></span></span>
+  </div>
+
+  <p class="error" id="error" role="alert"></p>
+
+  <div class="acciones">
+    <button id="otras" data-i18n="dormirDemas" data-i18n-title="dormirDemasAyuda"></button>
+    <button id="ajustes" data-i18n="todasReglas"></button>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

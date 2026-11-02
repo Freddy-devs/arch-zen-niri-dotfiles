@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zen Tab Sleep</title>
+  <link rel="icon" href="iconos/32.png">
+  <link rel="stylesheet" href="estilos.css">
+  <style>
+    body { font-size: 14px; }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 28px; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 15px; margin-bottom: 4px; }
+    section > p { margin: 0 0 12px; }
+    .ajustes { display: grid; gap: 12px; background: var(--panel); border-radius: var(--radio); padding: 14px; }
+    .lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borde); border-radius: var(--radio); }
+    .lista li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; }
+    .lista li + li { border-top: 1px solid var(--borde); }
+    .lista .nombre { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+    .lista .vacio { color: var(--tenue); }
+    .agregar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .agregar #patron { flex: 1 1 220px; }
+    code { background: var(--panel); border-radius: 4px; padding: 1px 5px; }
+    .ayuda { margin: 0; padding-left: 18px; color: var(--tenue); }
+    .botones { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ok { color: var(--bien); }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="fila">
+      <img src="iconos/48.png" width="32" height="32" alt="">
+      <h1>Zen Tab Sleep</h1>
+    </header>
+
+    <section>
+      <div class="ajustes">
+        <label class="interruptor">
+          <input type="checkbox" id="activo"><i></i> <span data-i18n="autoDormir"></span>
+        </label>
+        <div class="fila">
+          <label for="minutos" data-i18n="generalAntes"></label>
+          <input type="number" id="minutos" min="0.5" max="10080" step="0.5"> <span data-i18n="generalDespues"></span>
+        </div>
+        <label class="interruptor">
+          <input type="checkbox" id="fijadas"><i></i> <span data-i18n="noFijadas"></span>
+        </label>
+      </div>
+      <p class="error" id="errorGeneral" role="alert"></p>
+    </section>
+
+    <section>
+      <h2 data-i18n="paginasSitios"></h2>
+      <p class="tenue" data-i18n="masEspecifica"></p>
+      <form class="agregar" id="formRegla">
+        <input type="text" id="patron" data-i18n-placeholder="phPatron" data-i18n-aria="direccion" autocomplete="off" spellcheck="false">
+        <select id="modoNueva" data-i18n-aria="queHacer">
+          <option value="nunca" data-i18n="nuncaDormir"></option>
+          <option value="minutos" data-i18n="dormirALosOpcion"></option>
+        </select>
+        <input type="number" id="minutosNueva" min="0.5" max="10080" step="0.5" value="30" data-i18n-aria="minutos" hidden>
+        <button class="principal" data-i18n="agregar"></button>
+      </form>
+      <p class="error" id="errorRegla" role="alert"></p>
+      <ul class="lista" id="reglas"></ul>
+      <ul class="ayuda" style="margin-top:12px">
+        <li><code>github.com</code> <span data-i18n="ayudaSitio"></span></li>
+        <li><code>github.com/org</code> <span data-i18n="ayudaPagina"></span></li>
+        <li><code>*</code> <span data-i18n="ayudaComodin"></span> <code>*.atlassian.net/jira/*</code></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 data-i18n="ventanas"></h2>
+      <p class="tenue" data-i18n="ventanasAyuda"></p>
+      <ul class="lista" id="ventanas"></ul>
+    </section>
+
+    <section>
+      <h2 data-i18n="copia"></h2>
+      <p class="tenue" data-i18n="copiaAyuda"></p>
+      <div class="botones">
+        <button id="exportar" data-i18n="exportar"></button>
+        <button id="importar" data-i18n="importar"></button>
+        <input type="file" id="archivo" accept="application/json,.json" hidden>
+        <button id="restablecer" class="peligro" data-i18n="restablecer"></button>
+      </div>
+      <p class="error" id="errorCopia" role="alert"></p>
+      <p class="ok" id="okCopia" role="status"></p>
+    </section>
+  </main>
+  <script type="module" src="opciones.js"></script>
+</body>
+</html>
