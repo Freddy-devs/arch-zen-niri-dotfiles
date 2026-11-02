@@ -1,0 +1,86 @@
+:root {
+  color-scheme: dark;
+  --fondo: #1a1b26;
+  --panel: #24283b;
+  --borde: #3b4261;
+  --texto: #c0caf5;
+  --tenue: #9aa5ce;
+  --acento: #7aa2f7;
+  --sobre-acento: #16161e;
+  --peligro: #f7768e;
+  --bien: #9ece6a;
+  --radio: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 13px/1.45 system-ui, sans-serif;
+}
+
+h1, h2 { margin: 0; font-weight: 600; }
+
+button, input, select { font: inherit; color: inherit; }
+
+input[type="text"], input[type="number"], select {
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-width: 0;
+}
+
+input[type="number"] { width: 76px; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+input[aria-invalid="true"] { border-color: var(--peligro); }
+
+button {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--acento); }
+button.principal { background: var(--acento); border-color: var(--acento); color: var(--sobre-acento); font-weight: 600; }
+button.peligro:hover { border-color: var(--peligro); color: var(--peligro); }
+
+.tenue { color: var(--tenue); }
+.error { color: var(--peligro); min-height: 1.45em; margin: 0; }
+
+.fila { display: flex; align-items: center; gap: 8px; }
+.separa { justify-content: space-between; }
+
+.interruptor { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.interruptor input { position: absolute; opacity: 0; width: 0; height: 0; }
+.interruptor i {
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--borde);
+  position: relative;
+  transition: background .15s;
+}
+.interruptor i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--texto);
+  transition: transform .15s;
+}
+.interruptor input:checked + i { background: var(--acento); }
+.interruptor input:checked + i::after { transform: translateX(14px); background: var(--sobre-acento); }
+.interruptor input:focus-visible + i { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .interruptor i, .interruptor i::after { transition: none; }
+}

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "zen-youtube-vp9",
+  "description": "Hace que YouTube use VP9 por hardware en vez de AV1, que la Intel UHD 620 no decodifica.",
+  "version": "1.0",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.youtube.com/*",
+        "https://*.youtube-nocookie.com/*"
+      ],
+      "js": [
+        "no-av1.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    }
+  ]
+}

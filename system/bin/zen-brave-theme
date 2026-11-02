@@ -6,8 +6,9 @@
 #   - al abrir, continúa donde lo dejaste (ventanas y pestañas)
 #   - ahorro de memoria: duerme las pestañas que no usas, salvo WhatsApp, Teams y Outlook
 #     (esas quedan siempre activas para recibir notificaciones al instante)
-#   - zen-tab-sleep (~/.local/share/zen-tab-sleep): extensión que duerme cada pestaña que no
-#     usas hace 2 minutos; el Ahorro de memoria de Brave solo lo hace tras horas. Se carga con
+#   - zen-tab-sleep (~/.local/share/zen-tab-sleep): extensión que duerme las pestañas sin usar
+#     según el tiempo elegido por página, sitio o ventana (se configura desde su icono); el
+#     Ahorro de memoria de Brave solo lo hace tras horas. Se carga con
 #     --load-extension en ~/.config/brave-origin-flags.conf (este script añade la línea)
 # Brave debe estar cerrado: si está abierto sobrescribe las preferencias al salir.
 # Uso: zen-brave-theme [--wait]   (--wait espera a que cierres Brave y luego aplica)
@@ -27,6 +28,7 @@ BASE = _found[0] if _found else os.path.expanduser("~/.config/BraveSoftware/Brav
 PREFS = os.path.join(BASE, "Default", "Preferences")
 FLAGS = os.path.expanduser("~/.config/brave-origin-flags.conf")
 TAB_SLEEP = os.path.expanduser("~/.local/share/zen-tab-sleep")
+YOUTUBE_VP9 = os.path.expanduser("~/.local/share/zen-youtube-vp9")
 STATE = os.path.join(BASE, "Local State")
 
 
@@ -58,7 +60,7 @@ def add_tab_sleep_flag():
         return
     lines = open(FLAGS).read().splitlines() if os.path.exists(FLAGS) else []
     lines = [l for l in lines if not l.startswith("--load-extension=")]
-    lines.append("--load-extension=" + TAB_SLEEP)
+    lines.append("--load-extension=" + ",".join(e for e in (TAB_SLEEP, YOUTUBE_VP9) if os.path.isdir(e)))
     with open(FLAGS, "w") as f:
         f.write("\n".join(lines) + "\n")
 

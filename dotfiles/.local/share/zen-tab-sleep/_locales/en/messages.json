@@ -1,0 +1,291 @@
+{
+ "nombreExt": {
+  "message": "Zen Tab Sleep: Auto Suspend Tabs, Save Memory"
+ },
+ "descExt": {
+  "message": "Auto-suspend unused tabs to free RAM. Set a custom timer or exclude each page, site or window. No tracking, no site access."
+ },
+ "activa": {
+  "message": "On"
+ },
+ "enPausa": {
+  "message": "Paused"
+ },
+ "pausarReanudar": {
+  "message": "Pause or resume"
+ },
+ "ningunaDuerme": {
+  "message": "No tabs are being put to sleep."
+ },
+ "porRegla": {
+  "message": "From the rule $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "porVentana": {
+  "message": "From this window's rule"
+ },
+ "valorGeneral": {
+  "message": "General setting"
+ },
+ "paginaInterna": {
+  "message": "Browser page: general setting"
+ },
+ "nuncaDuerme": {
+  "message": "This tab never sleeps"
+ },
+ "seDuerme": {
+  "message": "Sleeps after $V1$ unused",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "ahoraNoSuena": {
+  "message": "Not now: it is playing sound."
+ },
+ "ahoraNoFijada": {
+  "message": "Not now: it is pinned."
+ },
+ "reglaPara": {
+  "message": "Rule for"
+ },
+ "pagina": {
+  "message": "Page"
+ },
+ "sitio": {
+  "message": "Site"
+ },
+ "ventana": {
+  "message": "Window"
+ },
+ "destinoVentana": {
+  "message": "Every tab in this window, except those with a page or site rule."
+ },
+ "sinReglaPropia": {
+  "message": "No rule of its own ($V1$)",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "nuncaDormir": {
+  "message": "Never sleep"
+ },
+ "dormirALos": {
+  "message": "Sleep after"
+ },
+ "dormirALosOpcion": {
+  "message": "Sleep after…"
+ },
+ "min": {
+  "message": "min"
+ },
+ "minutosRegla": {
+  "message": "Minutes for this rule"
+ },
+ "lasDemas": {
+  "message": "All other tabs, after"
+ },
+ "dormirDemas": {
+  "message": "Sleep other tabs"
+ },
+ "dormirDemasAyuda": {
+  "message": "Puts this window's unprotected tabs to sleep"
+ },
+ "todasReglas": {
+  "message": "All rules"
+ },
+ "dormidas": {
+  "message": "$V1$ asleep",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "errorMinutos": {
+  "message": "Enter a time between 0.5 and 10080 minutes."
+ },
+ "errorGuardar": {
+  "message": "Could not save."
+ },
+ "errorDireccion": {
+  "message": "That address is not valid."
+ },
+ "errorMaxReglas": {
+  "message": "Maximum of $V1$ rules.",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "errorCopia": {
+  "message": "That file is not a Zen Tab Sleep backup."
+ },
+ "errorJson": {
+  "message": "That file is not valid JSON."
+ },
+ "tituloMinutos": {
+  "message": "Zen Tab Sleep: this tab sleeps after $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "tituloNunca": {
+  "message": "Zen Tab Sleep: this tab never sleeps"
+ },
+ "tituloPausa": {
+  "message": "Zen Tab Sleep: paused"
+ },
+ "menuSitio": {
+  "message": "Never sleep this site"
+ },
+ "menuVentana": {
+  "message": "Never sleep this window"
+ },
+ "menuOtras": {
+  "message": "Put other tabs to sleep now"
+ },
+ "menuPausa": {
+  "message": "Pause"
+ },
+ "menuAjustes": {
+  "message": "All rules…"
+ },
+ "autoDormir": {
+  "message": "Put tabs to sleep automatically"
+ },
+ "generalAntes": {
+  "message": "General time: sleep after"
+ },
+ "generalDespues": {
+  "message": "minutes unused"
+ },
+ "noFijadas": {
+  "message": "Don't put pinned tabs to sleep"
+ },
+ "paginasSitios": {
+  "message": "Pages and sites"
+ },
+ "masEspecifica": {
+  "message": "When several rules apply, the most specific one wins."
+ },
+ "phPatron": {
+  "message": "example.com or example.com/path"
+ },
+ "direccion": {
+  "message": "Address"
+ },
+ "queHacer": {
+  "message": "What to do"
+ },
+ "minutos": {
+  "message": "Minutes"
+ },
+ "agregar": {
+  "message": "Add"
+ },
+ "ayudaSitio": {
+  "message": "also covers its subdomains."
+ },
+ "ayudaPagina": {
+  "message": "covers that page and the ones below it."
+ },
+ "ayudaComodin": {
+  "message": "is a wildcard:"
+ },
+ "ventanas": {
+  "message": "Windows"
+ },
+ "ventanasAyuda": {
+  "message": "Created from the extension icon, and kept across restarts. Page and site rules take priority over window rules."
+ },
+ "copia": {
+  "message": "Backup"
+ },
+ "copiaAyuda": {
+  "message": "Window rules are not included: they depend on this browser's windows."
+ },
+ "exportar": {
+  "message": "Export"
+ },
+ "importar": {
+  "message": "Import"
+ },
+ "restablecer": {
+  "message": "Reset"
+ },
+ "sinReglas": {
+  "message": "No rules: every tab uses the general time."
+ },
+ "sinVentanas": {
+  "message": "No window rules."
+ },
+ "ventanaSinTitulo": {
+  "message": "Untitled window"
+ },
+ "quitar": {
+  "message": "Remove"
+ },
+ "quitarNombre": {
+  "message": "Remove $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "queHacerCon": {
+  "message": "What to do with $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "minutosDe": {
+  "message": "Minutes for $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "unaPestana": {
+  "message": "1 tab"
+ },
+ "nPestanas": {
+  "message": "$V1$ tabs",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "abierta": {
+  "message": "open"
+ },
+ "cerrada": {
+  "message": "closed now"
+ },
+ "importado": {
+  "message": "Imported: $V1$ rules.",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "confirmarReset": {
+  "message": "Go back to the default time and rules? Window rules are kept."
+ }
+}
