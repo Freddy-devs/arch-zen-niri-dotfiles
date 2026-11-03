@@ -287,5 +287,70 @@
  },
  "confirmarReset": {
   "message": "¿Volver al tiempo y las reglas iniciales? Las reglas de ventana se conservan."
+ },
+ "pestanasDormidas": {
+  "message": "Pestañas dormidas"
+ },
+ "dormidasAyuda": {
+  "message": "Siguen en la barra sin ocupar memoria. Al entrar en una, vuelve a cargar."
+ },
+ "sinDormidas": {
+  "message": "Ninguna pestaña dormida ahora."
+ },
+ "irAPestana": {
+  "message": "Ir"
+ },
+ "irA": {
+  "message": "Ir a $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "cuentaDormidas": {
+  "message": "$V1$ dormidas",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "unaDormida": {
+  "message": "1 dormida"
+ },
+ "sinTitulo": {
+  "message": "Sin título"
+ },
+ "despiertas": {
+  "message": "Pestañas despiertas ($V1$)",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "seDuermeEn": {
+  "message": "Se duerme en $V1$",
+  "placeholders": {
+   "v1": {
+    "content": "$1"
+   }
+  }
+ },
+ "seDuermeYa": {
+  "message": "Se duerme en la próxima revisión"
+ },
+ "motivoVisible": {
+  "message": "Visible ahora"
+ },
+ "motivoSonido": {
+  "message": "Con sonido"
+ },
+ "motivoFijada": {
+  "message": "Fijada"
+ },
+ "motivoCargando": {
+  "message": "Todavía cargando"
  }
 }

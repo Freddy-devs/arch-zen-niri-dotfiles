@@ -7,13 +7,14 @@
 
 import {
   alcancesDeUrl, aplicarRegla, configInicial, decidir, emparejarVentanas, normalizarMinutos,
-  normalizarPatron, sanearConfig, sanearVentanas, textoInsignia, textoMinutos, urlsDeVentana,
-  ventanaCaducada, MAX_REGLAS,
+  normalizarPatron, quedoEnBlanco, sanearConfig, sanearVentanas, sePuedeDescartar,
+  estaDormida, textoMinutos, urlsDeVentana, ventanaCaducada, MAX_REGLAS,
 } from "./reglas.js";
 import { t } from "./i18n.js";
 
 const ALARMA = "revisar";
 const VENTANA_ARRANQUE_MS = 5 * 60 * 1000; // lo que puede tardar en restaurarse la sesión
+const ESPERA_DESPERTAR_MS = 1500;
 
 let cola = Promise.resolve();
 function enCola(trabajo) {
@@ -105,8 +106,17 @@ function protegida(tab, decision, config) {
   return null;
 }
 
-async function dormir(tab) {
-  return !!(await chrome.tabs.discard(tab.id).catch(() => null));
+// La lista de una revisión puede llevar un rato vieja: se vuelve a mirar la pestaña justo antes de descartarla.
+async function dormir(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || !sePuedeDescartar(tab)) return false;
+  return !!(await chrome.tabs.discard(tabId).catch(() => null));
+}
+
+// Red de seguridad, también para lo que descarte el Ahorro de memoria de Brave.
+async function despertarSiQuedoEnBlanco(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (tab && quedoEnBlanco(tab)) await chrome.tabs.reload(tabId, { bypassCache: true }).catch(() => {});
 }
 
 async function revisar() {
@@ -120,6 +130,7 @@ async function revisar() {
     if (tab.active) {
       sesion.vistas[tab.id] = ahora;
       sesion.activas[tab.windowId] = tab.id;
+      if (quedoEnBlanco(tab)) await despertarSiQuedoEnBlanco(tab.id);
     }
     const decision = deEstaPestana(tab, config, ventanas, sesion);
 
@@ -130,7 +141,7 @@ async function revisar() {
     }
 
     if (!config.activo || tab.discarded || protegida(tab, decision, config)) continue;
-    if (ahora - inactivoDesde(tab, sesion) >= decision.minutos * 60000) await dormir(tab);
+    if (ahora - inactivoDesde(tab, sesion) >= decision.minutos * 60000) await dormir(tab.id);
   }
   for (const id of Object.keys(sesion.vistas)) {
     if (!vivas.has(id)) delete sesion.vistas[id];
@@ -143,10 +154,10 @@ async function actualizarIcono() {
   const [config, sesion, ventanas, activas] = await Promise.all([
     leerConfig(), leerSesion(), leerVentanas(), chrome.tabs.query({ active: true }),
   ]);
+  const dormidas = (await chrome.tabs.query({})).filter(estaDormida).length;
+  await chrome.action.setBadgeText({ text: config.activo ? String(dormidas) : "off" }).catch(() => {});
   for (const tab of activas) {
     const decision = deEstaPestana(tab, config, ventanas, sesion);
-    const texto = config.activo ? textoInsignia(decision.minutos) : "off";
-    await chrome.action.setBadgeText({ tabId: tab.id, text: texto }).catch(() => {});
     await chrome.action.setTitle({
       tabId: tab.id,
       title: !config.activo ? t("tituloPausa")
@@ -238,7 +249,7 @@ async function dormirOtras(idVentana) {
   let dormidas = 0;
   for (const tab of tabs) {
     if (tab.discarded || protegida(tab, deEstaPestana(tab, config, ventanas, sesion), config)) continue;
-    if (await dormir(tab)) dormidas++;
+    if (await dormir(tab.id)) dormidas++;
   }
   return dormidas;
 }
@@ -263,13 +274,32 @@ async function estadoPestana(tabId) {
   };
 }
 
+const datosPestana = t => ({
+  id: t.id,
+  ventanaId: t.windowId,
+  titulo: t.title || "",
+  url: t.url || t.pendingUrl || "",
+});
+
 async function estadoOpciones() {
+  const ahora = Date.now();
   const [config, sesion, ventanas, tabs] = await Promise.all([
     leerConfig(), leerSesion(), leerVentanas(), chrome.tabs.query({}),
   ]);
   const abiertas = new Set(tabs.map(t => t.windowId));
   return {
     config,
+    dormidas: tabs.filter(estaDormida).map(datosPestana),
+    despiertas: tabs.filter(t => !estaDormida(t)).map(t => {
+      const decision = deEstaPestana(t, config, ventanas, sesion);
+      const motivo = !config.activo ? "pausa"
+        : protegida(t, decision, config) || (t.status === "complete" ? null : "cargando");
+      return {
+        ...datosPestana(t),
+        motivo,
+        restanteMs: motivo ? null : Math.max(0, decision.minutos * 60000 - (ahora - inactivoDesde(t, sesion))),
+      };
+    }),
     ventanas: ventanas.map(v => {
       const idVentana = sesion.enlaces[v.id];
       const abierta = abiertas.has(idVentana);
@@ -313,6 +343,10 @@ const ACCIONES = {
     return nueva;
   }),
   dormirOtras: m => dormirOtras(m.ventanaId),
+  irAPestana: async m => {
+    await chrome.tabs.update(m.tabId, { active: true });
+    await chrome.windows.update(m.ventanaId, { focused: true });
+  },
   exportar: async () => ({ config: await leerConfig() }),
   importar: async m => {
     if (!m.datos || typeof m.datos.config !== "object" || !Array.isArray(m.datos.config?.reglas)) {
@@ -368,11 +402,15 @@ chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
     await guardarSesion(sesion);
     await actualizarIcono();
   });
+  // Lo normal es que a estas alturas ya esté cargando; si no, se le da el empujón que le faltó.
+  setTimeout(() => enCola(() => despertarSiQuedoEnBlanco(tabId)), ESPERA_DESPERTAR_MS);
 });
 
 chrome.tabs.onUpdated.addListener((_id, cambio) => {
-  if (cambio.url) enCola(actualizarIcono);
+  if (cambio.url || "discarded" in cambio || cambio.status === "unloaded") enCola(actualizarIcono);
 });
+chrome.tabs.onCreated.addListener(() => { enCola(actualizarIcono); });
+chrome.tabs.onRemoved.addListener(() => { enCola(actualizarIcono); });
 chrome.windows.onFocusChanged.addListener(() => { enCola(actualizarIcono); });
 chrome.windows.onRemoved.addListener(idVentana => {
   enCola(async () => {

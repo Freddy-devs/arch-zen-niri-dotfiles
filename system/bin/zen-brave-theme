@@ -29,7 +29,6 @@ BASE = _found[0] if _found else os.path.expanduser("~/.config/BraveSoftware/Brav
 PREFS = os.path.join(BASE, "Default", "Preferences")
 FLAGS = os.path.expanduser("~/.config/brave-origin-flags.conf")
 TAB_SLEEP = os.path.expanduser("~/.local/share/zen-tab-sleep")
-YOUTUBE_VP9 = os.path.expanduser("~/.local/share/zen-youtube-vp9")
 TEMA = os.path.expanduser("~/.local/share/zen-brave-tema")
 STATE = os.path.join(BASE, "Local State")
 
@@ -67,7 +66,7 @@ def add_tab_sleep_flag():
         return
     lines = open(FLAGS).read().splitlines() if os.path.exists(FLAGS) else []
     lines = [l for l in lines if not l.startswith("--load-extension=")]
-    lines.append("--load-extension=" + ",".join(e for e in (TAB_SLEEP, YOUTUBE_VP9, TEMA) if os.path.isdir(e)))
+    lines.append("--load-extension=" + ",".join(e for e in (TAB_SLEEP, TEMA) if os.path.isdir(e)))
     with open(FLAGS, "w") as f:
         f.write("\n".join(lines) + "\n")
 

@@ -18,6 +18,13 @@
     .lista li + li { border-top: 1px solid var(--borde); }
     .lista .nombre { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
     .lista .vacio { color: var(--tenue); }
+    .dormidas { max-height: 320px; overflow-y: auto; }
+    .dormidas li { flex-wrap: nowrap; }
+    .dormidas .nombre { flex: 1 1 0; }
+    .dormidas button { flex: none; }
+    #cuentaDormidas { margin-left: auto; }
+    .despiertas { margin-top: 12px; }
+    .despiertas summary { cursor: pointer; margin-bottom: 8px; }
     .agregar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
     .agregar #patron { flex: 1 1 220px; }
     code { background: var(--panel); border-radius: 4px; padding: 1px 5px; }
@@ -31,6 +38,7 @@
     <header class="fila">
       <img src="iconos/48.png" width="32" height="32" alt="">
       <h1>Zen Tab Sleep</h1>
+      <span class="tenue" id="cuentaDormidas" role="status"></span>
     </header>
 
     <section>
@@ -47,6 +55,16 @@
         </label>
       </div>
       <p class="error" id="errorGeneral" role="alert"></p>
+    </section>
+
+    <section>
+      <h2 data-i18n="pestanasDormidas"></h2>
+      <p class="tenue" data-i18n="dormidasAyuda"></p>
+      <ul class="lista dormidas" id="dormidas"></ul>
+      <details class="despiertas">
+        <summary id="tituloDespiertas"></summary>
+        <ul class="lista dormidas" id="despiertas"></ul>
+      </details>
     </section>
 
     <section>
