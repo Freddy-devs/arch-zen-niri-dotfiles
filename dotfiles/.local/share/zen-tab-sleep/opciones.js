@@ -1,9 +1,13 @@
-import { normalizarMinutos } from "./reglas.js";
+import { normalizarMinutos, textoMinutos } from "./reglas.js";
 import { t, traducirPagina } from "./i18n.js";
 
 traducirPagina();
 
 const $ = id => document.getElementById(id);
+const MOTIVOS = {
+  regla: "nuncaDormir", visible: "motivoVisible", sonido: "motivoSonido",
+  fijada: "motivoFijada", cargando: "motivoCargando", pausa: "enPausa",
+};
 
 async function pedir(mensaje) {
   const respuesta = await chrome.runtime.sendMessage(mensaje);
@@ -89,8 +93,51 @@ function pintarVentanas(ventanas) {
   }));
 }
 
+function filaPestana(pestana, detalle) {
+  const titulo = pestana.titulo || pestana.url || t("sinTitulo");
+  const ir = elemento("button", { textContent: t("irAPestana"), ariaLabel: t("irA", titulo) });
+  ir.addEventListener("click", () => ejecutar($("errorGeneral"),
+    () => pedir({ tipo: "irAPestana", tabId: pestana.id, ventanaId: pestana.ventanaId })));
+  return elemento("li", {},
+    elemento("span", { className: "nombre" },
+      titulo,
+      elemento("br"),
+      elemento("small", { className: "tenue", textContent: detalle })),
+    ir);
+}
+
+function pintarDormidas(dormidas) {
+  $("cuentaDormidas").textContent = dormidas.length === 1 ? t("unaDormida")
+    : dormidas.length ? t("cuentaDormidas", dormidas.length) : "";
+  if (!dormidas.length) {
+    $("dormidas").replaceChildren(elemento("li", { className: "vacio", textContent: t("sinDormidas") }));
+    return;
+  }
+  $("dormidas").replaceChildren(...dormidas.map(p => filaPestana(p, anfitrion(p.url))));
+}
+
+function textoDespierta({ motivo, restanteMs }) {
+  if (motivo) return t(MOTIVOS[motivo]);
+  return restanteMs ? t("seDuermeEn", textoMinutos(Math.ceil(restanteMs / 60000))) : t("seDuermeYa");
+}
+
+function pintarDespiertas(despiertas) {
+  $("tituloDespiertas").textContent = t("despiertas", despiertas.length);
+  $("despiertas").replaceChildren(...despiertas.map(p => filaPestana(p, `${anfitrion(p.url)} · ${textoDespierta(p)}`)));
+}
+
+function anfitrion(url) {
+  try {
+    return new URL(url).hostname || url;
+  } catch {
+    return url;
+  }
+}
+
 async function refrescar() {
-  const { config, ventanas } = await pedir({ tipo: "estadoOpciones" });
+  const { config, ventanas, dormidas = [], despiertas = [] } = await pedir({ tipo: "estadoOpciones" });
+  pintarDormidas(dormidas);
+  pintarDespiertas(despiertas);
   $("activo").checked = config.activo;
   $("fijadas").checked = config.respetarFijadas;
   if (document.activeElement !== $("minutos")) $("minutos").value = config.minutos;
@@ -177,5 +224,20 @@ $("restablecer").addEventListener("click", () => {
 chrome.storage.onChanged.addListener((_cambios, area) => {
   if (area === "local") refrescar().catch(error => { $("errorGeneral").textContent = error.message; });
 });
+
+// Las pestañas cambian a ráfagas: se espera a que pase la ráfaga para repintar la lista una vez.
+let pendiente;
+function refrescarPronto() {
+  clearTimeout(pendiente);
+  pendiente = setTimeout(() => refrescar().catch(error => { $("errorGeneral").textContent = error.message; }), 300);
+}
+chrome.tabs.onUpdated.addListener((_id, cambio) => {
+  if ("discarded" in cambio || cambio.status || cambio.title) refrescarPronto();
+});
+chrome.tabs.onCreated.addListener(refrescarPronto);
+chrome.tabs.onRemoved.addListener(refrescarPronto);
+chrome.tabs.onReplaced.addListener(refrescarPronto);
+chrome.tabs.onActivated.addListener(refrescarPronto);
+setInterval(refrescarPronto, 30000); // la cuenta atrás de las despiertas
 
 await refrescar().catch(error => { $("errorGeneral").textContent = error.message; });
