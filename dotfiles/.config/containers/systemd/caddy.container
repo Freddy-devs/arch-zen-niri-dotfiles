@@ -15,7 +15,7 @@ Network=host
 Volume=%h/.config/caddy:/etc/caddy:ro,Z
 Volume=%h/.config/caddy/www:/srv:ro,Z
 # CA local y certificados: deben persistir (si no, cada arranque crea una CA nueva sin confianza)
-Volume=%h/.local/share/caddy:/data:Z
+Volume=%h/.local/share/caddy:/data/caddy:Z
 
 [Service]
 ExecStartPost=/usr/bin/bash -c 'for i in {1..150}; do (exec 3<>/dev/tcp/127.0.0.1/18443) 2>/dev/null && exit 0; sleep 0.1; done; exit 1'
