@@ -1,0 +1,1282 @@
+diff --git a/libfprint/drivers/elanspi.c b/libfprint/drivers/elanspi.c
+index c2e3cbc..4d662fb 100644
+--- a/libfprint/drivers/elanspi.c
++++ b/libfprint/drivers/elanspi.c
+@@ -329,6 +329,12 @@ elanspi_write_register (FpiDeviceElanSpi *self, guint8 reg_id, guint8 data_in)
+   return xfer;
+ }
+ 
++static inline gboolean
++elanspi_is_press (FpiDeviceElanSpi *self)
++{
++  return (fpi_device_get_driver_data (FP_DEVICE (self)) & ELANSPI_PRESS_SENSOR) != 0;
++}
++
+ static void
+ elanspi_determine_sensor (FpiDeviceElanSpi *self, GError **err)
+ {
+@@ -408,6 +414,14 @@ elanspi_determine_sensor (FpiDeviceElanSpi *self, GError **err)
+       self->frame_width = self->sensor_width;
+       self->frame_height = self->sensor_height > ELANSPI_MAX_FRAME_HEIGHT ? ELANSPI_MAX_FRAME_HEIGHT : self->sensor_height;
+     }
++
++  /* Press sensors use the whole sensor area instead of a swipe strip. */
++  if (elanspi_is_press (self))
++    {
++      self->frame_width = self->sensor_width;
++      self->frame_height = self->sensor_height;
++      fp_dbg ("<init/detect> press mode, full %dx%d frames", self->frame_width, self->frame_height);
++    }
+ }
+ 
+ static void
+@@ -619,7 +633,13 @@ elanspi_calibrate_old_handler (FpiSsm *ssm, FpDevice *dev)
+ 
+     case ELANSPI_CALIBOLD_DACBASE_WRITE_DAC1:
+       /* compute dac */
+-      self->old_data.dac_value = ((elanspi_mean_image (self, self->last_image) & 0xffff) + 0x80) >> 8;
++      /* Press sensors (ASUS X510 eFSA96SA): the empty-sensor mean sits right at
++       * the rounding boundary; rounding up (0x30) leaves too little contrast to
++       * ever detect a finger, so truncate instead (measured: 14/14 good vs 0/6). */
++      if (elanspi_is_press (self))
++        self->old_data.dac_value = (elanspi_mean_image (self, self->last_image) & 0xffff) >> 8;
++      else
++        self->old_data.dac_value = ((elanspi_mean_image (self, self->last_image) & 0xffff) + 0x80) >> 8;
+       if (0x3f < self->old_data.dac_value)
+         self->old_data.dac_value = 0x3f;
+       fp_dbg ("<calibold> dac init is 0x%02x", self->old_data.dac_value);
+@@ -1330,6 +1350,48 @@ elanspi_fp_assembling_get_pixel (struct fpi_frame_asmbl_ctx *ctx, struct fpi_fra
+   return frame->data[y * ctx->frame_width + x];
+ }
+ 
++/* Press sensor: average the newest frames of a still finger (sensor noise),
++ * then upscale bilinearly so SIFT gets enough scale space. No stitching:
++ * stitching near-identical frames of a still finger corrupts the image. */
++static void
++elanspi_fp_frame_press_submit (FpiDeviceElanSpi *self)
++{
++  const gint w = self->frame_width, h = self->frame_height;
++  const gint s = ELANSPI_PRESS_UPSCALE;
++  guint n = MIN (g_slist_length (self->fp_frame_list), ELANSPI_PRESS_AVG_FRAMES);
++  g_autofree guint8 *avg = g_malloc (w * h);
++  FpImage *img;
++
++  for (gint px = 0; px < w * h; px++)
++    {
++      guint sum = 0;
++      GSList *l = self->fp_frame_list;   /* prepended: head is newest */
++      for (guint i = 0; i < n; i++, l = l->next)
++        sum += ((struct fpi_frame *) l->data)->data[px];
++      avg[px] = sum / n;
++    }
++
++  img = fp_image_new (w * s, h * s);
++  for (gint y = 0; y < h * s; y++)
++    for (gint x = 0; x < w * s; x++)
++      {
++        gdouble fx = MAX (0.0, (x + 0.5) / s - 0.5), fy = MAX (0.0, (y + 0.5) / s - 0.5);
++        gint x0 = MIN ((gint) fx, w - 1), y0 = MIN ((gint) fy, h - 1);
++        gint x1 = MIN (x0 + 1, w - 1), y1 = MIN (y0 + 1, h - 1);
++        gdouble ax = fx - x0, ay = fy - y0;
++        gdouble v = (1 - ay) * ((1 - ax) * avg[y0 * w + x0] + ax * avg[y0 * w + x1]) +
++                    ay * ((1 - ax) * avg[y1 * w + x0] + ax * avg[y1 * w + x1]);
++        img->data[y * w * s + x] = (guint8) CLAMP (v + 0.5, 0, 255);
++      }
++  img->flags |= FPI_IMAGE_COLORS_INVERTED;
++
++  fp_dbg ("<fp_frame> press capture: %u/%u frames averaged, %dx%d image",
++          n, g_slist_length (self->fp_frame_list), w * s, h * s);
++  fpi_image_device_image_captured (FP_IMAGE_DEVICE (self), img);
++
++  g_slist_free_full (g_steal_pointer (&self->fp_frame_list), g_free);
++}
++
+ static void
+ elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
+ {
+@@ -1400,7 +1462,12 @@ elanspi_fp_frame_handler (FpiSsm *ssm, FpiDeviceElanSpi *self)
+       if (self->fp_empty_counter > 1)
+         {
+           fp_dbg ("<fp_frame> have enough debounce");
+-          if (g_slist_length (self->fp_frame_list) >= ELANSPI_MIN_FRAMES_SWIPE)
++          if (elanspi_is_press (self))
++            {
++              fp_dbg ("<fp_frame> press: finger lifted too early");
++              fpi_image_device_retry_scan (FP_IMAGE_DEVICE (self), FP_DEVICE_RETRY_REMOVE_FINGER);
++            }
++          else if (g_slist_length (self->fp_frame_list) >= ELANSPI_MIN_FRAMES_SWIPE)
+             {
+               fp_dbg ("<fp_frame> have enough frames, submitting");
+               elanspi_fp_frame_stitch_and_submit (self);
+@@ -1430,7 +1497,7 @@ elanspi_fp_frame_handler (FpiSsm *ssm, FpiDeviceElanSpi *self)
+             }
+         }
+ 
+-      if (g_slist_length (self->fp_frame_list) > ELANSPI_MAX_FRAMES_SWIPE)
++      if (!elanspi_is_press (self) && g_slist_length (self->fp_frame_list) > ELANSPI_MAX_FRAMES_SWIPE)
+         {
+           fp_dbg ("<fp_frame> have enough frames, exiting now");
+           elanspi_fp_frame_stitch_and_submit (self);
+@@ -1442,7 +1509,7 @@ elanspi_fp_frame_handler (FpiSsm *ssm, FpiDeviceElanSpi *self)
+       elanspi_correct_with_bg (self, self->last_image);
+       elanspi_process_frame (self, self->last_image, this_frame->data);
+ 
+-      if (self->fp_frame_list)
++      if (self->fp_frame_list && !elanspi_is_press (self))
+         {
+           gint difference = elanspi_get_frame_diff_stddev_sq (self, self->last_image, self->prev_frame_image);
+           fp_dbg ("<fp_frame> diff = %d", difference);
+@@ -1454,6 +1521,11 @@ elanspi_fp_frame_handler (FpiSsm *ssm, FpiDeviceElanSpi *self)
+         }
+       self->fp_frame_list = g_slist_prepend (self->fp_frame_list, g_steal_pointer (&this_frame));
+       memcpy (self->prev_frame_image, self->last_image, self->sensor_height * self->sensor_width * 2);
++      if (elanspi_is_press (self) && g_slist_length (self->fp_frame_list) >= ELANSPI_PRESS_FRAMES)
++        {
++          elanspi_fp_frame_press_submit (self);
++          goto finish_capture;
++        }
+       break;
+     }
+ 
+@@ -1573,6 +1645,25 @@ elanspi_open (FpImageDevice *dev)
+ 
+   self->spi_fd = spi_fd;
+ 
++  if (elanspi_is_press (self))
++    {
++      gint threshold = ELANSPI_SIGFM_DEFAULT_THRESHOLD;
++      const gchar *env = g_getenv (ELANSPI_SIGFM_THRESHOLD_ENV);
++
++      if (env)
++        {
++          gint64 v = g_ascii_strtoll (env, NULL, 10);
++          if (v >= 10 && v <= 1000000)
++            threshold = (gint) v;
++          else
++            g_warning ("Ignoring invalid %s=%s", ELANSPI_SIGFM_THRESHOLD_ENV, env);
++        }
++      fpi_device_set_scan_type (FP_DEVICE (dev), FP_SCAN_TYPE_PRESS);
++      fpi_device_set_nr_enroll_stages (FP_DEVICE (dev), ELANSPI_PRESS_ENROLL_STAGES);
++      fpi_image_device_set_bz3_threshold (dev, threshold);
++      fp_dbg ("press mode: SIGFM threshold %d, %d enroll stages", threshold, ELANSPI_PRESS_ENROLL_STAGES);
++    }
++
+   fpi_image_device_open_complete (dev, NULL);
+ }
+ 
+@@ -1703,6 +1794,9 @@ fpi_device_elanspi_class_init (FpiDeviceElanSpiClass *klass)
+   dev_class->nr_enroll_stages = 7;       /* these sensors are very hit or miss, may as well record a few extras */
+ 
+   img_class->bz3_threshold = 24;
++  /* This build targets press-mode ELAN sensors: NBIS finds too few minutiae
++   * on a 96x96 area, SIGFM keypoints work. */
++  img_class->algorithm = FPI_PRINT_SIGFM;
+   img_class->img_open = elanspi_open;
+   img_class->activate = elanspi_activate;
+   img_class->deactivate = elanspi_deactivate;
+diff --git a/libfprint/drivers/elanspi.h b/libfprint/drivers/elanspi.h
+index 688f477..3a103c8 100644
+--- a/libfprint/drivers/elanspi.h
++++ b/libfprint/drivers/elanspi.h
+@@ -334,6 +334,8 @@ static const struct elanspi_regtable elanspi_calibration_table_new_page1 = {
+ #define ELANSPI_90RIGHT_ROTATE 3
+ 
+ #define ELANSPI_HV_FLIPPED 1
++/* Area (press) sensor on this laptop: capture whole frames, no stitching. */
++#define ELANSPI_PRESS_SENSOR (1 << 4)
+ 
+ #define ELANSPI_UDEV_TYPES FPI_DEVICE_UDEV_SUBTYPE_SPIDEV | FPI_DEVICE_UDEV_SUBTYPE_HIDRAW
+ #define ELANSPI_TP_VID 0x04f3
+@@ -341,7 +343,7 @@ static const struct elanspi_regtable elanspi_calibration_table_new_page1 = {
+ // using checkargs ACPI:HIDPID
+ static const FpIdEntry elanspi_id_table[] = {
+   {.udev_types = ELANSPI_UDEV_TYPES, .spi_acpi_id = "ELAN7001", .hid_id = {.vid = ELANSPI_TP_VID, .pid = 0x2766}, .driver_data = ELANSPI_NO_ROTATE},
+-  {.udev_types = ELANSPI_UDEV_TYPES, .spi_acpi_id = "ELAN7001", .hid_id = {.vid = ELANSPI_TP_VID, .pid = 0x3057}, .driver_data = ELANSPI_180_ROTATE},
++  {.udev_types = ELANSPI_UDEV_TYPES, .spi_acpi_id = "ELAN7001", .hid_id = {.vid = ELANSPI_TP_VID, .pid = 0x3057}, .driver_data = ELANSPI_180_ROTATE | ELANSPI_PRESS_SENSOR},
+   {.udev_types = ELANSPI_UDEV_TYPES, .spi_acpi_id = "ELAN7001", .hid_id = {.vid = ELANSPI_TP_VID, .pid = 0x3087}, .driver_data = ELANSPI_180_ROTATE},
+   {.udev_types = ELANSPI_UDEV_TYPES, .spi_acpi_id = "ELAN7001", .hid_id = {.vid = ELANSPI_TP_VID, .pid = 0x30c6}, .driver_data = ELANSPI_180_ROTATE},
+   {.udev_types = ELANSPI_UDEV_TYPES, .spi_acpi_id = "ELAN7001", .hid_id = {.vid = ELANSPI_TP_VID, .pid = 0x3128}, .driver_data = ELANSPI_90LEFT_ROTATE},
+@@ -376,6 +378,15 @@ static const FpIdEntry elanspi_id_table[] = {
+ #define ELANSPI_MAX_FRAME_HEIGHT 43
+ #define ELANSPI_MIN_FRAME_TO_FRAME_DIFF (250 * 250)
+ 
++/* Press mode: frames with the finger down before submitting, how many of the
++ * newest (most settled) frames to average, enroll samples, SIGFM threshold. */
++#define ELANSPI_PRESS_FRAMES 6
++#define ELANSPI_PRESS_AVG_FRAMES 3
++#define ELANSPI_PRESS_ENROLL_STAGES 15
++#define ELANSPI_PRESS_UPSCALE 2
++#define ELANSPI_SIGFM_DEFAULT_THRESHOLD 30
++#define ELANSPI_SIGFM_THRESHOLD_ENV "ELANSPI_SIGFM_THRESHOLD"
++
+ #define ELANSPI_HV_SENSOR_FRAME_DELAY 23
+ 
+ #define ELANSPI_OTP_TIMEOUT_USEC (12 * 1000)
+diff --git a/libfprint/fp-image-device-private.h b/libfprint/fp-image-device-private.h
+index b075634..a9a9342 100644
+--- a/libfprint/fp-image-device-private.h
++++ b/libfprint/fp-image-device-private.h
+@@ -37,6 +37,7 @@ typedef struct
+   FpImage            *capture_image;
+ 
+   gint                bz3_threshold;
++  FpiPrintType        algorithm;
+ } FpImageDevicePrivate;
+ 
+ 
+diff --git a/libfprint/fp-image-device.c b/libfprint/fp-image-device.c
+index ac88ffd..8af09e5 100644
+--- a/libfprint/fp-image-device.c
++++ b/libfprint/fp-image-device.c
+@@ -125,8 +125,8 @@ fp_image_device_start_capture_action (FpDevice *device)
+ 
+       fpi_device_get_enroll_data (device, &enroll_print);
+       g_object_get (enroll_print, "fpi-type", &print_type, NULL);
+-      if (print_type != FPI_PRINT_NBIS)
+-        fpi_print_set_type (enroll_print, FPI_PRINT_NBIS);
++      if (print_type != priv->algorithm)
++        fpi_print_set_type (enroll_print, priv->algorithm);
+     }
+ 
+   priv->enroll_stage = 0;
+@@ -197,6 +197,9 @@ fp_image_device_constructed (GObject *obj)
+   if (cls->bz3_threshold > 0)
+     priv->bz3_threshold = cls->bz3_threshold;
+ 
++  /* Matching algorithm: NBIS unless the driver asks for SIGFM. */
++  priv->algorithm = cls->algorithm == FPI_PRINT_SIGFM ? FPI_PRINT_SIGFM : FPI_PRINT_NBIS;
++
+   G_OBJECT_CLASS (fp_image_device_parent_class)->constructed (obj);
+ }
+ 
+diff --git a/libfprint/fp-image.c b/libfprint/fp-image.c
+index f9c60b3..530aa20 100644
+--- a/libfprint/fp-image.c
++++ b/libfprint/fp-image.c
+@@ -64,6 +64,7 @@ fp_image_finalize (GObject *object)
+   g_clear_pointer (&self->data, g_free);
+   g_clear_pointer (&self->binarized, g_free);
+   g_clear_pointer (&self->minutiae, g_ptr_array_unref);
++  g_clear_pointer (&self->sigfm_info, sigfm_free_info);
+ 
+   G_OBJECT_CLASS (fp_image_parent_class)->finalize (object);
+ }
+@@ -519,6 +520,9 @@ fp_image_detect_minutiae_finish (FpImage      *self,
+       return FALSE;
+     }
+ 
++  if (fpi_image_task_is_sigfm (task))
++    return fpi_image_detect_sigfm_finish (self, task, error);
++
+   return fp_image_detect_minutiae_nbis_finish (self, task, error);
+ }
+ 
+diff --git a/libfprint/fp-print.c b/libfprint/fp-print.c
+index d541437..617a92c 100644
+--- a/libfprint/fp-print.c
++++ b/libfprint/fp-print.c
+@@ -628,6 +628,22 @@ fp_print_equal (FpPrint *self, FpPrint *other)
+ 
+       return TRUE;
+ 
++    case FPI_PRINT_SIGFM:
++      if (self->prints->len != other->prints->len)
++        return FALSE;
++
++      for (guint i = 0; i < self->prints->len; i++)
++        {
++          int la = 0, lb = 0;
++          g_autofree unsigned char *a = sigfm_serialize_binary (g_ptr_array_index (self->prints, i), &la);
++          g_autofree unsigned char *b = sigfm_serialize_binary (g_ptr_array_index (other->prints, i), &lb);
++
++          if (!a || !b || la != lb || memcmp (a, b, la) != 0)
++            return FALSE;
++        }
++
++      return TRUE;
++
+     case FPI_PRINT_UNDEFINED:
+       g_assert_not_reached ();
+     }
+@@ -716,6 +732,30 @@ fp_print_serialize (FpPrint *print,
+       g_variant_builder_close (&nested);
+       g_variant_builder_add (&builder, "v", g_variant_builder_end (&nested));
+     }
++  else if (print->type == FPI_PRINT_SIGFM)
++    {
++      GVariantBuilder nested = G_VARIANT_BUILDER_INIT (G_VARIANT_TYPE ("(aay)"));
++
++      g_variant_builder_open (&nested, G_VARIANT_TYPE ("aay"));
++      for (guint i = 0; i < print->prints->len; i++)
++        {
++          int blen = 0;
++          g_autofree unsigned char *bin = sigfm_serialize_binary (g_ptr_array_index (print->prints, i), &blen);
++
++          if (!bin)
++            {
++              g_variant_builder_clear (&nested);
++              g_variant_builder_clear (&builder);
++              g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
++                           "Could not serialize SIGFM print data");
++              return FALSE;
++            }
++          g_variant_builder_add_value (&nested,
++                                       g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, bin, blen, 1));
++        }
++      g_variant_builder_close (&nested);
++      g_variant_builder_add (&builder, "v", g_variant_builder_end (&nested));
++    }
+   else
+     {
+       g_variant_builder_add (&builder, "v", g_variant_new_variant (print->data));
+@@ -872,6 +912,41 @@ fp_print_deserialize (const guchar *data,
+       }
+       break;
+ 
++    case FPI_PRINT_SIGFM:
++      {
++        g_autoptr(GVariant) prints = NULL;
++
++        if (!g_variant_is_of_type (print_data, G_VARIANT_TYPE ("(aay)")))
++          goto invalid_format;
++
++        prints = g_variant_get_child_value (print_data, 0);
++        if (g_variant_n_children (prints) == 0 || g_variant_n_children (prints) > 64)
++          goto invalid_format;
++
++        result = g_object_new (FP_TYPE_PRINT,
++                               "driver", driver,
++                               "device-id", device_id,
++                               "device-stored", device_stored,
++                               NULL);
++        g_object_ref_sink (result);
++        fpi_print_set_type (result, FPI_PRINT_SIGFM);
++        for (gsize i = 0; i < g_variant_n_children (prints); i++)
++          {
++            g_autoptr(GVariant) child = g_variant_get_child_value (prints, i);
++            gsize blen = 0;
++            const guint8 *raw = g_variant_get_fixed_array (child, &blen, 1);
++            SigfmImgInfo *info;
++
++            if (blen == 0 || blen > G_MAXINT)
++              goto invalid_format;
++            info = sigfm_deserialize_binary (raw, (int) blen);
++            if (!info)
++              goto invalid_format;
++            g_ptr_array_add (result->prints, info);
++          }
++      }
++      break;
++
+     case FPI_PRINT_RAW:
+       {
+         g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
+@@ -888,6 +963,7 @@ fp_print_deserialize (const guchar *data,
+       break;
+ 
+     case FPI_PRINT_UNDEFINED:
++    default:
+       {
+         g_autofree char *type_str = g_enum_to_string (fpi_print_type_get_type (), type);
+         g_warning ("Invalid print type: 0x%X (%s)", type, type_str);
+diff --git a/libfprint/fpi-image-device.c b/libfprint/fpi-image-device.c
+index 87bdc60..634fdc7 100644
+--- a/libfprint/fpi-image-device.c
++++ b/libfprint/fpi-image-device.c
+@@ -22,6 +22,7 @@
+ 
+ #include "fp-image-device-private.h"
+ #include "fp-image-device.h"
++#include "fpi-image.h"
+ 
+ /**
+  * SECTION: fpi-image-device
+@@ -282,7 +283,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
+   if (!error)
+     {
+       print = fp_print_new (device);
+-      fpi_print_set_type (print, FPI_PRINT_NBIS);
++      fpi_print_set_type (print, priv->algorithm);
+       if (!fpi_print_add_from_image (print, image, &error))
+         {
+           g_clear_object (&print);
+@@ -333,7 +334,14 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
+         {
+           FpPrint *template = g_ptr_array_index (templates, i);
+ 
+-          if (fpi_print_bz3_match (template, print, priv->bz3_threshold, &error) == FPI_MATCH_SUCCESS)
++          FpiMatchResult r;
++
++          if (priv->algorithm == FPI_PRINT_SIGFM)
++            r = fpi_print_sigfm_match (template, print, priv->bz3_threshold, &error);
++          else
++            r = fpi_print_bz3_match (template, print, priv->bz3_threshold, &error);
++
++          if (r == FPI_MATCH_SUCCESS)
+             {
+               result = template;
+               break;
+@@ -485,10 +493,16 @@ fpi_image_device_image_captured (FpImageDevice *self, FpImage *image)
+ 
+   /* XXX: We also detect minutiae in capture mode, we solely do this
+    *      to normalize the image which will happen as a by-product. */
+-  fp_image_detect_minutiae (image,
++  if (priv->algorithm == FPI_PRINT_SIGFM && action != FPI_DEVICE_ACTION_CAPTURE)
++    fpi_image_detect_sigfm (image,
+                             fpi_device_get_cancellable (FP_DEVICE (self)),
+                             fpi_image_device_minutiae_detected,
+                             self);
++  else
++    fp_image_detect_minutiae (image,
++                              fpi_device_get_cancellable (FP_DEVICE (self)),
++                              fpi_image_device_minutiae_detected,
++                              self);
+ 
+   /* XXX: This is wrong if we add support for raw capture mode. */
+   fp_image_device_change_state (self, FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF);
+diff --git a/libfprint/fpi-image-device.h b/libfprint/fpi-image-device.h
+index 71472db..ce679d1 100644
+--- a/libfprint/fpi-image-device.h
++++ b/libfprint/fpi-image-device.h
+@@ -20,6 +20,7 @@
+ #pragma once
+ 
+ #include "fpi-device.h"
++#include "fpi-print.h"
+ #include "fp-image-device.h"
+ 
+ /**
+@@ -105,6 +106,7 @@ struct _FpImageDeviceClass
+   FpDeviceClass parent_class;
+ 
+   gint          bz3_threshold;
++  FpiPrintType  algorithm;
+   gint          img_width;
+   gint          img_height;
+ 
+diff --git a/libfprint/fpi-image.c b/libfprint/fpi-image.c
+index 98f412a..fe620f5 100644
+--- a/libfprint/fpi-image.c
++++ b/libfprint/fpi-image.c
+@@ -152,3 +152,173 @@ fpi_image_resize (FpImage *orig_img,
+   return g_object_ref (orig_img);
+ #endif
+ }
++
++/* ---- SIGFM keypoint extraction (small-area sensors) ---- */
++
++#define SIGFM_MIN_KEYPOINTS 25
++
++static void
++sigfm_vflip (guint8 *data, gint width, gint height)
++{
++  g_autofree guint8 *row = g_malloc (width);
++
++  for (gint i = 0; i < height / 2; i++)
++    {
++      guint8 *a = data + i * width, *b = data + (height - i - 1) * width;
++      memcpy (row, a, width);
++      memcpy (a, b, width);
++      memcpy (b, row, width);
++    }
++}
++
++static void
++sigfm_hflip (guint8 *data, gint width, gint height)
++{
++  for (gint i = 0; i < height; i++)
++    for (gint j = 0; j < width / 2; j++)
++      {
++        guint8 t = data[i * width + j];
++        data[i * width + j] = data[i * width + width - j - 1];
++        data[i * width + width - j - 1] = t;
++      }
++}
++
++static void
++sigfm_invert (guint8 *data, gint width, gint height)
++{
++  for (gint i = 0; i < width * height; i++)
++    data[i] = 0xff - data[i];
++}
++static const gchar sigfm_task_marker = 's';
++
++typedef struct
++{
++  SigfmImgInfo  *info;
++  unsigned char *image;
++  FpiImageFlags  flags;
++  gboolean       image_changed;
++} DetectSigfmData;
++
++static void
++fp_image_detect_sigfm_free (DetectSigfmData *data)
++{
++  g_clear_pointer (&data->info, sigfm_free_info);
++  if (data->image_changed)
++    g_clear_pointer (&data->image, g_free);
++  g_free (data);
++}
++
++static void
++fp_image_detect_sigfm_thread_func (GTask        *task,
++                                   gpointer      source_object,
++                                   gpointer      task_data,
++                                   GCancellable *cancellable)
++{
++  g_autoptr(GTimer) timer = g_timer_new ();
++  g_autoptr(GTask) thread_task = g_steal_pointer (&task);
++  FpImage *self = source_object;
++  DetectSigfmData *ret = g_new0 (DetectSigfmData, 1);
++  FpiImageFlags norm = FPI_IMAGE_H_FLIPPED | FPI_IMAGE_V_FLIPPED | FPI_IMAGE_COLORS_INVERTED;
++  int kps;
++
++  ret->flags = self->flags & ~norm;
++  ret->image = self->data;
++  if (self->flags & norm)
++    {
++      ret->image = g_memdup2 (self->data, self->width * self->height);
++      ret->image_changed = TRUE;
++      if (self->flags & FPI_IMAGE_H_FLIPPED)
++        sigfm_hflip (ret->image, self->width, self->height);
++      if (self->flags & FPI_IMAGE_V_FLIPPED)
++        sigfm_vflip (ret->image, self->width, self->height);
++      if (self->flags & FPI_IMAGE_COLORS_INVERTED)
++        sigfm_invert (ret->image, self->width, self->height);
++    }
++
++  ret->info = sigfm_extract (ret->image, self->width, self->height);
++  kps = sigfm_keypoints_count (ret->info);
++  fp_dbg ("sigfm extract: %d keypoints in %f secs", kps, g_timer_elapsed (timer, NULL));
++
++  if (g_task_had_error (thread_task))
++    {
++      fp_image_detect_sigfm_free (ret);
++      return;
++    }
++
++  if (!ret->info || kps < SIGFM_MIN_KEYPOINTS)
++    {
++      fp_image_detect_sigfm_free (ret);
++      g_task_return_new_error (thread_task, G_IO_ERROR, G_IO_ERROR_FAILED,
++                               "Not enough keypoints found (%d)", kps);
++      return;
++    }
++
++  g_task_return_pointer (thread_task, ret, (GDestroyNotify) fp_image_detect_sigfm_free);
++}
++
++gboolean
++fpi_image_task_is_sigfm (GTask *task)
++{
++  return g_task_get_task_data (task) == &sigfm_task_marker;
++}
++
++gboolean
++fpi_image_detect_sigfm_finish (FpImage *self, GTask *task, GError **error)
++{
++  DetectSigfmData *data = g_task_propagate_pointer (task, error);
++
++  if (!data)
++    return FALSE;
++
++  self->flags = data->flags;
++  if (data->image_changed)
++    {
++      g_clear_pointer (&self->data, g_free);
++      self->data = g_steal_pointer (&data->image);
++      data->image_changed = FALSE;
++    }
++  g_clear_pointer (&self->sigfm_info, sigfm_free_info);
++  self->sigfm_info = g_steal_pointer (&data->info);
++  fp_image_detect_sigfm_free (data);
++  return TRUE;
++}
++
++/**
++ * fpi_image_detect_sigfm:
++ *
++ * Like fp_image_detect_minutiae() but extracts SIGFM keypoints instead.
++ * Finish with fp_image_detect_minutiae_finish().
++ */
++void
++fpi_image_detect_sigfm (FpImage            *self,
++                        GCancellable       *cancellable,
++                        GAsyncReadyCallback callback,
++                        gpointer            user_data)
++{
++  g_autoptr(GTask) task = NULL;
++
++  g_return_if_fail (FP_IS_IMAGE (self));
++  g_return_if_fail (callback != NULL);
++
++  task = g_task_new (self, cancellable, callback, user_data);
++  g_task_set_source_tag (task, fp_image_detect_minutiae);
++  g_task_set_task_data (task, (gpointer) &sigfm_task_marker, NULL);
++  g_task_set_check_cancellable (task, TRUE);
++
++  if (!g_atomic_int_compare_and_exchange (&self->detection_in_progress,
++                                          FALSE, TRUE))
++    {
++      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_ADDRESS_IN_USE,
++                               "Minutiae detection is already in progress");
++      return;
++    }
++
++  g_task_run_in_thread (g_steal_pointer (&task), fp_image_detect_sigfm_thread_func);
++}
++
++const SigfmImgInfo *
++fpi_image_get_sigfm_info (FpImage *self)
++{
++  return self->sigfm_info;
++}
++
+diff --git a/libfprint/fpi-image.h b/libfprint/fpi-image.h
+index fdc376c..c6b3c86 100644
+--- a/libfprint/fpi-image.h
++++ b/libfprint/fpi-image.h
+@@ -21,6 +21,7 @@
+ #pragma once
+ 
+ #include "fp-image.h"
++#include "sigfm/sigfm.hpp"
+ 
+ /**
+  * FpiImageFlags:
+@@ -69,6 +70,7 @@ struct _FpImage
+   guint8    *binarized;
+ 
+   GPtrArray *minutiae;
++  SigfmImgInfo *sigfm_info;
+ 
+   gboolean   detection_in_progress;
+ };
+@@ -79,6 +81,16 @@ gint fpi_mean_sq_diff_norm (const guint8 *buf1,
+                             const guint8 *buf2,
+                             gint          size);
+ 
++void fpi_image_detect_sigfm (FpImage            *self,
++                             GCancellable       *cancellable,
++                             GAsyncReadyCallback callback,
++                             gpointer            user_data);
++const SigfmImgInfo *fpi_image_get_sigfm_info (FpImage *self);
++gboolean fpi_image_task_is_sigfm (GTask *task);
++gboolean fpi_image_detect_sigfm_finish (FpImage *self,
++                                        GTask   *task,
++                                        GError **error);
++
+ FpImage *fpi_image_resize (FpImage *orig,
+                            guint    w_factor,
+                            guint    h_factor);
+diff --git a/libfprint/fpi-print.c b/libfprint/fpi-print.c
+index 6c5e20d..d8e4736 100644
+--- a/libfprint/fpi-print.c
++++ b/libfprint/fpi-print.c
+@@ -46,11 +46,14 @@
+ void
+ fpi_print_add_print (FpPrint *print, FpPrint *add)
+ {
+-  g_return_if_fail (print->type == FPI_PRINT_NBIS);
+-  g_return_if_fail (add->type == FPI_PRINT_NBIS);
++  g_return_if_fail (print->type == FPI_PRINT_NBIS || print->type == FPI_PRINT_SIGFM);
++  g_return_if_fail (add->type == print->type);
+ 
+   g_assert (add->prints->len == 1);
+-  g_ptr_array_add (print->prints, g_memdup2 (add->prints->pdata[0], sizeof (struct xyt_struct)));
++  if (print->type == FPI_PRINT_SIGFM)
++    g_ptr_array_add (print->prints, sigfm_copy_info (add->prints->pdata[0]));
++  else
++    g_ptr_array_add (print->prints, g_memdup2 (add->prints->pdata[0], sizeof (struct xyt_struct)));
+ }
+ 
+ /**
+@@ -76,6 +79,11 @@ fpi_print_set_type (FpPrint     *print,
+       g_assert_null (print->prints);
+       print->prints = g_ptr_array_new_with_free_func (g_free);
+     }
++  else if (print->type == FPI_PRINT_SIGFM)
++    {
++      g_assert_null (print->prints);
++      print->prints = g_ptr_array_new_with_free_func ((GDestroyNotify) sigfm_free_info);
++    }
+   g_object_notify (G_OBJECT (print), "fpi-type");
+ }
+ 
+@@ -176,6 +184,25 @@ fpi_print_add_from_image (FpPrint *print,
+   struct fp_minutiae _minutiae;
+   struct xyt_struct *xyt;
+ 
++  if (print->type == FPI_PRINT_SIGFM && image)
++    {
++      const SigfmImgInfo *info = fpi_image_get_sigfm_info (image);
++      SigfmImgInfo *copy;
++
++      if (!info || !(copy = sigfm_copy_info (info)))
++        {
++          g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
++                       "No SIGFM keypoints found in image or not yet detected!");
++          return FALSE;
++        }
++      g_ptr_array_add (print->prints, copy);
++
++      g_clear_object (&print->image);
++      print->image = g_object_ref (image);
++      g_object_notify (G_OBJECT (print), "image");
++      return TRUE;
++    }
++
+   if (print->type != FPI_PRINT_NBIS || !image)
+     {
+       g_set_error (error,
+@@ -268,6 +295,58 @@ fpi_print_bz3_match (FpPrint *print_template,
+   return FPI_MATCH_FAIL;
+ }
+ 
++/**
++ * fpi_print_sigfm_match:
++ * @print_template: A #FpPrint of type #FPI_PRINT_SIGFM with the enrolled samples
++ * @print: A newly scanned #FpPrint of type #FPI_PRINT_SIGFM (one sample)
++ * @threshold: Minimum geometric consistency score to accept
++ * @error: Return location for error
++ *
++ * Returns: Whether the prints match, @error will be set if #FPI_MATCH_ERROR is returned
++ */
++FpiMatchResult
++fpi_print_sigfm_match (FpPrint *print_template,
++                       FpPrint *print,
++                       gint     threshold,
++                       GError **error)
++{
++  const SigfmImgInfo *probe;
++  gint best = 0;
++
++  if (print_template->type != FPI_PRINT_SIGFM || print->type != FPI_PRINT_SIGFM)
++    {
++      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_NOT_SUPPORTED,
++                                         "It is only possible to match SIGFM type print data");
++      return FPI_MATCH_ERROR;
++    }
++
++  if (print->prints->len != 1)
++    {
++      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
++                                         "New print contains more than one print!");
++      return FPI_MATCH_ERROR;
++    }
++
++  probe = g_ptr_array_index (print->prints, 0);
++
++  for (guint i = 0; i < print_template->prints->len; i++)
++    {
++      gint score = sigfm_match_score (probe, g_ptr_array_index (print_template->prints, i));
++
++      if (score < 0)
++        {
++          *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
++                                             "SIGFM matcher failed");
++          return FPI_MATCH_ERROR;
++        }
++      best = MAX (best, score);
++    }
++
++  fp_dbg ("sigfm score %d/%d (best of %u samples)", best, threshold, print_template->prints->len);
++
++  return best >= threshold ? FPI_MATCH_SUCCESS : FPI_MATCH_FAIL;
++}
++
+ /**
+  * fpi_print_generate_user_id:
+  * @print: #FpPrint to generate the ID for
+diff --git a/libfprint/fpi-print.h b/libfprint/fpi-print.h
+index 773407d..ba53525 100644
+--- a/libfprint/fpi-print.h
++++ b/libfprint/fpi-print.h
+@@ -11,11 +11,13 @@ G_BEGIN_DECLS
+  * @FPI_PRINT_UNDEFINED: Undefined type, this happens prior to enrollment
+  * @FPI_PRINT_RAW: A raw print where the data is directly compared
+  * @FPI_PRINT_NBIS: NBIS minutiae comparison
++ * @FPI_PRINT_SIGFM: SIGFM keypoint comparison (small area sensors)
+  */
+ typedef enum {
+   FPI_PRINT_UNDEFINED = 0,
+   FPI_PRINT_RAW,
+   FPI_PRINT_NBIS,
++  FPI_PRINT_SIGFM,
+ } FpiPrintType;
+ 
+ /**
+@@ -45,6 +47,11 @@ gboolean fpi_print_add_from_image (FpPrint *print,
+                                    FpImage *image,
+                                    GError **error);
+ 
++FpiMatchResult fpi_print_sigfm_match (FpPrint *print_template,
++                                      FpPrint *print,
++                                      gint     threshold,
++                                      GError **error);
++
+ FpiMatchResult fpi_print_bz3_match (FpPrint *print_template,
+                                     FpPrint *print,
+                                     gint     bz3_threshold,
+diff --git a/libfprint/meson.build b/libfprint/meson.build
+index f11533c..3125e50 100644
+--- a/libfprint/meson.build
++++ b/libfprint/meson.build
+@@ -241,6 +241,9 @@ libnbis = static_library('nbis',
+     ]),
+     install: false)
+ 
++subdir('sigfm')
++deps += sigfm_dep
++
+ libfprint_private = static_library('fprint-private',
+     sources: [
+         fpi_enums,
+diff --git a/libfprint/sigfm/meson.build b/libfprint/sigfm/meson.build
+new file mode 100644
+index 0000000..060de13
+--- /dev/null
++++ b/libfprint/sigfm/meson.build
+@@ -0,0 +1,23 @@
++# SIGFM keypoint matcher. Only the OpenCV modules it uses are linked
++# (fprintd runs as root: keep the loaded code minimal).
++opencv_pc = dependency('opencv5', required: false)
++opencv_mods = ['opencv_core', 'opencv_imgproc', 'opencv_flann', 'opencv_features']
++if not opencv_pc.found()
++    opencv_pc = dependency('opencv4', version: '>=4.5.0')
++    opencv_mods = ['opencv_core', 'opencv_imgproc', 'opencv_flann', 'opencv_features2d']
++endif
++
++opencv_dep = [opencv_pc.partial_dependency(compile_args: true, includes: true)]
++foreach m : opencv_mods
++    opencv_dep += cpp.find_library(m)
++endforeach
++
++libsigfm = static_library('sigfm',
++    'sigfm.cpp',
++    dependencies: opencv_dep,
++    cpp_args: ['-std=c++17'],
++    gnu_symbol_visibility: 'hidden',
++    install: false)
++
++sigfm_dep = declare_dependency(link_with: libsigfm,
++    dependencies: opencv_dep)
+diff --git a/libfprint/sigfm/sigfm.cpp b/libfprint/sigfm/sigfm.cpp
+new file mode 100644
+index 0000000..0251622
+--- /dev/null
++++ b/libfprint/sigfm/sigfm.cpp
+@@ -0,0 +1,345 @@
++/*
++ * SIGFM: SIFT keypoint matcher for small-area fingerprint sensors.
++ *
++ * Algorithm: Matthieu Charette, Natasha England-Elbro, Timur Mangliev
++ * (goodix-fp-linux-dev/libfprint, LGPL-2.1-or-later).
++ * This version: OpenCV 4/5, strict serialization, total match ordering,
++ * NaN-safe geometry and bounded work per comparison.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#include "sigfm.hpp"
++
++#include <opencv2/core.hpp>
++#if __has_include(<opencv2/features.hpp>)
++#include <opencv2/features.hpp> /* OpenCV 5 */
++#else
++#include <opencv2/features2d.hpp> /* OpenCV 4 */
++#endif
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <set>
++#include <tuple>
++#include <vector>
++
++struct SigfmImgInfo
++{
++  std::vector<cv::KeyPoint> keypoints;
++  cv::Mat                   descriptors; /* CV_32F, one row per keypoint */
++};
++
++namespace {
++
++constexpr double distance_match = 0.75;  /* Lowe ratio test */
++constexpr double length_match = 0.05;
++constexpr double angle_match = 0.05;
++constexpr std::size_t min_match = 5;
++
++/* Hard limits: protect against corrupted templates and runaway work. */
++constexpr std::uint32_t max_keypoints = 4096;
++constexpr std::uint32_t sift_desc_cols = 128;
++constexpr std::size_t max_pairs = 120;      /* unique matches considered (keeps a match < ~20 ms) */
++constexpr std::size_t max_angles = 3000;    /* angle pairs considered */
++
++constexpr char magic[4] = { 'S', 'G', 'F', '2' };
++constexpr std::size_t kp_bytes = 5 * sizeof (float) + 2 * sizeof (std::int32_t);
++
++struct Match
++{
++  cv::Point2i p1, p2;
++  bool operator< (const Match &o) const
++  {
++    /* Total order: the original compared only p1.y, silently merging
++     * distinct matches that shared a row. */
++    return std::tie (p1.y, p1.x, p2.y, p2.x) <
++           std::tie (o.p1.y, o.p1.x, o.p2.y, o.p2.x);
++  }
++};
++
++struct Angle
++{
++  double cos, sin;
++};
++
++inline double
++clamp1 (double v)
++{
++  return std::max (-1.0, std::min (1.0, v));
++}
++
++inline bool
++ratio_close (double a, double b, double tol)
++{
++  const double hi = std::max (a, b);
++  if (!(hi > 0.0))
++    return false;
++  return 1.0 - std::min (a, b) / hi <= tol;
++}
++
++template<typename T> void
++put (std::vector<unsigned char> &out, T v)
++{
++  const auto *p = reinterpret_cast<const unsigned char *> (&v);
++  out.insert (out.end (), p, p + sizeof (T));
++}
++
++template<typename T> bool
++get (const unsigned char *&cur, const unsigned char *end, T &v)
++{
++  if (static_cast<std::size_t> (end - cur) < sizeof (T))
++    return false;
++  std::memcpy (&v, cur, sizeof (T));
++  cur += sizeof (T);
++  return true;
++}
++
++} // namespace
++
++extern "C" {
++
++SigfmImgInfo *
++sigfm_extract (const unsigned char *pix, int width, int height)
++{
++  if (!pix || width <= 0 || height <= 0)
++    return nullptr;
++  try
++    {
++      cv::Mat img (height, width, CV_8UC1, const_cast<unsigned char *> (pix));
++      auto info = new SigfmImgInfo{};
++      cv::SIFT::create ()->detectAndCompute (img, cv::noArray (),
++                                             info->keypoints, info->descriptors);
++      if (info->keypoints.size () > max_keypoints)
++        {
++          /* keep the strongest responses */
++          std::vector<int> idx (info->keypoints.size ());
++          for (std::size_t i = 0; i < idx.size (); i++)
++            idx[i] = static_cast<int> (i);
++          std::sort (idx.begin (), idx.end (), [&] (int a, int b) {
++            return info->keypoints[a].response > info->keypoints[b].response;
++          });
++          idx.resize (max_keypoints);
++          std::vector<cv::KeyPoint> kp;
++          cv::Mat desc (static_cast<int> (max_keypoints), info->descriptors.cols, CV_32F);
++          for (std::size_t i = 0; i < idx.size (); i++)
++            {
++              kp.push_back (info->keypoints[idx[i]]);
++              info->descriptors.row (idx[i]).copyTo (desc.row (static_cast<int> (i)));
++            }
++          info->keypoints = std::move (kp);
++          info->descriptors = desc;
++        }
++      return info;
++    }
++  catch (...)
++    {
++      return nullptr;
++    }
++}
++
++void
++sigfm_free_info (SigfmImgInfo *info)
++{
++  delete info;
++}
++
++SigfmImgInfo *
++sigfm_copy_info (const SigfmImgInfo *info)
++{
++  if (!info)
++    return nullptr;
++  try
++    {
++      return new SigfmImgInfo{ info->keypoints, info->descriptors.clone () };
++    }
++  catch (...)
++    {
++      return nullptr;
++    }
++}
++
++int
++sigfm_keypoints_count (const SigfmImgInfo *info)
++{
++  return info ? static_cast<int> (info->keypoints.size ()) : 0;
++}
++
++int
++sigfm_match_score (const SigfmImgInfo *frame, const SigfmImgInfo *enrolled)
++{
++  if (!frame || !enrolled)
++    return -1;
++  try
++    {
++      if (frame->descriptors.empty () || enrolled->descriptors.empty ())
++        return 0;
++
++      std::vector<std::vector<cv::DMatch>> knn;
++      cv::BFMatcher::create ()->knnMatch (frame->descriptors,
++                                          enrolled->descriptors, knn, 2);
++
++      std::set<Match> unique;
++      for (const auto &pair : knn)
++        {
++          if (pair.size () < 2)
++            continue;
++          const cv::DMatch &m = pair[0];
++          if (m.distance < distance_match * pair[1].distance)
++            unique.insert (Match{ frame->keypoints.at (m.queryIdx).pt,
++                                  enrolled->keypoints.at (m.trainIdx).pt });
++        }
++      if (unique.size () < min_match)
++        return 0;
++
++      std::vector<Match> matches (unique.begin (), unique.end ());
++      if (matches.size () > max_pairs)
++        matches.resize (max_pairs);
++
++      std::vector<Angle> angles;
++      for (std::size_t j = 0; j < matches.size () && angles.size () < max_angles; j++)
++        for (std::size_t k = j + 1; k < matches.size () && angles.size () < max_angles; k++)
++          {
++            const Match &a = matches[j], &b = matches[k];
++            const double v1x = a.p1.x - b.p1.x, v1y = a.p1.y - b.p1.y;
++            const double v2x = a.p2.x - b.p2.x, v2y = a.p2.y - b.p2.y;
++            const double l1 = std::hypot (v1x, v1y), l2 = std::hypot (v2x, v2y);
++
++            if (l1 == 0.0 || l2 == 0.0 || !ratio_close (l1, l2, length_match))
++              continue;
++
++            const double prod = l1 * l2;
++            angles.push_back (Angle{
++              M_PI / 2 + std::asin (clamp1 ((v1x * v2x + v1y * v2y) / prod)),
++              std::acos (clamp1 ((v1x * v2y - v1y * v2x) / prod)) });
++          }
++
++      if (angles.size () < min_match)
++        return 0;
++
++      int count = 0;
++      for (std::size_t j = 0; j < angles.size (); j++)
++        for (std::size_t k = j + 1; k < angles.size (); k++)
++          if (ratio_close (angles[j].sin, angles[k].sin, angle_match) &&
++              ratio_close (angles[j].cos, angles[k].cos, angle_match))
++            count++;
++
++      return count;
++    }
++  catch (...)
++    {
++      return -1;
++    }
++}
++
++unsigned char *
++sigfm_serialize_binary (const SigfmImgInfo *info, int *outlen)
++{
++  if (!info || !outlen)
++    return nullptr;
++  try
++    {
++      const auto n = static_cast<std::uint32_t> (info->keypoints.size ());
++      const auto cols = static_cast<std::uint32_t> (info->descriptors.cols);
++      if (n > max_keypoints ||
++          (n > 0 && (cols != sift_desc_cols ||
++                     info->descriptors.type () != CV_32F ||
++                     static_cast<std::uint32_t> (info->descriptors.rows) != n)))
++        return nullptr;
++
++      std::vector<unsigned char> out;
++      out.insert (out.end (), magic, magic + sizeof (magic));
++      put<std::uint32_t> (out, n);
++      put<std::uint32_t> (out, n ? cols : 0);
++      for (const auto &kp : info->keypoints)
++        {
++          put<float> (out, kp.pt.x);
++          put<float> (out, kp.pt.y);
++          put<float> (out, kp.size);
++          put<float> (out, kp.angle);
++          put<float> (out, kp.response);
++          put<std::int32_t> (out, kp.octave);
++          put<std::int32_t> (out, kp.class_id);
++        }
++      if (n)
++        {
++          cv::Mat d = info->descriptors.isContinuous () ? info->descriptors
++                                                        : info->descriptors.clone ();
++          const auto *p = d.ptr<unsigned char> (0);
++          out.insert (out.end (), p, p + static_cast<std::size_t> (n) * cols * sizeof (float));
++        }
++
++      auto *buf = static_cast<unsigned char *> (std::malloc (out.size ()));
++      if (!buf)
++        return nullptr;
++      std::memcpy (buf, out.data (), out.size ());
++      *outlen = static_cast<int> (out.size ());
++      return buf;
++    }
++  catch (...)
++    {
++      return nullptr;
++    }
++}
++
++SigfmImgInfo *
++sigfm_deserialize_binary (const unsigned char *bytes, int len)
++{
++  if (!bytes || len < static_cast<int> (sizeof (magic) + 8))
++    return nullptr;
++  try
++    {
++      const unsigned char *cur = bytes, *end = bytes + len;
++      if (std::memcmp (cur, magic, sizeof (magic)) != 0)
++        return nullptr;
++      cur += sizeof (magic);
++
++      std::uint32_t n = 0, cols = 0;
++      if (!get (cur, end, n) || !get (cur, end, cols))
++        return nullptr;
++      if (n > max_keypoints || (n > 0 && cols != sift_desc_cols) || (n == 0 && cols != 0))
++        return nullptr;
++
++      const std::size_t need = static_cast<std::size_t> (n) * kp_bytes +
++                               static_cast<std::size_t> (n) * cols * sizeof (float);
++      if (static_cast<std::size_t> (end - cur) != need)
++        return nullptr;
++
++      auto info = new SigfmImgInfo{};
++      info->keypoints.reserve (n);
++      for (std::uint32_t i = 0; i < n; i++)
++        {
++          float x = 0, y = 0, size = 0, angle = 0, response = 0;
++          std::int32_t octave = 0, class_id = 0;
++          const bool ok = get (cur, end, x) && get (cur, end, y) &&
++                          get (cur, end, size) && get (cur, end, angle) &&
++                          get (cur, end, response) && get (cur, end, octave) &&
++                          get (cur, end, class_id);
++          if (!ok || !std::isfinite (x) || !std::isfinite (y) || !std::isfinite (size) ||
++              !std::isfinite (angle) || !std::isfinite (response))
++            {
++              delete info;
++              return nullptr;
++            }
++          info->keypoints.emplace_back (cv::Point2f (x, y), size, angle, response, octave, class_id);
++        }
++      if (n)
++        {
++          info->descriptors.create (static_cast<int> (n), static_cast<int> (cols), CV_32F);
++          std::memcpy (info->descriptors.data, cur, static_cast<std::size_t> (n) * cols * sizeof (float));
++        }
++      return info;
++    }
++  catch (...)
++    {
++      return nullptr;
++    }
++}
++
++} /* extern "C" */
+diff --git a/libfprint/sigfm/sigfm.hpp b/libfprint/sigfm/sigfm.hpp
+new file mode 100644
+index 0000000..0a98b5c
+--- /dev/null
++++ b/libfprint/sigfm/sigfm.hpp
+@@ -0,0 +1,49 @@
++/*
++ * SIGFM: SIFT keypoint matcher for small-area fingerprint sensors.
++ *
++ * Based on the SIGFM algorithm by Matthieu Charette, Natasha England-Elbro
++ * and Timur Mangliev (goodix-fp-linux-dev/libfprint, LGPL-2.1-or-later).
++ * Rewritten for libfprint 1.94.100 and OpenCV 4/5: bounds-checked versioned
++ * serialization, total ordering of matches, NaN-safe geometry.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#pragma once
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef struct SigfmImgInfo SigfmImgInfo;
++
++/* Extracts SIFT keypoints/descriptors from an 8-bit greyscale image.
++ * Returns NULL on failure. */
++SigfmImgInfo *sigfm_extract (const unsigned char *pix,
++                             int                  width,
++                             int                  height);
++
++void sigfm_free_info (SigfmImgInfo *info);
++
++SigfmImgInfo *sigfm_copy_info (const SigfmImgInfo *info);
++
++int sigfm_keypoints_count (const SigfmImgInfo *info);
++
++/* Geometric consistency score between two prints (>= 0), or -1 on error. */
++int sigfm_match_score (const SigfmImgInfo *frame,
++                       const SigfmImgInfo *enrolled);
++
++/* Serialized buffer must be released with g_free()/free(). NULL on error. */
++unsigned char *sigfm_serialize_binary (const SigfmImgInfo *info,
++                                       int                *outlen);
++
++/* Strictly validated; returns NULL for any malformed or oversized input. */
++SigfmImgInfo *sigfm_deserialize_binary (const unsigned char *bytes,
++                                        int                  len);
++
++#ifdef __cplusplus
++}
++#endif
+diff --git a/tests/meson.build b/tests/meson.build
+index aad0675..81de12b 100644
+--- a/tests/meson.build
++++ b/tests/meson.build
+@@ -292,7 +292,7 @@ else
+         args: ['-c', 'exit 77']
+     )
+ 
+-    foreach driver_test: drivers_tests
++    foreach driver_test, _env: drivers_tests
+         test(driver_test,
+             sh,
+             args: ['-c', 'exit 77']

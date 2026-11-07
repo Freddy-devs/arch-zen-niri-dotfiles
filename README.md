@@ -50,7 +50,7 @@ navegador, oficina, bases de datos y lenguajes los instala cada usuario con `zen
 
 ## Rendimiento
 - **Nada corre en segundo plano sin motivo.** Residentes: niri, waybar, swaybg, swayidle, el agente
-  polkit y el historial del portapapeles. mako arranca por D-Bus con la primera notificación; el
+  polkit (`zen-polkit`: icono de huella o candado según lo que pida) y el historial del portapapeles. mako arranca por D-Bus con la primera notificación; el
   calendario (Python) solo queda en memoria si hay tareas pendientes; los paneles de la barra
   (red, Bluetooth, audio, multimedia, brillo, RAM) arrancan al hacer clic y terminan al cerrarlos
   con Esc, Super+C u otro clic en su ícono. Los servicios que instala `zen-apps` quedan apagados.
@@ -239,7 +239,7 @@ dotfiles/      ~ y /etc/skel: niri, waybar, rofi, mako, alacritty, swaylock, gtk
 | Touchpad | ELAN1300 (I²C, Precision) | `i2c_hid_acpi` + `hid_multitouch` |
 | Audio | Conexant CX8200 | `snd_hda_intel` (+ sof-firmware) |
 | Cámara | UVC 13d3:5a07 | `uvcvideo` |
-| Huella | ELAN7001 (SPI) | `fprintd` (libfprint elanspi; probar con `zen-hwcheck`) |
+| Huella | ELAN7001 (SPI, de presión) | `fprintd` + libfprint parcheada (`system/fprint`, SIGFM): la compila `zen-fprint-elan7001`; probar con `zen-hwcheck` |
 | Teclas Fn | ASUS ATK | `asus-nb-wmi`, `asus-wireless` |
 
 - **`zen-hwcheck`** — diagnóstico completo (Wi-Fi, Bluetooth, touchpad, audio, cámara, huella,

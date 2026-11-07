@@ -1,0 +1,15 @@
+# Avisa si una actualización (OpenCV cambia de versión a menudo) deja sin cargar la libfprint del ELAN7001
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = opencv
+Target = libfprint
+Target = fprintd
+Target = glib2
+Target = libgusb
+
+[Action]
+Description = Comprobando la libfprint del lector de huella ELAN7001...
+When = PostTransaction
+Exec = /usr/local/bin/zen-fprint-elan7001 --check

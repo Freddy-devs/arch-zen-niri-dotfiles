@@ -97,7 +97,7 @@ VERSION = re.compile(r"^[\d.]+$")   # binarios con versi√≥n por nombre (claude ‚
 PROTECTED = {
     "niri", "waybar", "Xwayland", "xwayland-satellite", "pipewire", "pipewire-pulse", "wireplumber",
     "systemd", "dbus-daemon", "dbus-broker", "dbus-broker-launch", "gnome-keyring-daemon",
-    "polkit-gnome-authentication-agent-1", "swaybg", "swayidle", "mako", "at-spi-bus-launcher",
+    "zen-polkit", "swaybg", "swayidle", "mako", "at-spi-bus-launcher",
     "at-spi2-registryd", "zen-ram",
 }
 SHELLS = {"bash", "zsh", "sh", "dash", "fish"}   # sin script: es una shell interactiva de una terminal

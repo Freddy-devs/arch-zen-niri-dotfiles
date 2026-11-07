@@ -7,7 +7,6 @@ xwayland-satellite
 xdg-desktop-portal-gnome
 xdg-desktop-portal-gtk
 xdg-desktop-portal-wlr
-polkit-gnome
 gnome-keyring
 waybar
 # calendario de la barra (zen-calendar, Python): GTK4 + layer-shell, sonidos de alarma

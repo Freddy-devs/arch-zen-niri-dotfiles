@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""zen-polkit — agente de autenticación polkit de arch-zen-niri (reemplaza a polkit-gnome).
+
+Muestra qué se está pidiendo de un vistazo:
+  · huella  → icono de huella que late y "Pon tu dedo en el lector"
+  · clave   → icono de candado y campo de contraseña
+  · error   → el icono se pone rojo y tiembla; éxito → verde y se cierra
+
+La verificación la hace polkit con PAM (/etc/pam.d/polkit-1); este programa solo pinta el diálogo.
+Ventana de capa OVERLAY con teclado exclusivo (con focus-follows-mouse lo escrito no se escapa).
+
+    zen-polkit            registrarse como agente de la sesión (lo lanza niri al iniciar)
+    zen-polkit --preview  vista previa del diálogo sin polkit (Esc para salir)
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from zen_panel import preload_layer_shell, load_css  # noqa: E402
+
+preload_layer_shell()
+
+import gi  # noqa: E402
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+gi.require_version("Polkit", "1.0")
+gi.require_version("PolkitAgent", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell as Layer, Polkit, PolkitAgent  # noqa: E402
+
+PREVIEW = "--preview" in sys.argv
+# candidatos por orden: el primero que tenga el tema de iconos (Nordzy no trae los de Adwaita)
+ICONS = {
+    "finger": ("fingerprint-symbolic", "auth-fingerprint-symbolic", "fingerprint"),
+    "lock": ("changes-prevent-symbolic", "system-lock-screen-symbolic", "dialog-password-symbolic"),
+    "fail": ("dialog-error-symbolic", "process-stop-symbolic"),
+    "ok": ("object-select-symbolic", "emblem-ok-symbolic"),
+}
+
+
+def icon_for(mode):
+    theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+    names = ICONS.get(mode, ICONS["lock"])
+    return next((n for n in names if theme.has_icon(n)), names[0])
+
+CSS = """
+window.zen-polkit { background: rgba(20, 23, 29, 0.55); }
+.card {
+  background: #2e3440; border: 1px solid #434c5e; border-radius: 18px;
+  padding: 28px 28px 22px; box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+}
+.badge {
+  min-width: 84px; min-height: 84px; border-radius: 42px;
+  background: rgba(136, 192, 208, 0.14); color: #88c0d0;
+  transition: background 200ms, color 200ms;
+}
+.badge.finger { animation: pulse 1.6s ease-in-out infinite; }
+.badge.lock   { background: rgba(235, 203, 139, 0.14); color: #ebcb8b; }
+.badge.fail   { background: rgba(191, 97, 106, 0.18); color: #bf616a; animation: shake 0.4s; }
+.badge.ok     { background: rgba(163, 190, 140, 0.18); color: #a3be8c; }
+@keyframes pulse { 0% { background: rgba(136,192,208,0.10); } 50% { background: rgba(136,192,208,0.30); }
+                   100% { background: rgba(136,192,208,0.10); } }
+@keyframes shake { 0% { margin-left: 0; } 20% { margin-left: -12px; } 40% { margin-left: 12px; }
+                   60% { margin-left: -8px; } 80% { margin-left: 8px; } 100% { margin-left: 0; } }
+.title  { color: #eceff4; font-size: 17px; font-weight: 700; }
+.who    { color: #81a1c1; font-size: 12px; }
+.body   { color: #d8dee9; font-size: 13px; }
+.status { font-size: 14px; font-weight: 600; color: #88c0d0; }
+.status.lock { color: #ebcb8b; }
+.status.fail { color: #bf616a; }
+.status.ok   { color: #a3be8c; }
+entry.pass {
+  min-height: 40px; border-radius: 10px; background: #3b4252; color: #eceff4;
+  border: 1px solid #4c566a; padding: 0 12px; caret-color: #ebcb8b;
+}
+entry.pass:focus-within { border-color: #ebcb8b; }
+.details { color: #7b88a1; font-size: 11px; font-family: monospace; }
+expander title label { color: #81a1c1; font-size: 12px; }
+button.ghost, button.main { min-height: 36px; border-radius: 10px; padding: 0 18px; font-weight: 600; }
+button.ghost { background: #3b4252; color: #d8dee9; }
+button.ghost:hover { background: #434c5e; }
+button.main { background: #5e81ac; color: #eceff4; }
+button.main:hover { background: #81a1c1; }
+button.main:disabled { background: #3b4252; color: #616e88; }
+"""
+
+# Textos de PAM/fprintd (en inglés o español según el locale) que significan "usa la huella"
+FINGER_HINTS = ("finger", "dedo", "huella", "swipe", "desliza", "lector")
+# Textos que son un fallo de huella, no un aviso
+FINGER_FAIL = ("failed to match", "no match", "not match", "no coincide", "try again", "inténtalo",
+               "intentalo", "timed out", "tiempo", "removed", "retirado")
+
+
+def is_finger(text):
+    t = (text or "").lower()
+    return any(h in t for h in FINGER_HINTS)
+
+
+def pretty_prompt(text):
+    """Traduce los mensajes más comunes de pam_fprintd al español."""
+    t = (text or "").strip()
+    low = t.lower()
+    if "place" in low and "finger" in low:
+        for k, v in (("right index", "índice derecho"), ("left index", "índice izquierdo"),
+                     ("right thumb", "pulgar derecho"), ("left thumb", "pulgar izquierdo"),
+                     ("right middle", "medio derecho"), ("left middle", "medio izquierdo")):
+            if k in low:
+                return f"Pon tu {v} en el lector de huellas"
+        return "Pon tu dedo en el lector de huellas"
+    if "swipe" in low:
+        return "Desliza tu dedo por el lector de huellas"
+    if "failed to match" in low or "no match" in low:
+        return "Huella no reconocida, inténtalo otra vez"
+    if "timed out" in low or "time out" in low:
+        return "Se acabó el tiempo para la huella"
+    if "remove" in low and "finger" in low:
+        return "Retira el dedo y vuelve a ponerlo"
+    if low.rstrip(": ") in ("password", "contraseña"):
+        return "Escribe tu contraseña"
+    return t
+
+
+class Dialog:
+    """Una ventana de autenticación por petición de polkit."""
+
+    def __init__(self, app, message, details, identities, on_done):
+        self.app, self.on_done, self.identities = app, on_done, identities
+        self.session = None
+        self.closed = False
+        self.retries = 0
+
+        win = self.win = Gtk.ApplicationWindow(application=app)
+        win.add_css_class("zen-polkit")
+        Layer.init_for_window(win)
+        Layer.set_namespace(win, "zen-polkit")
+        Layer.set_layer(win, Layer.Layer.OVERLAY)
+        for e in (Layer.Edge.TOP, Layer.Edge.BOTTOM, Layer.Edge.LEFT, Layer.Edge.RIGHT):
+            Layer.set_anchor(win, e, True)
+        Layer.set_exclusive_zone(win, -1)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.EXCLUSIVE)
+
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self._key)
+        win.add_controller(keys)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14,
+                       halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        card.add_css_class("card")
+        card.set_size_request(420, -1)
+
+        self.badge = Gtk.Box(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        self.badge.add_css_class("badge")
+        self.icon = Gtk.Image(pixel_size=44, hexpand=True, vexpand=True,
+                              halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        self.badge.append(self.icon)
+        card.append(self.badge)
+
+        title = Gtk.Label(label=message or "Autenticación requerida", wrap=True, justify=Gtk.Justification.CENTER,
+                          max_width_chars=40)
+        title.add_css_class("title")
+        card.append(title)
+
+        self.who = Gtk.Label(justify=Gtk.Justification.CENTER)
+        self.who.add_css_class("who")
+        card.append(self.who)
+
+        body = Gtk.Label(label="Una aplicación pide permisos especiales para continuar.", wrap=True,
+                         justify=Gtk.Justification.CENTER, max_width_chars=48)
+        body.add_css_class("body")
+        card.append(body)
+
+        self.status = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=44)
+        self.status.add_css_class("status")
+        card.append(self.status)
+
+        self.entry = Gtk.PasswordEntry(show_peek_icon=True, visible=False)
+        self.entry.add_css_class("pass")
+        self.entry.connect("activate", lambda *_: self._submit())
+        self.entry.connect("changed", lambda *_: self._sync_button())
+        card.append(self.entry)
+
+        if details:
+            exp = Gtk.Expander(label="Detalles")
+            lbl = Gtk.Label(label="\n".join(f"{k}: {v}" for k, v in details), xalign=0, selectable=True,
+                            wrap=True, wrap_mode=2)
+            lbl.add_css_class("details")
+            exp.set_child(lbl)
+            card.append(exp)
+
+        row = Gtk.Box(spacing=8, homogeneous=True, margin_top=4)
+        cancel = Gtk.Button(label="Cancelar")
+        cancel.add_css_class("ghost")
+        cancel.connect("clicked", lambda *_: self.cancel())
+        self.ok = Gtk.Button(label="Autenticar", sensitive=False)
+        self.ok.add_css_class("main")
+        self.ok.connect("clicked", lambda *_: self._submit())
+        row.append(cancel)
+        row.append(self.ok)
+        card.append(row)
+
+        win.set_child(card)
+        self.set_mode("wait", "Preparando…")
+        win.present()
+
+    # ---------- estado visual ----------
+    def set_mode(self, mode, text):
+        """mode: wait | finger | lock | fail | ok"""
+        for c in ("finger", "lock", "fail", "ok"):
+            self.badge.remove_css_class(c)
+            self.status.remove_css_class(c)
+        self.icon.set_from_icon_name(icon_for(mode))
+        if mode != "wait":
+            self.badge.add_css_class(mode)
+            self.status.add_css_class(mode)
+        self.status.set_label(text)
+        if mode == "finger":
+            self.entry.set_visible(False)
+        self._sync_button()
+
+    def _sync_button(self):
+        self.ok.set_sensitive(self.entry.get_visible() and bool(self.entry.get_text()))
+
+    def _key(self, _ctrl, keyval, _code, _state):
+        if keyval == Gdk.KEY_Escape:
+            self.cancel()
+            return True
+        return False
+
+    # ---------- sesión polkit ----------
+    def start(self):
+        ident = self._pick_identity()
+        if isinstance(ident, Polkit.UnixUser):
+            name = ident.get_name() or str(ident.get_uid())
+            self.who.set_label(f"como {name}" if ident.get_uid() != 0 else "como administrador (root)")
+        self.session = PolkitAgent.Session.new(ident, self.cookie)
+        self.session.connect("request", self._on_request)
+        self.session.connect("show-info", self._on_info)
+        self.session.connect("show-error", self._on_error)
+        self.session.connect("completed", self._on_completed)
+        self.session.initiate()
+
+    def _pick_identity(self):
+        uid = os.getuid()
+        for i in self.identities:
+            if isinstance(i, Polkit.UnixUser) and i.get_uid() == uid:
+                return i
+        return self.identities[0]
+
+    def _on_request(self, _s, prompt, echo_on):
+        self.entry.set_text("")
+        self.entry.set_visible(True)
+        self.entry.set_show_peek_icon(not echo_on)
+        if is_finger(prompt):
+            self.set_mode("finger", pretty_prompt(prompt))
+        else:
+            self.set_mode("lock", pretty_prompt(prompt) if prompt.strip().rstrip(":").lower() not in
+                          ("password", "contraseña") else "Escribe tu contraseña")
+        self.entry.grab_focus()
+
+    def _on_info(self, _s, text):
+        low = (text or "").lower()
+        if is_finger(text) and not any(f in low for f in FINGER_FAIL):
+            self.set_mode("finger", pretty_prompt(text))
+        elif any(f in low for f in FINGER_FAIL):
+            self.set_mode("fail", pretty_prompt(text))
+        else:
+            self.status.set_label(pretty_prompt(text))
+
+    def _on_error(self, _s, text):
+        self.set_mode("fail", pretty_prompt(text))
+
+    def _submit(self):
+        if self.session and self.entry.get_visible() and self.entry.get_text():
+            self.ok.set_sensitive(False)
+            self.entry.set_visible(False)
+            self.set_mode("wait", "Verificando…")
+            self.session.response(self.entry.get_text())
+            self.entry.set_text("")
+
+    def _on_completed(self, _s, gained):
+        if self.closed:
+            return
+        if gained:
+            self.set_mode("ok", "Autorizado")
+            GLib.timeout_add(450, self.finish, True)
+        else:
+            self.retries += 1
+            self.set_mode("fail", "No se pudo verificar. Inténtalo otra vez.")
+            self.session = None
+            # nueva sesión PAM tras un respiro (como polkit-gnome: el diálogo no se cierra al fallar)
+            GLib.timeout_add(1200, self._retry)
+
+    def _retry(self):
+        if not self.closed:
+            self.start()
+        return False
+
+    def cancel(self):
+        if self.session:
+            self.session.cancel()
+            self.session = None
+        self.finish(False)
+
+    def finish(self, _gained):
+        if not self.closed:
+            self.closed = True
+            self.win.destroy()
+            self.on_done(bool(_gained))
+        return False
+
+
+AGENT_PATH = "/org/zen/PolicyKit1/AuthenticationAgent"
+AGENT_XML = """
+<node><interface name="org.freedesktop.PolicyKit1.AuthenticationAgent">
+  <method name="BeginAuthentication">
+    <arg type="s" name="action_id" direction="in"/><arg type="s" name="message" direction="in"/>
+    <arg type="s" name="icon_name" direction="in"/><arg type="a{ss}" name="details" direction="in"/>
+    <arg type="s" name="cookie" direction="in"/><arg type="a(sa{sv})" name="identities" direction="in"/>
+  </method>
+  <method name="CancelAuthentication"><arg type="s" name="cookie" direction="in"/></method>
+</interface></node>
+"""
+
+
+class Agent:
+    """Agente polkit por D-Bus (PolkitAgent.Listener no sirve desde PyGObject: su vfunc asíncrona queda
+    en NULL y polkit-agent-1 se cae). La verificación sigue siendo PolkitAgent.Session + el helper setuid."""
+
+    def __init__(self, app):
+        self.app, self.dialogs = app, {}
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        info = Gio.DBusNodeInfo.new_for_xml(AGENT_XML).interfaces[0]
+        self.bus.register_object(AGENT_PATH, info, self._call, None, None)
+        session = Polkit.UnixSession.new_for_process_sync(os.getpid(), None).get_session_id()
+        subject = ("unix-session", {"session-id": GLib.Variant("s", session)})
+        locale = os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "C"
+        self.bus.call_sync("org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority",
+                           "org.freedesktop.PolicyKit1.Authority", "RegisterAuthenticationAgent",
+                           GLib.Variant("((sa{sv})ss)", (subject, locale, AGENT_PATH)),
+                           None, Gio.DBusCallFlags.NONE, -1, None)
+
+    def _call(self, _conn, _sender, _path, _iface, method, params, inv):
+        if method == "CancelAuthentication":
+            dlg = self.dialogs.get(params.unpack()[0])
+            if dlg:
+                dlg.cancel()
+            inv.return_value(None)
+            return
+        action_id, message, _icon, details, cookie, idents = params.unpack()
+        identities = []
+        for kind, d in idents:
+            if kind == "unix-user" and "uid" in d:
+                identities.append(Polkit.UnixUser.new(int(d["uid"])))
+        if not identities:
+            inv.return_dbus_error("org.freedesktop.PolicyKit1.Error.Failed", "sin identidades unix-user")
+            return
+        if cookie in self.dialogs:
+            inv.return_dbus_error("org.freedesktop.PolicyKit1.Error.Failed", "cookie repetida")
+            return
+        info = [("Acción", action_id)] + [(k, v) for k, v in details.items() if not k.startswith("polkit.")]
+
+        def done(gained):
+            self.dialogs.pop(cookie, None)
+            if gained:
+                inv.return_value(None)
+            else:
+                inv.return_dbus_error("org.freedesktop.PolicyKit1.Error.Cancelled", "cancelado por el usuario")
+
+        dlg = Dialog(self.app, message, info, identities, done)
+        dlg.cookie = cookie
+        self.dialogs[cookie] = dlg
+        dlg.start()
+
+
+def main():
+    app = Gtk.Application(application_id="zen.polkit" if not PREVIEW else "zen.polkit.preview",
+                          flags=Gio.ApplicationFlags.NON_UNIQUE)
+
+    def activate(app):
+        load_css(CSS)
+        app.hold()
+        if PREVIEW:
+            user = Polkit.UnixUser.new(os.getuid())
+            dlg = Dialog(app, "Authenticate to unlock 1Password",
+                         [("Acción", "com.1password.1Password.unlock")], [user], lambda *_: app.quit())
+            dlg.who.set_label(f"como {user.get_name()}")
+            steps = [("finger", "Pon tu índice derecho en el lector de huellas"),
+                     ("fail", "Huella no reconocida, inténtalo otra vez"),
+                     ("lock", "Escribe tu contraseña"), ("ok", "Autorizado")]
+
+            def step(i=[0]):
+                if dlg.closed:
+                    return False
+                mode, text = steps[i[0] % len(steps)]
+                dlg.entry.set_visible(mode == "lock")
+                dlg.set_mode(mode, text)
+                i[0] += 1
+                return True
+            step()
+            GLib.timeout_add(2500, step)
+            return
+        try:
+            app._agent = Agent(app)
+        except Exception as e:  # sin agente registrado no tiene sentido seguir vivo
+            print(f"zen-polkit: no se pudo registrar el agente: {e}", file=sys.stderr)
+            os._exit(1)
+
+    app.connect("activate", activate)
+    return app.run([sys.argv[0]])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

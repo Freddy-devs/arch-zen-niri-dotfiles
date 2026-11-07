@@ -154,6 +154,11 @@ setup_battery() {
 # ---------------------------------------------------------------- huella
 setup_fingerprint() {
     command -v fprintd-enroll >/dev/null || { warn "fprintd no instalado: zen-apps huella"; return; }
+    # ELAN7001 (SPI, de presión): la libfprint de Arch no lo reconoce bien; va la parcheada de system/fprint
+    if ls -d /sys/bus/acpi/devices/ELAN7001* >/dev/null 2>&1 && ! /usr/local/bin/zen-fprint-elan7001 --check >/dev/null 2>&1; then
+        log "Compilando la libfprint del ELAN7001 (unos minutos)"
+        /usr/local/bin/zen-fprint-elan7001 && done_ "libfprint ELAN7001 instalada" || warn "No se pudo compilar la libfprint del ELAN7001"
+    fi
     if fprintd-list "$USR" 2>&1 | grep -qi 'No devices available'; then
         warn "libfprint no reconoce el sensor de huella de este equipo"; return
     fi
@@ -165,6 +170,8 @@ setup_fingerprint() {
         grep -q pam_fprintd /etc/pam.d/sudo || sed -i '1a auth      sufficient pam_fprintd.so' /etc/pam.d/sudo
         done_ "sudo acepta huella"
     fi
+    # polkit (1Password, pkexec…): huella o, si falla o pasan 20 s, contraseña (zen-polkit muestra cuál pide)
+    install -Dm644 /usr/local/share/zen-fprint/pam-polkit-1 /etc/pam.d/polkit-1
 }
 
 # ---------------------------------------------------------------- touchpad

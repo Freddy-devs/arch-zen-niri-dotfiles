@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# zen-fprint-elan7001 — compila e instala la libfprint parcheada para el lector ELAN7001 (SPI, de presión).
+#
+# La libfprint de Arch trata el ELAN7001 como lector de deslizar y casi nunca reconoce la huella. El
+# parche (libfprint-1.94.100-elan7001-sigfm.patch) lo usa en modo presión con el comparador SIGFM
+# (OpenCV). Se instala aparte, en /usr/local/lib/libfprint-elan7001, y solo fprintd la carga (drop-in
+# fprintd-elan7001.conf): el resto del sistema sigue con la libfprint de pacman.
+#
+#   sudo zen-fprint-elan7001          compilar, instalar y reiniciar fprintd
+#   zen-fprint-elan7001 --check       ¿la librería instalada carga bien? (lo usa el hook de pacman)
+#
+# Parche y drop-in en /usr/local/share/zen-fprint (system/fprint del repo). Compila en el propio sistema (sin contenedores) dentro de un directorio temporal que se borra al final.
+set -euo pipefail
+
+VERSION=1.94.100
+REPO=https://gitlab.freedesktop.org/libfprint/libfprint.git
+SHARE=/usr/local/share/zen-fprint      # parche y drop-in (install.sh los copia desde system/fprint)
+PATCH=$SHARE/libfprint-$VERSION-elan7001-sigfm.patch
+DEST=/usr/local/lib/libfprint-elan7001
+LIB=$DEST/libfprint-2.so.2.0.0
+DEPS=(git meson ninja gcc pkgconf glib2-devel libgusb libgudev cairo pixman nss)   # solo para compilar
+
+check() {
+    ls -d /sys/bus/acpi/devices/ELAN7001* >/dev/null 2>&1 || return 0   # otro equipo: nada que revisar
+    [[ -f $LIB ]] || { echo "zen-fprint: falta $LIB (ejecuta: sudo zen-fprint-elan7001)"; return 1; }
+    local missing; missing=$(ldd "$LIB" | awk '/not found/{print $1}')
+    if [[ -n $missing ]]; then
+        echo "zen-fprint: ¡la huella dejará de funcionar! A la libfprint del ELAN7001 le faltan:"
+        echo "$missing" | sed 's/^/    /'
+        echo "zen-fprint: recompílala con: sudo zen-fprint-elan7001"
+        return 1
+    fi
+}
+
+if [[ ${1:-} == --check ]]; then check; exit; fi
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+[[ -f $PATCH ]] || { echo "No encuentro el parche $PATCH" >&2; exit 1; }
+
+missing=()
+for p in "${DEPS[@]}"; do pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p"); done
+((${#missing[@]})) && pacman -S --needed --noconfirm --asdeps "${missing[@]}"
+# OpenCV se usa en ejecución: explícito, para que limpiar huérfanos (pacman -Qdtq) no lo borre
+pacman -S --needed --noconfirm opencv >/dev/null && pacman -D --asexplicit opencv >/dev/null
+
+WORK=$(mktemp -d /var/tmp/zen-fprint.XXXXXX)
+trap 'rm -rf "$WORK"' EXIT
+chown nobody: "$WORK"
+as_nobody() { setpriv --reuid=nobody --regid=nobody --clear-groups --reset-env -- env HOME="$WORK" PATH=/usr/bin "$@"; }
+
+echo ":: Descargando libfprint $VERSION"
+as_nobody git -c advice.detachedHead=false clone -q --depth 1 --branch "v$VERSION" "$REPO" "$WORK/src"
+echo ":: Aplicando el parche ELAN7001 + SIGFM"
+as_nobody git -C "$WORK/src" apply --index "$PATCH"
+echo ":: Compilando (solo el driver elanspi)"
+as_nobody meson setup "$WORK/build" "$WORK/src" -Dbuildtype=release -Ddrivers=elanspi -Dintrospection=false \
+    -Ddoc=false -Dgtk-examples=false -Dudev_rules=disabled -Dudev_hwdb=disabled >/dev/null
+as_nobody ninja -C "$WORK/build" libfprint/libfprint-2.so.2.0.0 >/dev/null
+
+echo ":: Instalando en $DEST"
+install -Dm755 "$WORK/build/libfprint/libfprint-2.so.2.0.0" "$LIB"
+ln -sf libfprint-2.so.2.0.0 "$DEST/libfprint-2.so.2"
+install -Dm644 "$SHARE/fprintd-elan7001.conf" /etc/systemd/system/fprintd.service.d/elan7001.conf
+check
+systemctl daemon-reload
+systemctl try-restart fprintd.service
+echo ":: Listo. Prueba con: fprintd-verify"
