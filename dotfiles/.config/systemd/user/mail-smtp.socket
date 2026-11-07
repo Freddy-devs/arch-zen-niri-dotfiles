@@ -1,0 +1,8 @@
+[Unit]
+Description=Correo dev: SMTP en 127.0.0.1:1025 (despierta MailCrab)
+
+[Socket]
+ListenStream=127.0.0.1:1025
+
+[Install]
+WantedBy=sockets.target

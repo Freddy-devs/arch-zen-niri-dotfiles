@@ -1,0 +1,8 @@
+[Unit]
+Description=Proxy de activación para el SMTP del correo dev
+Requires=mailcrab.service mail-smtp.socket
+After=mailcrab.service mail-smtp.socket
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=${MAIL_IDLE} 127.0.0.1:11025
+Environment=MAIL_IDLE=1d

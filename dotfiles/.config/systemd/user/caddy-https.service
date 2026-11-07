@@ -1,0 +1,8 @@
+[Unit]
+Description=Proxy de activación de Caddy (https)
+Requires=caddy.service caddy-https.socket
+After=caddy.service caddy-https.socket
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=${CADDY_IDLE} 127.0.0.1:18443
+Environment=CADDY_IDLE=1d

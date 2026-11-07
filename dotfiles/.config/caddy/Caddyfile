@@ -1,0 +1,29 @@
+# Caddy general de la máquina: la puerta de entrada de todos los proyectos locales (*.test).
+#
+# Los sockets de systemd escuchan en 127.0.0.1:80 y :443 (caddy-http.socket, caddy-https.socket),
+# despiertan este contenedor y le reenvían a 18080 y 18443. Solo loopback: nada sale a la red.
+#
+# Cada proyecto es un archivo en sites/ (mail.caddy, …): quitar un proyecto = borrar su archivo.
+# Recargar tras un cambio:  systemctl --user restart caddy
+# Nombres nuevos: añadirlos a /etc/hosts como 127.0.0.1 (p. ej. 127.0.0.1 api.test).
+#
+# HTTPS con la CA propia de Caddy (tls internal). Su raíz se guarda en
+# ~/.local/share/caddy/pki/authorities/local/root.crt y se confía una vez en el sistema
+# (sudo trust anchor --store …); Brave y curl la toman de ahí.
+{
+	admin off
+	http_port 18080
+	https_port 18443
+	skip_install_trust
+	# La redirección automática apuntaría a :18443; la de abajo la hace hacia el 443 real.
+	auto_https disable_redirects
+	local_certs
+}
+
+# Todo lo que llegue por http se manda a https (mismo nombre, puerto 443 de los sockets).
+http:// {
+	bind 127.0.0.1
+	redir https://{host}{uri} permanent
+}
+
+import sites/*.caddy

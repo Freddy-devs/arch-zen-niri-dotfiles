@@ -1,0 +1,8 @@
+[Unit]
+Description=Caddy local: http en 127.0.0.1:80 (despierta caddy.service)
+
+[Socket]
+ListenStream=127.0.0.1:80
+
+[Install]
+WantedBy=sockets.target

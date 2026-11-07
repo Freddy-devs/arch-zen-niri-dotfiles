@@ -1,0 +1,21 @@
+# MailCrab bajo demanda: lo arrancan mail-smtp.service o mail-http.service y
+# se detiene solo cuando ninguno lo necesita (los correos viven en memoria).
+[Unit]
+Description=MailCrab (SMTP de desarrollo, bajo demanda)
+StopWhenUnneeded=yes
+
+[Quadlet]
+# Sin esto cada despertar espera 90 s a network-online.target, que aquí nunca se
+# activa. Solo usa loopback y la imagen es local: no necesita esperar a la red.
+DefaultDependencies=false
+
+[Container]
+Image=docker.io/marlonb/mailcrab:latest
+ContainerName=mailcrab
+Network=host
+Environment=SMTP_HOST=127.0.0.1 SMTP_PORT=11025 HTTP_HOST=127.0.0.1 HTTP_PORT=11081
+
+[Service]
+# Listo cuando ya acepta conexiones, así la primera petición no falla.
+ExecStartPost=/usr/bin/bash -c 'for i in {1..150}; do (exec 3<>/dev/tcp/127.0.0.1/11081) 2>/dev/null && (exec 3<>/dev/tcp/127.0.0.1/11025) 2>/dev/null && exit 0; sleep 0.1; done; exit 1'
+TimeoutStartSec=180

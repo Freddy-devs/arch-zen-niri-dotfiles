@@ -1,0 +1,8 @@
+[Unit]
+Description=Correo dev: web de MailCrab en 127.0.0.1:11080 (detrás de https://mail.test)
+
+[Socket]
+ListenStream=127.0.0.1:11080
+
+[Install]
+WantedBy=sockets.target
