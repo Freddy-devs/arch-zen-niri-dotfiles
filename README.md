@@ -239,7 +239,7 @@ dotfiles/      ~ y /etc/skel: niri, waybar, rofi, mako, alacritty, swaylock, gtk
 | Touchpad | ELAN1300 (I²C, Precision) | `i2c_hid_acpi` + `hid_multitouch` |
 | Audio | Conexant CX8200 | `snd_hda_intel` (+ sof-firmware) |
 | Cámara | UVC 13d3:5a07 | `uvcvideo` |
-| Huella | ELAN7001 (SPI, de presión) | `fprintd` + libfprint parcheada (`system/fprint`, SIGFM): la compila `zen-fprint-elan7001`; probar con `zen-hwcheck` |
+| Huella | ELAN7001 (SPI, de presión) | `fprintd` con driver propio: proyecto aparte `huella-elan7001` (no va en dotfiles: es de este equipo) |
 | Teclas Fn | ASUS ATK | `asus-nb-wmi`, `asus-wireless` |
 
 - **`zen-hwcheck`** — diagnóstico completo (Wi-Fi, Bluetooth, touchpad, audio, cámara, huella,

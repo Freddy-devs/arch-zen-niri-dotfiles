@@ -154,22 +154,18 @@ fi
 
 # ---------------------------------------------------------------- huella
 section "Lector de huella"
-FP=$(ls -d /sys/bus/acpi/devices/ELAN7001* 2>/dev/null | head -1)
-if [[ -n $FP ]]; then
-    info "Sensor ELAN7001 (SPI) presente en ACPI"
-    if has fprintd-list; then
-        r=$(fprintd-list "$USR" 2>&1)
-        if grep -qi 'No devices available' <<<"$r"; then
-            warn "fprintd no reconoce el sensor (puede que este modelo no esté soportado por libfprint)"
-        else
-            ok "fprintd reconoce el sensor: $(grep -m1 -oE 'Device at [^ ]+|found [0-9]+ devices' <<<"$r")"
-            info "Registra tu huella con: zen-hwsetup  (opción huella)"
-        fi
+if has fprintd-list; then
+    r=$(fprintd-list "$USR" 2>&1)
+    if grep -qi 'No devices available' <<<"$r"; then
+        warn "fprintd no reconoce ningún lector (o el de este equipo necesita un driver propio)"
     else
-        info "fprintd no instalado (si quieres huella: zen-apps huella)"
+        ok "fprintd reconoce el lector: $(grep -m1 -oE 'on .+ \((press|swipe)\)' <<<"$r" | sed 's/^on //')"
+        grep -q ' - #' <<<"$r" && ok "Huella registrada" || info "Sin huella registrada: zen-hwsetup  (opción huella)"
     fi
+    [[ -x /usr/local/bin/zen-fprint-elan7001 ]] && { /usr/local/bin/zen-fprint-elan7001 --check >/dev/null 2>&1 &&
+        ok "Driver propio huella-elan7001 enlazado" || warn "Driver propio huella-elan7001 roto: sudo zen-fprint-elan7001"; }
 else
-    info "No se detectó el sensor de huella ELAN7001"
+    info "fprintd no instalado (si quieres huella: zen-apps huella)"
 fi
 
 # ---------------------------------------------------------------- sensores

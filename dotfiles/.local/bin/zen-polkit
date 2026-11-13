@@ -88,7 +88,7 @@ button.main:disabled { background: #3b4252; color: #616e88; }
 FINGER_HINTS = ("finger", "dedo", "huella", "swipe", "desliza", "lector")
 # Textos que son un fallo de huella, no un aviso
 FINGER_FAIL = ("failed to match", "no match", "not match", "no coincide", "try again", "inténtalo",
-               "intentalo", "timed out", "tiempo", "removed", "retirado")
+               "intentalo", "timed out", "tiempo", "removed", "retirado", "no reconoc", "falló")
 
 
 def is_finger(text):
@@ -100,6 +100,8 @@ def pretty_prompt(text):
     """Traduce los mensajes más comunes de pam_fprintd al español."""
     t = (text or "").strip()
     low = t.lower()
+    if low.startswith("huella: apoya"):   # pam_zen_fprintd (zen-fprint-elan7001); Ctrl+C no aplica aquí
+        return "Pon " + t.split("apoya", 1)[1].split(" (", 1)[0].strip()
     if "place" in low and "finger" in low:
         for k, v in (("right index", "índice derecho"), ("left index", "índice izquierdo"),
                      ("right thumb", "pulgar derecho"), ("left thumb", "pulgar izquierdo"),
