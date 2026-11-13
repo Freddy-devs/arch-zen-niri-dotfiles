@@ -10,6 +10,11 @@ la hora, un anillo siempre visible con el texto en el idioma del sistema y, mien
 música, un visualizador de espectro alrededor del anillo (nunca muestra qué suena). La contraseña se verifica con PAM
 (servicio "swaylock", el mismo de siempre: respeta faillock).
 
+Huella: si fprintd tiene un lector y el usuario registró algún dedo, el candado cambia por una huella y
+basta apoyar el dedo (a la vez que se puede escribir la contraseña). Tras 5 dedos no reconocidos la
+huella se pausa hasta el próximo bloqueo y solo vale la contraseña. Sin lector o sin dedo registrado:
+solo contraseña, como siempre. Es genérico (API D-Bus de fprintd), sirve en cualquier equipo.
+
     zen-locker                    bloquear (escribe $XDG_RUNTIME_DIR/zen-lock/locked al quedar bloqueado)
     zen-locker --preview [SEG]    vista previa sin bloquear (Esc o SEG segundos para salir)
 """
@@ -28,7 +33,7 @@ gi.require_version("Gtk4SessionLock", "1.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 gi.require_version("Playerctl", "2.0")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell, Gtk4SessionLock, Pango, PangoCairo, Playerctl
+from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell, Gtk4SessionLock, Pango, PangoCairo, Playerctl
 
 PREVIEW = len(sys.argv) > 1 and sys.argv[1] == "--preview"
 DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "zen-lock")
@@ -71,9 +76,13 @@ locale.setlocale(locale.LC_ALL, "")
 LANG = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "en")[:2]
 TEXTS = {
     "es": {"prompt": "Ingresa tu contraseña", "check": "Verificando…", "wrong": "Contraseña incorrecta",
-           "caps": "Bloq Mayús activado", "date": "%A, %d de %B"},
+           "caps": "Bloq Mayús activado", "date": "%A, %d de %B",
+           "fp_prompt": "Apoya tu dedo o escribe tu contraseña", "fp_wrong": "Huella no reconocida",
+           "fp_retry": "Vuelve a apoyar el dedo", "fp_off": "Huella en pausa: usa tu contraseña"},
     "en": {"prompt": "Enter your password", "check": "Verifying…", "wrong": "Wrong password",
-           "caps": "Caps Lock is on", "date": "%A, %B %d"},
+           "caps": "Caps Lock is on", "date": "%A, %B %d",
+           "fp_prompt": "Touch the sensor or type your password", "fp_wrong": "Fingerprint not recognized",
+           "fp_retry": "Place your finger again", "fp_off": "Fingerprint paused: use your password"},
 }
 T = TEXTS.get(LANG, TEXTS["en"])
 
@@ -143,6 +152,106 @@ def pam_check(password):
         _pam.pam_setcred(handle, PAM_REFRESH_CRED)
     _pam.pam_end(handle, rc)
     return rc == 0
+
+
+# ---------- huella (fprintd por D-Bus, en paralelo con la contraseña) ----------
+class Fingerprint:
+    """Verifica cualquier dedo registrado con fprintd, sin bloquear la interfaz (llamadas asíncronas).
+    on_event(tipo) recibe: "ready", "match", "nomatch", "retry", "off"."""
+    BUS, MAX_FAILS = "net.reactivated.Fprint", 5
+
+    def __init__(self, on_event):
+        self.on_event = on_event
+        self.dev = None
+        self.fails = 0
+        self.stopped = False
+        GLib.idle_add(self._start)
+
+    @staticmethod
+    def _call(proxy, method, args=None, then=None):
+        def cb(p, res):
+            try:
+                p.call_finish(res)
+                err = None
+            except GLib.Error as e:
+                err = e
+            if then is not None:
+                then(err)
+        proxy.call(method, args, Gio.DBusCallFlags.NONE, 10000, None, cb)
+
+    def _start(self):
+        if self.stopped:
+            return False
+        try:
+            mgr = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None, self.BUS,
+                                                 "/net/reactivated/Fprint/Manager", self.BUS + ".Manager", None)
+            path = mgr.call_sync("GetDefaultDevice", None, Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+            dev = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+                                                 self.BUS, path, self.BUS + ".Device", None)
+            user = pwd.getpwuid(os.getuid()).pw_name
+            fingers = dev.call_sync("ListEnrolledFingers", GLib.Variant("(s)", (user,)),
+                                    Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        except GLib.Error:
+            return False          # sin fprintd, sin lector o sin dedos registrados: solo contraseña
+        if not fingers:
+            return False
+        self.dev = dev
+        dev.connect("g-signal", self._signal)
+        self._call(dev, "Claim", GLib.Variant("(s)", ("",)), self._claimed)
+        return False
+
+    def _claimed(self, err):
+        if err is not None:
+            self._later()         # lector ocupado (p. ej. un sudo esperando huella): reintentar
+            return
+        self.on_event("ready")
+        self._verify()
+
+    def _verify(self):
+        if not self.stopped:
+            self._call(self.dev, "VerifyStart", GLib.Variant("(s)", ("any",)),
+                       lambda err: err is not None and self._reset())
+
+    def _signal(self, _proxy, _sender, name, params):
+        if name != "VerifyStatus" or self.stopped:
+            return
+        result, done = params.unpack()
+        if result == "verify-match":
+            self.stop()
+            self.on_event("match")
+        elif result == "verify-no-match":
+            self.fails += 1
+            self.on_event("nomatch")
+            if self.fails >= self.MAX_FAILS:
+                self.stop()
+                self.on_event("off")
+            else:
+                self._call(self.dev, "VerifyStop", None, lambda _e: self._verify())
+        elif not done:
+            self.on_event("retry")              # mala lectura: no cuenta como intento
+        else:
+            self._reset()                       # lector desconectado, error o vuelta de suspensión
+
+    def _reset(self):
+        """Suelta el lector y vuelve a empezar en unos segundos (p. ej. al despertar de suspensión)."""
+        if self.stopped or self.dev is None:
+            return
+        dev = self.dev
+        self._call(dev, "VerifyStop", None, lambda _e: self._call(dev, "Release", None, lambda _e2: self._later()))
+
+    def _later(self):
+        if not self.stopped:
+            self.dev = None
+            GLib.timeout_add_seconds(3, self._start)
+
+    def stop(self):
+        """Deja de leer huellas y suelta el lector (fprintd también lo suelta si el proceso termina)."""
+        if self.stopped:
+            return
+        self.stopped = True
+        dev = self.dev
+        if dev is not None:
+            self._call(dev, "VerifyStop", None, lambda _e: self._call(dev, "Release", None))
 
 
 # ---------- espectro del audio que suena (pw-record + FFT en Python puro) ----------
@@ -247,6 +356,10 @@ class Locker:
         self.playing = False
         self.viz = 0.0               # 0..1, aparece/desaparece suave
         self.lock = None
+        self.fp = "none"             # none | on | off (pausada tras varios fallos)
+        self.wrong_msg = T["wrong"]
+        self.hint_at = 0.0           # «vuelve a apoyar el dedo» unos segundos
+        self.fingerprint = Fingerprint(self.on_fingerprint)
 
         self.players = Playerctl.PlayerManager()
         for name in self.players.props.player_names:
@@ -336,10 +449,30 @@ class Locker:
     def done(self, ok):
         if ok:
             self.spectrum.stop()
-            self.lock.unlock()
+            self.fingerprint.stop()
+            if PREVIEW:
+                self.app.quit()
+            else:
+                self.lock.unlock()
         else:
-            self.state, self.wrong_at = "wrong", time.monotonic()
+            self.state, self.wrong_at, self.wrong_msg = "wrong", time.monotonic(), T["wrong"]
         return False
+
+    def on_fingerprint(self, event):
+        if event == "ready":
+            self.fp = "on"
+        elif event == "off":
+            self.fp = "off"
+        elif event == "match":
+            self.state = "check"
+            self.password.clear()
+            self.done(True)
+        elif event == "nomatch" and self.state != "check":
+            self.state, self.wrong_at, self.wrong_msg = "wrong", time.monotonic(), T["fp_wrong"]
+        elif event == "retry":
+            self.hint_at = time.monotonic()
+        for a in self.areas:
+            a.queue_draw()
 
     def caps_on(self):
         seat = Gdk.Display.get_default().get_default_seat()
@@ -414,15 +547,26 @@ class Locker:
             self.text(cr, cx, cy, dots, "Inter Bold 22", TEXT, 1.0)
         else:
             icon = {"idle": "", "check": "", "wrong": ""}[self.state]
+            if self.fp == "on" and self.state != "check":
+                icon = "󰈷"                     # huella en vez del candado
             col = {"idle": FROST, "check": FROST, "wrong": RED}[self.state]
             self.text(cr, cx, cy, icon, "Symbols Nerd Font 34", col, 1.0)
 
         # mensaje debajo del anillo, en el idioma del sistema
         below = cy + R + BAR_MAX + 40
-        msg, col = {"idle": (T["prompt"], SUBTLE), "check": (T["check"], FROST), "wrong": (T["wrong"], RED)}[self.state]
+        idle = T["fp_prompt"] if self.fp == "on" else T["prompt"]
+        msg, col = {"idle": (idle, SUBTLE), "check": (T["check"], FROST),
+                    "wrong": (self.wrong_msg, RED)}[self.state]
         self.text(cr, cx, below, msg, "Inter Medium 16", col, 1.0)
+        extra = []
+        if self.fp == "on" and self.state == "idle" and now - self.hint_at < 2.5:
+            extra.append(("󰈷  " + T["fp_retry"], FROST))
+        if self.fp == "off":
+            extra.append(("󰈷  " + T["fp_off"], SUBTLE))
         if self.caps_on():
-            self.text(cr, cx, below + 30, "  " + T["caps"], "Inter 13", YELLOW, 1.0)
+            extra.append(("  " + T["caps"], YELLOW))
+        for i, (txt, c) in enumerate(extra):
+            self.text(cr, cx, below + 30 * (i + 1), txt, "Inter 13", c, 1.0)
 
     @staticmethod
     def shaded_texture(path):
