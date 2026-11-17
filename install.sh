@@ -362,6 +362,7 @@ step_files() {
     install -m644 "$S"/pacman.d/hooks/*.hook /etc/pacman.d/hooks/
     install -m644 "$S/reflector.conf" /etc/xdg/reflector/reflector.conf
     install -m755 "$S"/bin/* /usr/local/bin/
+    install -Dm644 "$S/polkit/org.zen.1password-llave.policy" /usr/share/polkit-1/actions/org.zen.1password-llave.policy
     install -m644 "$S/wallpaper.jpg" /usr/share/backgrounds/zen-niri/wallpaper.jpg
     install -Dm755 "$S/environment/90-zen-vm-render" /usr/lib/systemd/user-environment-generators/90-zen-vm-render
     # seguridad: sysctl, privacidad de red, DNS cifrado (el cortafuegos ufw lo arma zen-cortafuegos)

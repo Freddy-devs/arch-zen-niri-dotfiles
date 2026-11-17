@@ -141,6 +141,8 @@ spawn-at-startup "alacritty" "--daemon"
 spawn-at-startup "zen-calendar" "--daemon"
 spawn-at-startup "swaybg" "-m" "fill" "-i" "/usr/share/backgrounds/zen-niri/wallpaper.jpg"
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-polkit"
+// 1Password: el primer desbloqueo tras arrancar con huella (zen-1password-unlock --guardar para activarlo)
+spawn-at-startup "sh" "-c" "~/.local/bin/zen-1password-unlock"
 // historial del portapapeles: solo en RAM ($XDG_RUNTIME_DIR), últimas 10 copias (zen-clip)
 spawn-at-startup "sh" "-c" "~/.local/bin/zen-clip watch"
 spawn-at-startup "swayidle" "-w" "timeout" "600" "~/.local/bin/zen-lock" "timeout" "900" "niri msg action power-off-monitors" "before-sleep" "~/.local/bin/zen-lock"
